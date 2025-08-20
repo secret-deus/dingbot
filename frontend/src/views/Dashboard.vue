@@ -224,12 +224,16 @@ const loadSystemStatus = async () => {
   try {
     const response = await api.system.getV2Health()
     const data = response.data
+    console.log('健康检查响应数据:', data)
+    console.log('钉钉机器人状态:', data.components.dingtalk_bot)
     systemStatus.value = {
       healthy: data.healthy,
       mcp_client: data.components.mcp_client,
       llm_processor: data.components.llm_processor,
+      dingtalk_bot: data.components.dingtalk_bot,
       tools_count: data.components.tools_available
     }
+    console.log('更新后的systemStatus:', systemStatus.value)
     // 统一设置工具数量，避免多处设置造成冲突
     toolsCount.value = data.components.tools_available || 0
     console.log('工具数量已更新:', toolsCount.value)
@@ -241,6 +245,7 @@ const loadSystemStatus = async () => {
       healthy: false,
       mcp_client: false,
       llm_processor: false,
+      dingtalk_bot: false,
       tools_count: 0
     }
   }

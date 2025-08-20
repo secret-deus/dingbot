@@ -86,11 +86,22 @@ async def health_check():
             except Exception as e:
                 logger.warning(f"获取工具列表失败: {e}")
         
+        # 检查钉钉机器人状态（通过环境变量）
+        dingtalk_bot_status = False
+        try:
+            import os
+            webhook_url = os.getenv("DINGTALK_WEBHOOK_URL")
+            dingtalk_bot_status = webhook_url is not None and webhook_url.strip() != ""
+            logger.info(f"钉钉机器人状态: {dingtalk_bot_status}")
+        except Exception as e:
+            logger.warning(f"获取钉钉机器人状态失败: {e}")
+        
         return {
             "healthy": True,
             "components": {
                 "mcp_client": mcp_client is not None and hasattr(mcp_client, 'status') and mcp_client.status.name == "CONNECTED",
                 "llm_processor": llm_processor is not None,
+                "dingtalk_bot": dingtalk_bot_status,
                 "tools_available": tools_count
             },
             "version": "2.0",
