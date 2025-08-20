@@ -90,11 +90,6 @@ cd ding-robot
 # 安装Poetry依赖
 poetry install
 
-# 一键初始化和启动（可选）
-poetry run setup
-poetry run dev
-```
-
 ### 2. 配置文件
 
 编辑 `backend/config.env` 文件：
@@ -149,11 +144,9 @@ poetry run build && poetry run serve
 
 ## 📚 详细文档
 
-- **快速开始**: [QUICK_START.md](QUICK_START.md) - 30秒启动指南
-- **部署指南**: [DEPLOYMENT.md](DEPLOYMENT.md) - 详细的部署和配置说明
-- **项目概述**: [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) - 完整的项目架构和进度
-- **Poetry集成**: [POETRY_GUIDE.md](POETRY_GUIDE.md) - 项目管理和构建
-- **API文档**: http://localhost:8000/docs - 在线API文档
+```
+project_document/
+```
 
 ## 🛠️ 支持的工具
 
