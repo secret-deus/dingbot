@@ -45,7 +45,7 @@
 
 ## 架构设计
 
-![project_document/architechture-diagrams/arch.png]
+![arch](./project_document/architecture-diagrams/arch.png)
 
 ## 快速开始
 
