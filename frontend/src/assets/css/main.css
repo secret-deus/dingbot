@@ -161,10 +161,19 @@ table {
   overflow: hidden;
 }
 
+/* 表格容器 - 处理溢出 */
+.table-container {
+  overflow-x: auto;
+  margin: 16px 0;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
 /* 通用表格边框 */
 table:not(.el-table) {
   border: 2px solid #409EFF !important;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  min-width: 600px; /* 设置最小宽度防止过度压缩 */
 }
 
 table:not(.el-table) th {
@@ -193,6 +202,24 @@ table:not(.el-table) td:last-child {
 
 table:not(.el-table) tr:last-child td {
   border-bottom: none;
+}
+
+/* 响应式表格处理 */
+@media (max-width: 768px) {
+  table:not(.el-table) {
+    min-width: 500px; /* 在小屏幕上减少最小宽度 */
+    font-size: 12px;
+  }
+  
+  table:not(.el-table) th,
+  table:not(.el-table) td {
+    padding: 8px 10px;
+    white-space: nowrap; /* 防止文本换行 */
+  }
+  
+  .table-container {
+    margin: 12px 0;
+  }
 }
 
 table:not(.el-table) tr:hover td {

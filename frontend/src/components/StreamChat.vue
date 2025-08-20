@@ -1013,6 +1013,16 @@ watch(() => chatStore.currentStreamMessage?.content, () => {
   min-height: 40px;
 }
 
+/* 包含表格的消息气泡需要更大的宽度 */
+.assistant-bubble .markdown-content {
+  min-width: 0; /* 允许收缩 */
+}
+
+/* 当消息包含表格时，扩大气泡宽度 */
+.assistant-message .message-bubble {
+  max-width: 95%;
+}
+
 .user-message {
   display: flex;
   flex-direction: column;
@@ -1352,6 +1362,7 @@ watch(() => chatStore.currentStreamMessage?.content, () => {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   font-size: 14px;
   border: 2px solid #409EFF !important;
+  min-width: 600px; /* 设置最小宽度防止过度压缩 */
 }
 
 .markdown-content th,
@@ -1529,15 +1540,22 @@ watch(() => chatStore.currentStreamMessage?.content, () => {
   border-bottom: none !important;
 }
 
+/* 表格容器 - 处理水平滚动 */
+.markdown-content {
+  overflow-x: auto; /* 允许水平滚动 */
+}
+
 /* 响应式表格 */
 @media (max-width: 768px) {
   .markdown-content table {
     font-size: 11px;
+    min-width: 500px; /* 在小屏幕上减少最小宽度 */
   }
   
   .markdown-content th,
   .markdown-content td {
     padding: 6px 8px;
+    white-space: nowrap; /* 防止文本换行 */
   }
 }
 
