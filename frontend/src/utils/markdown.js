@@ -135,18 +135,18 @@ function enhanceClusterStatsHTML(html) {
   // 强制表格边框样式 - 使用内联样式确保显示
   html = html.replace(
     /<table>/g,
-    '<table style="border-collapse: separate !important; border-spacing: 0 !important; border: 1px solid #666666 !important; width: 100%; background: #fff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">'
+    '<table style="border-collapse: separate !important; border-spacing: 0 !important; border: 2px solid #409EFF !important; width: 100%; background: #fff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">'
   )
   
   // 强制表头和单元格边框
   html = html.replace(
     /<th>/g,
-    '<th style="border: 1px solid #666666 !important; padding: 12px 15px; text-align: center; background: linear-gradient(135deg, #409EFF, #36a3f7); color: white; font-weight: 600;">'
+    '<th style="border-right: 1px solid #e4e7ed !important; border-bottom: 2px solid #409EFF !important; padding: 12px 15px; text-align: center; background: linear-gradient(135deg, #409EFF, #36a3f7); color: white; font-weight: 600;">'
   )
   
   html = html.replace(
     /<td>/g,
-    '<td style="border: 1px solid #666666 !important; padding: 12px 15px; text-align: center; background: #fff;">'
+    '<td style="border-right: 1px solid #e4e7ed !important; border-bottom: 1px solid #e4e7ed !important; padding: 12px 15px; text-align: center; background: #fff;">'
   )
   
   // 为表格中的0值添加样式类

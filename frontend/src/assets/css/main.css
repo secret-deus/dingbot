@@ -87,6 +87,126 @@ html, body {
 .p-10 { padding: 10px; }
 .p-20 { padding: 20px; }
 
+/* Element Plus 表格样式优化 */
+.el-table {
+  border: 1px solid var(--border-light) !important;
+  border-radius: 8px !important;
+  overflow: hidden !important;
+}
+
+.el-table .el-table__header-wrapper {
+  border-bottom: 2px solid var(--border-light) !important;
+}
+
+.el-table .el-table__header th {
+  border-right: 1px solid var(--border-light) !important;
+  background-color: #f8f9fa !important;
+  font-weight: 600 !important;
+  color: var(--text-primary) !important;
+}
+
+.el-table .el-table__header th:last-child {
+  border-right: none !important;
+}
+
+.el-table .el-table__body-wrapper {
+  border: none !important;
+}
+
+.el-table .el-table__body td {
+  border-right: 1px solid var(--border-lighter) !important;
+  border-bottom: 1px solid var(--border-lighter) !important;
+}
+
+.el-table .el-table__body td:last-child {
+  border-right: none !important;
+}
+
+.el-table .el-table__body tr:last-child td {
+  border-bottom: none !important;
+}
+
+.el-table .el-table__body tr:hover td {
+  background-color: #f5f7fa !important;
+}
+
+.el-table .el-table__body tr:nth-child(even) td {
+  background-color: #fafbfc !important;
+}
+
+.el-table .el-table__body tr:nth-child(even):hover td {
+  background-color: #f0f2f5 !important;
+}
+
+/* 小尺寸表格样式 */
+.el-table--small .el-table__header th,
+.el-table--small .el-table__body td {
+  padding: 8px 12px !important;
+}
+
+/* 表格容器样式 */
+.servers-list, .tools-list, .backups-container {
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* 通用表格样式规范 */
+table {
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  width: 100%;
+  background: #fff;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* 通用表格边框 */
+table:not(.el-table) {
+  border: 2px solid #409EFF !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+table:not(.el-table) th {
+  background: linear-gradient(135deg, #409EFF, #36a3f7);
+  color: white;
+  font-weight: 600;
+  padding: 12px 15px;
+  text-align: center;
+  border-right: 1px solid #e4e7ed;
+  border-bottom: 2px solid #409EFF;
+}
+
+table:not(.el-table) td {
+  padding: 12px 15px;
+  text-align: center;
+  border-right: 1px solid #e4e7ed;
+  border-bottom: 1px solid #e4e7ed;
+  background: #fff;
+  transition: background-color 0.2s ease;
+}
+
+table:not(.el-table) th:last-child,
+table:not(.el-table) td:last-child {
+  border-right: none;
+}
+
+table:not(.el-table) tr:last-child td {
+  border-bottom: none;
+}
+
+table:not(.el-table) tr:hover td {
+  background-color: #f8fafe;
+}
+
+table:not(.el-table) tr:nth-child(even) td {
+  background-color: #fafbfc;
+}
+
+table:not(.el-table) tr:nth-child(even):hover td {
+  background-color: #f0f6ff;
+}
+
 /* 卡片样式 */
 .card {
   background: #fff;

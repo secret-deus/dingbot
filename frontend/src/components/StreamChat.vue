@@ -1345,20 +1345,19 @@ watch(() => chatStore.currentStreamMessage?.content, () => {
   border-collapse: separate !important;
   border-spacing: 0 !important;
   width: 100%;
-  margin: 12px 0;
+  margin: 16px 0;
   background: #fff;
   border-radius: 8px;
   overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   font-size: 14px;
-  border: 3px solid #2c3e50 !important;
+  border: 2px solid #409EFF !important;
 }
 
 .markdown-content th,
 .markdown-content td {
-  border: 2px solid #2c3e50 !important;
-  border-right: 2px solid #2c3e50 !important;
-  border-bottom: 2px solid #2c3e50 !important;
+  border-right: 1px solid #e4e7ed !important;
+  border-bottom: 1px solid #e4e7ed !important;
   padding: 12px 15px;
   text-align: center;
   vertical-align: middle;
@@ -1371,7 +1370,7 @@ watch(() => chatStore.currentStreamMessage?.content, () => {
   font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  border-color: #2c3e50 !important;
+  border-bottom: 2px solid #409EFF !important;
   text-align: center;
 }
 
@@ -1383,7 +1382,6 @@ watch(() => chatStore.currentStreamMessage?.content, () => {
 
 .markdown-content td {
   background: #fff;
-  border-color: #2c3e50 !important;
   transition: background-color 0.2s ease;
 }
 
@@ -1521,18 +1519,14 @@ watch(() => chatStore.currentStreamMessage?.content, () => {
   font-style: normal;
 }
 
-/* 强制表格边框显示 - 最高优先级 */
-.markdown-content table,
-.markdown-content table *,
-div table,
-div table * {
-  border: 1px solid #666666 !important;
-  border-collapse: separate !important;
-  border-spacing: 0 !important;
+/* 确保表格边框显示 */
+.markdown-content th:last-child,
+.markdown-content td:last-child {
+  border-right: none !important;
 }
 
-.markdown-content table {
-  border: 1px solid #666666 !important;
+.markdown-content tr:last-child td {
+  border-bottom: none !important;
 }
 
 /* 响应式表格 */
