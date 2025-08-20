@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>钉钉K8s运维机器人</title>
+  <meta name="description" content="基于AI的智能Kubernetes运维助手">
+  
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="/src/assets/images/favicon.svg">
+  
+  <!-- Preconnect for performance -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  
+  <!-- Element Plus styles will be imported in main.js -->
+  
+  <style>
+    /* Loading screen styles */
+    #loading {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 9999;
+      color: white;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    }
+    
+    .loading-content {
+      text-align: center;
+    }
+    
+    .loading-spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      border-top: 3px solid white;
+      animation: spin 1s ease-in-out infinite;
+      margin: 0 auto 20px;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    
+    .loading-text {
+      font-size: 16px;
+      font-weight: 500;
+    }
+    
+    /* Hide loading screen when app is ready */
+    .app-ready #loading {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <!-- KaTeX 动态加载，详见 utils/katex.js -->
+  
+  <!-- Loading screen -->
+  <div id="loading">
+    <div class="loading-content">
+      <div class="loading-spinner"></div>
+      <div class="loading-text">钉钉K8s运维机器人启动中...</div>
+    </div>
+  </div>
+  
+  <!-- Vue app mount point -->
+  <div id="app"></div>
+  
+  <!-- Main script -->
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html> 

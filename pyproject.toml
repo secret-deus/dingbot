@@ -1,0 +1,95 @@
+[tool.poetry]
+name = "dingtalk-k8s-robot"
+version = "2.0.0"
+description = "钉钉K8s运维机器人 - LLM对话+MCP工具集成"
+authors = ["DingTalk Bot Team <team@example.com>"]
+readme = "README.md"
+packages = [{include = "backend"}]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+# 核心框架
+fastapi = ">=0.104.1"
+uvicorn = ">=0.24.0"
+pydantic = ">=2.8.0"
+# HTTP 客户端
+httpx = ">=0.27.0"
+requests = ">=2.31.0"
+aiohttp = ">=3.9.0"
+# WebSocket 客户端
+websockets = ">=12.0"
+# MCP 和 AI 相关
+openai = ">=1.40.0"
+# Kubernetes 客户端
+kubernetes = ">=28.1.0"
+# 加密和安全
+cryptography = ">=41.0.7"
+# 工具库
+python-dotenv = ">=1.0.0"
+loguru = ">=0.7.2"
+# 重试和异常处理
+tenacity = ">=8.2.0"
+python-multipart = "^0.0.20"
+python-socks = "^2.7.1"
+psutil = "^7.0.0"
+pycryptodome = "^3.23.0"
+# 文件监控
+watchdog = "^4.0.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+black = "^23.0.0"
+flake8 = "^6.0.0"
+mypy = "^1.5.0"
+
+[tool.poetry.scripts]
+# 开发环境脚本
+dev-backend = "scripts.dev:run_backend"
+dev-frontend = "scripts.dev:run_frontend"
+dev = "scripts.dev:main"
+
+# 构建脚本
+build = "scripts.build:build_frontend"
+
+# 生产环境脚本
+serve = "scripts.serve:main"
+start = "scripts.serve:run_production"
+
+# 工具脚本
+setup = "scripts.setup:main"
+
+# 清理脚本
+clean = "scripts.build:clean"
+
+[tool.poetry.urls]
+"Homepage" = "https://github.com/your-org/dingtalk-k8s-robot"
+"Repository" = "https://github.com/your-org/dingtalk-k8s-robot"
+"Documentation" = "https://github.com/your-org/dingtalk-k8s-robot/blob/main/README.md"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 88
+target-version = ['py39']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true 

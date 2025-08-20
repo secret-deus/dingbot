@@ -1,0 +1,85 @@
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "k8s-mcp"
+version = "1.0.0"
+description = "Kubernetes MCP服务器 - 为钉钉K8s运维机器人提供真实K8s操作支持"
+readme = "README.md"
+license = "MIT"
+authors = ["K8s MCP Team <admin@example.com>"]
+keywords = ["kubernetes", "mcp", "automation", "devops", "k8s"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Systems Administration",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+packages = [{include = "k8s_mcp", from = "src"}]
+include = ["src/k8s_mcp/config/*.yaml", "src/k8s_mcp/config/*.json"]
+
+[tool.poetry.urls]
+Homepage = "https://github.com/example/k8s-mcp"
+Repository = "https://github.com/example/k8s-mcp"
+Issues = "https://github.com/example/k8s-mcp/issues"
+
+[tool.poetry.dependencies]
+python = "^3.9"
+fastapi = "^0.104.0"
+uvicorn = {extras = ["standard"], version = "^0.24.0"}
+pydantic = "^2.8.0"
+pydantic-settings = "^2.4.0"
+kubernetes = "^29.0.0"
+httpx = "^0.27.0"
+loguru = "^0.7.0"
+pyyaml = "^6.0"
+python-dotenv = "^1.0.0"
+orjson = "^3.9.0"
+aiofiles = "^23.0.0"
+cryptography = "^41.0.0"
+networkx = "^3.2.1"
+psutil = "^7.0.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+pytest-asyncio = "^0.21.0"
+pytest-cov = "^4.1.0"
+black = "^23.0.0"
+isort = "^5.12.0"
+mypy = "^1.5.0"
+
+[tool.poetry.scripts]
+k8s-mcp-server = "k8s_mcp.server:main"
+
+# Black配置
+[tool.black]
+line-length = 88
+target-version = ['py38', 'py39', 'py310', 'py311']
+include = '\.pyi?$'
+
+# isort配置
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = ["k8s_mcp"]
+
+# Pytest配置
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q --strict-markers"
+markers = [
+    "asyncio: mark test as asyncio test",
+]
+testpaths = ["tests"]
+asyncio_mode = "auto" 
