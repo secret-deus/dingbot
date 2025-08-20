@@ -28,6 +28,15 @@ from .security.config import MaskingConfig
 class EnhancedLLMProcessor:
     """简化的LLM处理器 - 直接基于环境变量配置"""
     
+    # 结果大小管理配置
+    MAX_RESULT_SIZE = 50000  # 50KB 字符限制
+    MAX_RESULT_LINES = 1000  # 最大行数限制
+    SUMMARY_TARGET_SIZE = 8000  # 摘要目标大小
+    
+    # 上下文管理配置
+    MAX_CONTEXT_TOKENS = 100000  # 最大上下文token数（估算）
+    MAX_HISTORY_MESSAGES = 20  # 最大历史消息数
+    
     def __init__(self, config_dict: Dict[str, Any], mcp_client=None):
         """
         初始化LLM处理器
@@ -140,6 +149,248 @@ class EnhancedLLMProcessor:
     def _get_model_name(self) -> str:
         """获取用于API调用的模型名称"""
         return self.config.get("model", "gpt-3.5-turbo")
+    
+    def _check_result_size(self, result: Any) -> bool:
+        """检查结果是否过大"""
+        try:
+            # 序列化结果以检查大小
+            result_str = json.dumps(result, ensure_ascii=False, indent=2)
+            result_size = len(result_str.encode('utf-8'))
+            result_lines = result_str.count('\n')
+            
+            logger.debug(f"结果大小检查: {result_size} bytes, {result_lines} lines")
+            
+            return (result_size > self.MAX_RESULT_SIZE or 
+                   result_lines > self.MAX_RESULT_LINES)
+        except Exception as e:
+            logger.warning(f"检查结果大小时出错: {e}")
+            return False
+    
+    def _extract_key_information(self, result: Any, tool_name: str) -> str:
+        """智能提炼关键信息"""
+        try:
+            # 将结果转换为字符串
+            if isinstance(result, str):
+                content = result
+            else:
+                content = json.dumps(result, ensure_ascii=False, indent=2)
+            
+            # 根据工具类型采用不同的提炼策略
+            if tool_name.startswith('k8s_'):
+                return self._extract_k8s_key_info(content, tool_name)
+            elif 'log' in tool_name.lower():
+                return self._extract_log_key_info(content)
+            else:
+                return self._extract_general_key_info(content)
+                
+        except Exception as e:
+            logger.error(f"提炼关键信息时出错: {e}")
+            return str(result)[:self.SUMMARY_TARGET_SIZE] + "\n[信息提炼失败，已截断]"
+    
+    def _extract_k8s_key_info(self, content: str, tool_name: str) -> str:
+        """提炼Kubernetes相关信息的关键内容"""
+        lines = content.split('\n')
+        key_lines = []
+        
+        # 保留重要的状态信息
+        important_keywords = [
+            'status', 'state', 'ready', 'running', 'pending', 'failed', 'error',
+            'warning', 'critical', 'name', 'namespace', 'age', 'restarts',
+            'cpu', 'memory', 'node', 'image', 'port', 'service', 'endpoint'
+        ]
+        
+        # 统计信息优先保留
+        summary_lines = []
+        detail_lines = []
+        
+        for line in lines:
+            line_lower = line.lower()
+            
+            # 保留包含重要关键词的行
+            if any(keyword in line_lower for keyword in important_keywords):
+                if any(word in line_lower for word in ['total', 'count', 'summary', '总计', '数量']):
+                    summary_lines.append(line)
+                else:
+                    detail_lines.append(line)
+            # 保留表格头部
+            elif '|' in line and ('name' in line_lower or 'namespace' in line_lower):
+                key_lines.append(line)
+        
+        # 组合结果：摘要 + 部分详情
+        result_lines = summary_lines[:10] + key_lines[:5] + detail_lines[:20]
+        
+        if len(result_lines) < len(lines):
+            result_lines.append(f"\n[已提炼关键信息，原始数据 {len(lines)} 行，显示 {len(result_lines)} 行]")
+        
+        return '\n'.join(result_lines)
+    
+    def _extract_log_key_info(self, content: str) -> str:
+        """提炼日志信息的关键内容"""
+        lines = content.split('\n')
+        key_lines = []
+        
+        # 日志级别优先级
+        priority_levels = ['error', 'warn', 'fatal', 'critical']
+        normal_levels = ['info', 'debug']
+        
+        error_lines = []
+        warning_lines = []
+        info_lines = []
+        
+        for line in lines:
+            line_lower = line.lower()
+            
+            if any(level in line_lower for level in priority_levels):
+                error_lines.append(line)
+            elif 'warn' in line_lower:
+                warning_lines.append(line)
+            elif any(level in line_lower for level in normal_levels):
+                if len(info_lines) < 10:  # 限制普通日志数量
+                    info_lines.append(line)
+        
+        # 组合结果：错误 + 警告 + 部分信息
+        result_lines = error_lines[:15] + warning_lines[:10] + info_lines[:5]
+        
+        if len(result_lines) < len(lines):
+            result_lines.append(f"\n[已提炼关键日志，原始 {len(lines)} 行，显示 {len(result_lines)} 行]")
+        
+        return '\n'.join(result_lines)
+    
+    def _extract_general_key_info(self, content: str) -> str:
+        """提炼一般内容的关键信息"""
+        lines = content.split('\n')
+        
+        # 如果内容不是很大，直接返回
+        if len(content) <= self.SUMMARY_TARGET_SIZE:
+            return content
+        
+        # 保留前面和后面的部分内容
+        total_lines = len(lines)
+        keep_start = min(50, total_lines // 3)
+        keep_end = min(20, total_lines // 4)
+        
+        if keep_start + keep_end >= total_lines:
+            return content
+        
+        start_lines = lines[:keep_start]
+        end_lines = lines[-keep_end:] if keep_end > 0 else []
+        
+        result_lines = start_lines + [f"\n[... 省略 {total_lines - keep_start - keep_end} 行 ...]"] + end_lines
+        
+        return '\n'.join(result_lines)
+    
+    def _process_mcp_result(self, result: Any, tool_name: str) -> str:
+        """处理MCP工具调用结果，如果过大则智能提炼"""
+        try:
+            # 检查结果大小
+            if self._check_result_size(result):
+                logger.info(f"工具 {tool_name} 结果过大，正在提炼关键信息...")
+                processed_result = self._extract_key_information(result, tool_name)
+                
+                # 添加分页建议
+                pagination_suggestion = self._generate_pagination_suggestion(tool_name, result)
+                if pagination_suggestion:
+                    processed_result += f"\n\n{pagination_suggestion}"
+                
+                logger.info(f"关键信息提炼完成，大小从 {len(str(result))} 减少到 {len(processed_result)}")
+                return processed_result
+            else:
+                # 结果不大，直接序列化
+                return json.dumps(result, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.error(f"处理MCP结果时出错: {e}")
+            # 出错时使用简单截断
+            result_str = str(result)
+            if len(result_str) > self.SUMMARY_TARGET_SIZE:
+                return result_str[:self.SUMMARY_TARGET_SIZE] + "\n[结果处理出错，已截断]"
+            return result_str
+    
+    def _generate_pagination_suggestion(self, tool_name: str, result: Any) -> str:
+        """生成分页建议"""
+        suggestions = []
+        
+        # 针对不同工具类型生成建议
+        if tool_name.startswith('k8s_get_'):
+            if 'pods' in tool_name:
+                suggestions.append("💡 建议使用分页参数：--limit=20 --namespace=specific-namespace")
+                suggestions.append("💡 或使用标签选择器：--selector=app=your-app")
+            elif 'logs' in tool_name:
+                suggestions.append("💡 建议限制日志行数：--tail=100 --since=1h")
+                suggestions.append("💡 或指定时间范围：--since-time=2024-01-01T00:00:00Z")
+            elif 'events' in tool_name:
+                suggestions.append("💡 建议使用时间过滤：--since=30m")
+                suggestions.append("💡 或按类型过滤：--field-selector=type=Warning")
+        
+        elif tool_name.startswith('k8s_describe_'):
+            suggestions.append("💡 建议指定具体资源名称而不是描述所有资源")
+        
+        # 通用建议
+        if suggestions:
+            suggestions.append("💡 如需完整数据，请使用更具体的查询条件")
+            return "📋 **优化建议**：\n" + "\n".join(suggestions)
+        
+        return ""
+    
+    def _estimate_tokens(self, text: str) -> int:
+        """估算文本的token数量（粗略估算：1个token约4个字符）"""
+        return len(text) // 4
+    
+    def _optimize_context_size(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """优化上下文大小，避免超出限制"""
+        if len(messages) <= 2:  # 至少保留系统消息和用户消息
+            return messages
+        
+        # 计算总token数
+        total_tokens = sum(self._estimate_tokens(str(msg.get('content', ''))) for msg in messages)
+        
+        if total_tokens <= self.MAX_CONTEXT_TOKENS and len(messages) <= self.MAX_HISTORY_MESSAGES:
+            return messages
+        
+        logger.info(f"上下文过大 ({total_tokens} tokens, {len(messages)} messages)，正在优化...")
+        
+        # 保留系统消息（第一条）和最近的用户消息
+        system_messages = [msg for msg in messages if msg.get('role') == 'system']
+        user_messages = [msg for msg in messages if msg.get('role') == 'user']
+        assistant_messages = [msg for msg in messages if msg.get('role') == 'assistant']
+        tool_messages = [msg for msg in messages if msg.get('role') == 'tool']
+        
+        # 构建优化后的消息列表
+        optimized_messages = []
+        
+        # 1. 保留系统消息
+        optimized_messages.extend(system_messages)
+        
+        # 2. 保留最近的对话（用户-助手-工具的完整循环）
+        recent_conversations = []
+        current_tokens = sum(self._estimate_tokens(str(msg.get('content', ''))) for msg in system_messages)
+        
+        # 从最后开始，保留完整的对话循环
+        i = len(messages) - 1
+        while i >= 0 and len(recent_conversations) < self.MAX_HISTORY_MESSAGES // 2:
+            msg = messages[i]
+            msg_tokens = self._estimate_tokens(str(msg.get('content', '')))
+            
+            if current_tokens + msg_tokens > self.MAX_CONTEXT_TOKENS:
+                break
+                
+            recent_conversations.insert(0, msg)
+            current_tokens += msg_tokens
+            i -= 1
+        
+        # 3. 如果还有空间，添加摘要信息
+        if len(recent_conversations) < len(messages) - len(system_messages):
+            summary_msg = {
+                "role": "system",
+                "content": f"[上下文摘要: 省略了 {len(messages) - len(system_messages) - len(recent_conversations)} 条历史消息以优化性能]"
+            }
+            optimized_messages.append(summary_msg)
+        
+        optimized_messages.extend(recent_conversations)
+        
+        final_tokens = sum(self._estimate_tokens(str(msg.get('content', ''))) for msg in optimized_messages)
+        logger.info(f"上下文优化完成: {len(messages)} -> {len(optimized_messages)} messages, {total_tokens} -> {final_tokens} tokens")
+        
+        return optimized_messages
 
     async def process_message(self, message: str) -> str:
         """处理单个消息（简化版）"""
@@ -1222,10 +1473,13 @@ Kubernetes 节点信息:
                     }]
                 })
                 
+                # 使用智能结果处理
+                processed_content = self._process_mcp_result(result, tool_call.function.name)
+                
                 openai_messages.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
-                    "content": json.dumps(result, ensure_ascii=False, indent=2)
+                    "content": processed_content
                 })
                 
             except Exception as e:
@@ -1241,10 +1495,13 @@ Kubernetes 节点信息:
         # 如果有工具调用结果，再次调用 LLM 生成最终回复
         if function_results:
             try:
+                # 优化上下文大小
+                optimized_messages = self._optimize_context_size(openai_messages)
+                
                 # 使用异步create方法
                 final_response = await self.client.chat.completions.create(
                     model=self._get_model_name(),
-                    messages=openai_messages,
+                    messages=optimized_messages,
                     temperature=self.config.get("temperature", 0.7),
                     max_tokens=self.config.get("max_tokens", 2000)
                 )
