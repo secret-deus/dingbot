@@ -166,7 +166,7 @@ class EnhancedLLMProcessor:
             logger.warning(f"检查结果大小时出错: {e}")
             return False
     
-    def _extract_key_information(self, result: Any, tool_name: str) -> str:
+    def _extract_key_information(self, result: Any, tool_name: str, context: Optional[Dict[str, Any]] = None) -> str:
         """智能提炼关键信息"""
         try:
             # 将结果转换为字符串
@@ -177,7 +177,7 @@ class EnhancedLLMProcessor:
             
             # 根据工具类型采用不同的提炼策略
             if tool_name.startswith('k8s_'):
-                return self._extract_k8s_key_info(content, tool_name)
+                return self._extract_k8s_key_info(content, tool_name, context)
             elif 'log' in tool_name.lower():
                 return self._extract_log_key_info(content)
             else:
@@ -187,10 +187,14 @@ class EnhancedLLMProcessor:
             logger.error(f"提炼关键信息时出错: {e}")
             return str(result)[:self.SUMMARY_TARGET_SIZE] + "\n[信息提炼失败，已截断]"
     
-    def _extract_k8s_key_info(self, content: str, tool_name: str) -> str:
+    def _extract_k8s_key_info(self, content: str, tool_name: str, context: Optional[Dict[str, Any]] = None) -> str:
         """提炼Kubernetes相关信息的关键内容"""
         lines = content.split('\n')
-        key_lines = []
+        
+        # 从上下文中提取用户查询的资源信息
+        target_resources = self._extract_target_resources_from_context(context)
+        if target_resources:
+            logger.info(f"🎯 检测到目标资源: {target_resources}")
         
         # 保留重要的状态信息
         important_keywords = [
@@ -199,30 +203,136 @@ class EnhancedLLMProcessor:
             'cpu', 'memory', 'node', 'image', 'port', 'service', 'endpoint'
         ]
         
-        # 统计信息优先保留
+        # 分类收集信息
         summary_lines = []
-        detail_lines = []
+        target_resource_lines = []  # 用户查询的特定资源
+        important_lines = []
+        table_headers = []
+        other_lines = []
         
         for line in lines:
             line_lower = line.lower()
             
-            # 保留包含重要关键词的行
-            if any(keyword in line_lower for keyword in important_keywords):
-                if any(word in line_lower for word in ['total', 'count', 'summary', '总计', '数量']):
-                    summary_lines.append(line)
-                else:
-                    detail_lines.append(line)
+            # 优先保留用户查询的特定资源
+            if target_resources and any(resource.lower() in line_lower for resource in target_resources):
+                target_resource_lines.append(line)
+                continue
+            
+            # 保留统计摘要信息
+            if any(word in line_lower for word in ['total', 'count', 'summary', '总计', '数量', 'namespace']):
+                summary_lines.append(line)
             # 保留表格头部
-            elif '|' in line and ('name' in line_lower or 'namespace' in line_lower):
-                key_lines.append(line)
+            elif '|' in line and ('name' in line_lower or 'namespace' in line_lower or 'ready' in line_lower):
+                table_headers.append(line)
+            # 保留包含重要关键词的行
+            elif any(keyword in line_lower for keyword in important_keywords):
+                # 优先保留错误和异常状态
+                if any(word in line_lower for word in ['error', 'failed', 'warning', 'critical', 'pending']):
+                    important_lines.insert(0, line)  # 插入到前面
+                else:
+                    important_lines.append(line)
+            else:
+                other_lines.append(line)
         
-        # 组合结果：摘要 + 部分详情
-        result_lines = summary_lines[:10] + key_lines[:5] + detail_lines[:20]
+        # 智能组合结果：目标资源 > 摘要 > 表头 > 重要信息 > 其他
+        result_lines = []
         
+        # 1. 用户查询的特定资源（全部保留）
+        if target_resource_lines:
+            result_lines.extend(target_resource_lines)
+            result_lines.append("") # 空行分隔
+        
+        # 2. 摘要信息（前10行）
+        result_lines.extend(summary_lines[:10])
+        
+        # 3. 表格头部（前3行）
+        result_lines.extend(table_headers[:3])
+        
+        # 4. 重要信息（前15行，错误优先）
+        result_lines.extend(important_lines[:15])
+        
+        # 5. 如果还有空间，添加其他信息
+        remaining_space = max(0, 30 - len(result_lines))
+        if remaining_space > 0:
+            result_lines.extend(other_lines[:remaining_space])
+        
+        # 添加提炼说明
         if len(result_lines) < len(lines):
-            result_lines.append(f"\n[已提炼关键信息，原始数据 {len(lines)} 行，显示 {len(result_lines)} 行]")
+            filtered_count = len(lines) - len(result_lines)
+            result_lines.append(f"\n[已智能提炼关键信息，原始数据 {len(lines)} 行，显示 {len(result_lines)} 行，过滤 {filtered_count} 行]")
+            
+            # 如果有目标资源，特别说明
+            if target_resource_lines:
+                result_lines.append(f"[✅ 已优先保留查询的目标资源: {', '.join(target_resources)}]")
         
         return '\n'.join(result_lines)
+    
+    def _extract_target_resources_from_context(self, context: Optional[Dict[str, Any]]) -> List[str]:
+        """从上下文中提取用户查询的目标资源名称"""
+        if not context:
+            return []
+        
+        target_resources = []
+        
+        # 从工具参数中提取
+        parameters = context.get('parameters', {})
+        if isinstance(parameters, dict):
+            # 检查常见的资源名称参数
+            for param_name in ['name', 'resource_name', 'deployment_name', 'pod_name', 'service_name']:
+                if param_name in parameters:
+                    target_resources.append(str(parameters[param_name]))
+        
+        # 从用户消息中提取（增强的关键词匹配）
+        user_message = context.get('user_message', '')
+        if isinstance(user_message, str):
+            import re
+            
+            # 方法1: 匹配带连字符的资源名称模式
+            hyphenated_patterns = re.findall(r'\b[a-z0-9]+(?:-[a-z0-9]+)+\b', user_message.lower())
+            target_resources.extend(hyphenated_patterns)
+            
+            # 方法2: 匹配引号中的资源名称
+            quoted_patterns = re.findall(r'["\']([a-z0-9-]+)["\']', user_message.lower())
+            target_resources.extend(quoted_patterns)
+            
+            # 方法3: 匹配deployment/pod/service等关键词后的名称
+            resource_type_patterns = re.findall(r'(?:deployment|pod|service|configmap|secret|ingress)\s+([a-z0-9-]+)', user_message.lower())
+            target_resources.extend(resource_type_patterns)
+            
+            # 方法4: 匹配namespace后的资源名称
+            namespace_patterns = re.findall(r'(?:namespace|ns)\s+([a-z0-9-]+).*?(?:deployment|pod|service)\s+([a-z0-9-]+)', user_message.lower())
+            for match in namespace_patterns:
+                if len(match) > 1:
+                    target_resources.append(match[1])  # 资源名称
+            
+            # 方法5: 匹配标签选择器中的应用名称
+            label_patterns = re.findall(r'(?:app|label)[\s=]+([a-z0-9-]+)', user_message.lower())
+            target_resources.extend(label_patterns)
+            
+            # 方法6: 匹配selector参数
+            selector_patterns = re.findall(r'selector[\s=]+(?:app=)?([a-z0-9-]+)', user_message.lower())
+            target_resources.extend(selector_patterns)
+            
+            # 过滤掉常见的非资源词汇
+            common_words = {
+                'get', 'show', 'list', 'describe', 'status', 'deployment', 'pod', 'service', 
+                'namespace', 'the', 'of', 'in', 'for', 'with', 'and', 'or', 'check', 'view',
+                'test', 'prod', 'dev', 'staging', 'default', 'kube-system', 'kube-public'
+            }
+            
+            # 清理和过滤
+            filtered_resources = []
+            for resource in target_resources:
+                if (len(resource) > 2 and 
+                    resource not in common_words and 
+                    not resource.startswith('kube-') and
+                    resource != 'system'):
+                    filtered_resources.append(resource)
+            
+            target_resources = filtered_resources
+        
+        # 去重并返回
+        return list(set(target_resources))
     
     def _extract_log_key_info(self, content: str) -> str:
         """提炼日志信息的关键内容"""
@@ -279,13 +389,13 @@ class EnhancedLLMProcessor:
         
         return '\n'.join(result_lines)
     
-    def _process_mcp_result(self, result: Any, tool_name: str) -> str:
+    def _process_mcp_result(self, result: Any, tool_name: str, context: Optional[Dict[str, Any]] = None) -> str:
         """处理MCP工具调用结果，如果过大则智能提炼"""
         try:
             # 检查结果大小
             if self._check_result_size(result):
                 logger.info(f"工具 {tool_name} 结果过大，正在提炼关键信息...")
-                processed_result = self._extract_key_information(result, tool_name)
+                processed_result = self._extract_key_information(result, tool_name, context)
                 
                 # 添加分页建议
                 pagination_suggestion = self._generate_pagination_suggestion(tool_name, result)
@@ -312,8 +422,15 @@ class EnhancedLLMProcessor:
         # 针对不同工具类型生成建议
         if tool_name.startswith('k8s_get_'):
             if 'pods' in tool_name:
-                suggestions.append("💡 建议使用分页参数：--limit=20 --namespace=specific-namespace")
-                suggestions.append("💡 或使用标签选择器：--selector=app=your-app")
+                suggestions.append("💡 建议使用标签选择器：--selector=app=med-marketing")
+                suggestions.append("💡 或限制命名空间：--namespace=test --limit=20")
+                suggestions.append("💡 查询特定应用的所有资源：kubectl get all -l app=med-marketing -n test")
+            elif 'deployment' in tool_name:
+                suggestions.append("💡 建议使用标签选择器：--selector=app=med-marketing")
+                suggestions.append("💡 或指定具体名称：--name=med-marketing --namespace=test")
+            elif 'service' in tool_name:
+                suggestions.append("💡 建议使用标签选择器：--selector=app=med-marketing")
+                suggestions.append("💡 查询相关endpoints：kubectl get endpoints -l app=med-marketing -n test")
             elif 'logs' in tool_name:
                 suggestions.append("💡 建议限制日志行数：--tail=100 --since=1h")
                 suggestions.append("💡 或指定时间范围：--since-time=2024-01-01T00:00:00Z")
@@ -1473,8 +1590,15 @@ Kubernetes 节点信息:
                     }]
                 })
                 
+                # 构建上下文信息
+                context = {
+                    'parameters': parameters,
+                    'user_message': messages[-1].content if messages else '',
+                    'tool_call_id': tool_call.id
+                }
+                
                 # 使用智能结果处理
-                processed_content = self._process_mcp_result(result, tool_call.function.name)
+                processed_content = self._process_mcp_result(result, tool_call.function.name, context)
                 
                 openai_messages.append({
                     "role": "tool",

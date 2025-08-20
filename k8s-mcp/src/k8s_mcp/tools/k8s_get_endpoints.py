@@ -33,6 +33,10 @@ class K8sGetEndpointsTool(MCPToolBase):
                     "name": {
                         "type": "string",
                         "description": "Service名称，为空时获取命名空间下所有端点"
+                    },
+                    "label_selector": {
+                        "type": "string",
+                        "description": "标签选择器，例如: app=med-marketing 或 app=nginx,version=v1"
                     }
                 },
                 "required": []
@@ -43,6 +47,7 @@ class K8sGetEndpointsTool(MCPToolBase):
         try:
             namespace = arguments.get("namespace") or ""
             name = arguments.get("name") or ""
+            label_selector = arguments.get("label_selector")
             
             # 安全地处理字符串参数
             if isinstance(namespace, str):
@@ -57,7 +62,11 @@ class K8sGetEndpointsTool(MCPToolBase):
                 self.k8s_client = K8sClient(self.config)
                 await self.k8s_client.connect()
             
-            result = await self.k8s_client.get_endpoints(namespace, service_name)
+            result = await self.k8s_client.get_endpoints(
+                namespace=namespace, 
+                name=service_name,
+                label_selector=label_selector
+            )
             return MCPCallToolResult.success(result)
             
         except K8sClientError as e:

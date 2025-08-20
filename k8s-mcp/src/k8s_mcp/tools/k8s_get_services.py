@@ -13,7 +13,7 @@ class K8sGetServicesTool(MCPToolBase):
     def __init__(self):
         super().__init__(
             name="k8s-get-services",
-            description="获取Kubernetes Service列表"
+            description="获取Kubernetes Service列表或单个Service详细信息"
         )
         self.config = get_config()
         self.k8s_client = None
@@ -28,6 +28,14 @@ class K8sGetServicesTool(MCPToolBase):
                     "namespace": {
                         "type": "string",
                         "description": "命名空间名称"
+                    },
+                    "label_selector": {
+                        "type": "string",
+                        "description": "标签选择器，例如: app=med-marketing 或 app=nginx,version=v1"
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Service名称，指定时获取单个Service详细信息"
                     }
                 },
                 "required": []
@@ -37,12 +45,18 @@ class K8sGetServicesTool(MCPToolBase):
     async def execute(self, arguments: Dict[str, Any]) -> MCPCallToolResult:
         try:
             namespace = arguments.get("namespace")
+            label_selector = arguments.get("label_selector")
+            name = arguments.get("name")
             
             if not self.k8s_client:
                 self.k8s_client = K8sClient(self.config)
                 await self.k8s_client.connect()
             
-            result = await self.k8s_client.get_services(namespace=namespace)
+            result = await self.k8s_client.get_services(
+                namespace=namespace,
+                label_selector=label_selector,
+                name=name
+            )
             return MCPCallToolResult.success(result)
             
         except Exception as e:

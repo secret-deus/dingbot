@@ -201,8 +201,8 @@ class K8sClient:
             # 添加更详细的错误信息
             raise K8sClientError(f"获取Pod列表时发生错误: {str(e)}")
     
-    async def get_services(self, namespace: str = None, label_selector: str = None) -> Dict[str, Any]:
-        """获取Service列表"""
+    async def get_services(self, namespace: str = None, label_selector: str = None, name: str = None) -> Dict[str, Any]:
+        """获取Service列表或单个Service"""
         self._check_connection()
         
         try:
@@ -211,25 +211,35 @@ class K8sClient:
             
             self._check_namespace_permission(namespace)
             
-            if namespace == "all":
-                services = self.core_v1.list_service_for_all_namespaces(
-                    label_selector=label_selector,
-                    limit=100  # 简化配置，使用固定限制
+            # 如果指定了name，获取单个service
+            if name:
+                service = self.core_v1.read_namespaced_service(
+                    name=name,
+                    namespace=namespace
                 )
+                services_list = [service]
             else:
-                services = self.core_v1.list_namespaced_service(
-                    namespace=namespace,
-                    label_selector=label_selector,
-                    limit=100  # 简化配置，使用固定限制
-                )
+                # 获取service列表
+                if namespace == "all":
+                    services = self.core_v1.list_service_for_all_namespaces(
+                        label_selector=label_selector,
+                        limit=100  # 简化配置，使用固定限制
+                    )
+                else:
+                    services = self.core_v1.list_namespaced_service(
+                        namespace=namespace,
+                        label_selector=label_selector,
+                        limit=100  # 简化配置，使用固定限制
+                    )
+                services_list = services.items
             
             result = {
                 "namespace": namespace,
-                "total": len(services.items),
+                "total": len(services_list),
                 "items": []
             }
             
-            for service in services.items:
+            for service in services_list:
                 # 安全地访问Service属性
                 metadata = service.metadata or type('obj', (object,), {'name': 'unknown', 'namespace': 'unknown', 'creation_timestamp': None})()
                 spec = service.spec or type('obj', (object,), {'type': 'Unknown', 'cluster_ip': None, 'external_ips': None, 'ports': None, 'selector': None})()
@@ -267,8 +277,8 @@ class K8sClient:
         except Exception as e:
             raise K8sClientError(f"获取Service列表时发生错误: {str(e)}")
     
-    async def get_deployments(self, namespace: str = None, label_selector: str = None) -> Dict[str, Any]:
-        """获取Deployment列表"""
+    async def get_deployments(self, namespace: str = None, label_selector: str = None, name: str = None) -> Dict[str, Any]:
+        """获取Deployment列表或单个Deployment"""
         self._check_connection()
         
         try:
@@ -277,25 +287,35 @@ class K8sClient:
             
             self._check_namespace_permission(namespace)
             
-            if namespace == "all":
-                deployments = self.apps_v1.list_deployment_for_all_namespaces(
-                    label_selector=label_selector,
-                    limit=100  # 简化配置，使用固定限制
+            # 如果指定了name，获取单个deployment
+            if name:
+                deployment = self.apps_v1.read_namespaced_deployment(
+                    name=name,
+                    namespace=namespace
                 )
+                deployments_list = [deployment]
             else:
-                deployments = self.apps_v1.list_namespaced_deployment(
-                    namespace=namespace,
-                    label_selector=label_selector,
-                    limit=100  # 简化配置，使用固定限制
-                )
+                # 获取deployment列表
+                if namespace == "all":
+                    deployments = self.apps_v1.list_deployment_for_all_namespaces(
+                        label_selector=label_selector,
+                        limit=100  # 简化配置，使用固定限制
+                    )
+                else:
+                    deployments = self.apps_v1.list_namespaced_deployment(
+                        namespace=namespace,
+                        label_selector=label_selector,
+                        limit=100  # 简化配置，使用固定限制
+                    )
+                deployments_list = deployments.items
             
             result = {
                 "namespace": namespace,
-                "total": len(deployments.items),
+                "total": len(deployments_list),
                 "items": []
             }
             
-            for deployment in deployments.items:
+            for deployment in deployments_list:
                 deployment_info = {
                     "name": deployment.metadata.name,
                     "namespace": deployment.metadata.namespace,
@@ -1405,12 +1425,13 @@ class K8sClient:
             logger.error(f"更新Service时发生未知错误: {str(e)}")
             raise K8sClientError(f"更新Service失败: {str(e)}")
     
-    async def get_endpoints(self, namespace: str = None, name: str = None) -> Dict[str, Any]:
+    async def get_endpoints(self, namespace: str = None, name: str = None, label_selector: str = None) -> Dict[str, Any]:
         """获取Service端点信息
         
         Args:
             namespace: 命名空间，为None时使用默认命名空间
             name: Service名称，为None时获取所有端点
+            label_selector: 标签选择器，例如 app=med-marketing
             
         Returns:
             端点信息
@@ -1434,6 +1455,7 @@ class K8sClient:
                 # 获取命名空间下所有端点
                 endpoints_response = self.core_v1.list_namespaced_endpoints(
                     namespace=namespace,
+                    label_selector=label_selector,
                     limit=100
                 )
                 endpoints_list = endpoints_response.items
