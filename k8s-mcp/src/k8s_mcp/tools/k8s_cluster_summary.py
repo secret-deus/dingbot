@@ -44,8 +44,14 @@ class K8sClusterSummaryTool(MCPToolBase):
         self.last_execution_time = None
         self.avg_execution_time = 0
         
+        # 资源监控工具实例
+        self.metrics_tool = None
+        
         # 初始化智能组件（如果启用）
         self._initialize_intelligent_components()
+        
+        # 初始化资源监控工具
+        self._initialize_metrics_tool()
         
         logger.info("K8s集群摘要工具 已初始化")
 
@@ -76,6 +82,16 @@ class K8sClusterSummaryTool(MCPToolBase):
             self.kg = None
             self.summary_generator = None
             self.intelligent_mode = False
+
+    def _initialize_metrics_tool(self):
+        """初始化资源监控工具"""
+        try:
+            from .k8s_get_cluster_metrics import K8sGetClusterMetricsTool
+            self.metrics_tool = K8sGetClusterMetricsTool()
+            logger.info("资源监控工具初始化完成")
+        except Exception as e:
+            logger.warning(f"资源监控工具初始化失败: {e}")
+            self.metrics_tool = None
 
     def get_schema(self) -> MCPToolSchema:
         """获取工具Schema定义"""
@@ -292,6 +308,31 @@ class K8sClusterSummaryTool(MCPToolBase):
                     "relationship_analysis": True
                 }
                 
+                # 添加资源监控数据
+                if self.metrics_tool:
+                    try:
+                        logger.info("获取集群资源监控数据（智能模式）")
+                        metrics_result = await self.metrics_tool.execute({
+                            "include_node_details": include_details,
+                            "include_pod_metrics": False
+                        })
+                        
+                        if metrics_result.success and metrics_result.content:
+                            # 解析MCPCallToolResult的content
+                            import json
+                            if len(metrics_result.content) > 0:
+                                metrics_data = json.loads(metrics_result.content[0].get("text", "{}"))
+                                summary["resource_monitoring"] = metrics_data
+                                summary["resource_summary"] = self._extract_resource_summary(metrics_data)
+                            else:
+                                logger.warning("资源监控数据为空")
+                            logger.info("资源监控数据获取成功（智能模式）")
+                        else:
+                            logger.warning("资源监控数据获取失败（智能模式）")
+                            
+                    except Exception as e:
+                        logger.error(f"获取资源监控数据时出错（智能模式）: {e}")
+                
             elif scope == "namespace":
                 # 命名空间级摘要
                 summary = self._generate_namespace_summary(focus_namespace, include_details)
@@ -382,7 +423,67 @@ class K8sClusterSummaryTool(MCPToolBase):
             }
         }
         
+        # 尝试获取资源监控数据
+        if self.metrics_tool:
+            try:
+                logger.info("获取集群资源监控数据")
+                metrics_result = await self.metrics_tool.execute({
+                    "include_node_details": include_details,
+                    "include_pod_metrics": False
+                })
+                
+                if metrics_result.success and metrics_result.content:
+                    # 解析MCPCallToolResult的content
+                    import json
+                    if len(metrics_result.content) > 0:
+                        metrics_data = json.loads(metrics_result.content[0].get("text", "{}"))
+                        summary["resource_monitoring"] = metrics_data
+                        summary["basic_analysis"]["resource_summary"] = self._extract_resource_summary(metrics_data)
+                    else:
+                        logger.warning("资源监控数据为空")
+                    logger.info("资源监控数据获取成功")
+                else:
+                    logger.warning("资源监控数据获取失败")
+                    
+            except Exception as e:
+                logger.error(f"获取资源监控数据时出错: {e}")
+        
         return summary
+
+    def _extract_resource_summary(self, metrics_data: Dict[str, Any]) -> Dict[str, Any]:
+        """从资源监控数据中提取关键摘要信息"""
+        try:
+            resource_util = metrics_data.get("resource_utilization", {})
+            capacity_analysis = metrics_data.get("capacity_analysis", {})
+            cluster_summary = metrics_data.get("cluster_summary", {})
+            
+            cpu_data = resource_util.get("cpu", {})
+            memory_data = resource_util.get("memory", {})
+            
+            summary = {
+                "cluster_health": capacity_analysis.get("overall_health", "unknown"),
+                "total_nodes": cluster_summary.get("total_nodes", 0),
+                "ready_nodes": cluster_summary.get("ready_nodes", 0),
+                "running_pods": cluster_summary.get("running_pods", 0),
+                "cpu_utilization": {
+                    "percentage": cpu_data.get("utilization_percentage", 0),
+                    "pressure": capacity_analysis.get("cpu_pressure", "unknown"),
+                    "available_cores": cpu_data.get("available_cores", 0),
+                    "total_cores": cpu_data.get("total_allocatable_cores", 0)
+                },
+                "memory_utilization": {
+                    "percentage": memory_data.get("utilization_percentage", 0),
+                    "pressure": capacity_analysis.get("memory_pressure", "unknown"),
+                    "available_gb": memory_data.get("available_gb", 0),
+                    "total_gb": memory_data.get("total_allocatable_gb", 0)
+                }
+            }
+            
+            return summary
+            
+        except Exception as e:
+            logger.error(f"提取资源摘要失败: {e}")
+            return {"error": "资源摘要提取失败"}
 
     def _generate_namespace_summary(self, namespace: str, include_details: bool) -> Dict[str, Any]:
         """生成命名空间级摘要"""

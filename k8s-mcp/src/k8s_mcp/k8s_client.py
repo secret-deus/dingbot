@@ -134,13 +134,13 @@ class K8sClient:
             if namespace == "all":
                 pods = self.core_v1.list_pod_for_all_namespaces(
                     label_selector=label_selector,
-                    limit=100  # 简化配置，使用固定限制
+                    limit=100000  # 增加限制以获取更多Pod
                 )
             else:
                 pods = self.core_v1.list_namespaced_pod(
                     namespace=namespace,
                     label_selector=label_selector,
-                    limit=100  # 简化配置，使用固定限制
+                    limit=100000  # 增加限制以获取更多Pod
                 )
             
             # 格式化结果
@@ -179,6 +179,39 @@ class K8sClient:
                             "ready": False,
                             "restart_count": 0
                         }
+                        
+                        # 获取容器资源配置
+                        resources = getattr(container, 'resources', None)
+                        if resources:
+                            container_info["resources"] = {}
+                            
+                            # 获取资源请求
+                            requests = getattr(resources, 'requests', None)
+                            if requests:
+                                container_info["resources"]["requests"] = {}
+                                if hasattr(requests, 'get'):
+                                    # 如果是字典类型
+                                    container_info["resources"]["requests"] = dict(requests)
+                                else:
+                                    # 如果是Kubernetes对象类型
+                                    if hasattr(requests, 'cpu'):
+                                        container_info["resources"]["requests"]["cpu"] = str(requests.cpu)
+                                    if hasattr(requests, 'memory'):
+                                        container_info["resources"]["requests"]["memory"] = str(requests.memory)
+                            
+                            # 获取资源限制
+                            limits = getattr(resources, 'limits', None)
+                            if limits:
+                                container_info["resources"]["limits"] = {}
+                                if hasattr(limits, 'get'):
+                                    # 如果是字典类型
+                                    container_info["resources"]["limits"] = dict(limits)
+                                else:
+                                    # 如果是Kubernetes对象类型
+                                    if hasattr(limits, 'cpu'):
+                                        container_info["resources"]["limits"]["cpu"] = str(limits.cpu)
+                                    if hasattr(limits, 'memory'):
+                                        container_info["resources"]["limits"]["memory"] = str(limits.memory)
                         
                         # 获取容器状态
                         container_statuses = getattr(status, 'container_statuses', None)

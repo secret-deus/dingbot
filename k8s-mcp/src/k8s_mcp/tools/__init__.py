@@ -34,6 +34,9 @@ from .k8s_llm_generate_deployment import K8sLLMGenerateDeploymentTool
 from .k8s_relation_query import K8sRelationQueryTool
 from .k8s_cluster_summary import K8sClusterSummaryTool
 
+# 资源监控工具
+from .k8s_get_cluster_metrics import K8sGetClusterMetricsTool
+
 from ..core.tool_registry import tool_registry
 
 # 可用工具列表
@@ -55,6 +58,9 @@ SAFE_QUERY_TOOLS = [
     # 智能查询工具
     K8sRelationQueryTool,
     K8sClusterSummaryTool,
+    
+    # 资源监控工具
+    K8sGetClusterMetricsTool,
 ]
 
 # 危险的修改工具列表 - 这些工具会修改集群状态，已被禁用
