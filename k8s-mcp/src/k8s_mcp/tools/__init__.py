@@ -36,6 +36,7 @@ from .k8s_cluster_summary import K8sClusterSummaryTool
 
 # 资源监控工具
 from .k8s_get_cluster_metrics import K8sGetClusterMetricsTool
+from .k8s_prometheus_resource_analysis import K8sPrometheusResourceAnalysisTool
 
 from ..core.tool_registry import tool_registry
 
@@ -61,6 +62,7 @@ SAFE_QUERY_TOOLS = [
     
     # 资源监控工具
     K8sGetClusterMetricsTool,
+    K8sPrometheusResourceAnalysisTool,
 ]
 
 # 危险的修改工具列表 - 这些工具会修改集群状态，已被禁用
