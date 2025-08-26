@@ -37,13 +37,13 @@ class K8sGetPodsTool(MCPToolBase):
                 "properties": {
                     "namespace": {
                         "type": "string",
-                        "description": "命名空间名称，'all' 表示所有命名空间，不指定则使用默认命名空间",
-                        "default": self.config.namespace
+                        "description": "命名空间名称。例如: 'test', 'default', 'kube-system'。使用 'all' 表示所有命名空间。如果不指定则使用默认命名空间。",
+                        "examples": ["test", "default", "kube-system", "all"]
                     },
                     "label_selector": {
-                        "type": "string",
-                        "description": "标签选择器，例如 'app=nginx,env=prod'",
-                        "default": None
+                        "type": "string", 
+                        "description": "Kubernetes标签选择器，用于过滤Pod。格式: 'key=value' 或 'key1=value1,key2=value2'。例如: 'app=med-marketing', 'app=nginx,env=prod'。如果不指定则返回所有Pod。",
+                        "examples": ["app=med-marketing", "app=nginx,env=prod", "version=v1.0"]
                     }
                 },
                 "required": []
@@ -57,12 +57,27 @@ class K8sGetPodsTool(MCPToolBase):
             namespace = arguments.get("namespace")
             label_selector = arguments.get("label_selector")
             
+            # 🔍 详细参数日志
+            logger.info(f"🔧 k8s-get-pods 参数详情:")
+            logger.info(f"   - 原始参数: {arguments}")
+            logger.info(f"   - namespace: '{namespace}' (类型: {type(namespace)})")
+            logger.info(f"   - label_selector: '{label_selector}' (类型: {type(label_selector)})")
+            
+            # 参数验证和处理
+            if namespace == "":
+                namespace = None
+                logger.info("   - 空字符串namespace转换为None")
+            if label_selector == "":
+                label_selector = None
+                logger.info("   - 空字符串label_selector转换为None")
+            
             # 初始化K8s客户端
             if not self.k8s_client:
                 self.k8s_client = K8sClient(self.config)
                 await self.k8s_client.connect()
             
             # 获取Pod列表
+            logger.info(f"🚀 调用K8s API: namespace='{namespace}', label_selector='{label_selector}'")
             result = await self.k8s_client.get_pods(
                 namespace=namespace,
                 label_selector=label_selector
@@ -71,7 +86,22 @@ class K8sGetPodsTool(MCPToolBase):
             # 格式化结果
             formatted_result = self._format_pods_result(result)
             
-            logger.info(f"获取Pod列表成功: {result['total']} 个Pod")
+            # 🚨 检查结果大小，防止上下文超限
+            total_pods = result['total']
+            if total_pods > 50:
+                logger.warning(f"⚠️ Pod数量过多 ({total_pods} 个)，可能导致LLM上下文超限")
+                logger.warning(f"💡 建议使用更精确的namespace和label_selector参数进行过滤")
+                
+                # 截断结果并添加警告
+                formatted_result['pods'] = formatted_result['pods'][:50]
+                formatted_result['warning'] = {
+                    'message': f'结果已截断：显示前50个Pod，总共{total_pods}个。建议使用更精确的过滤条件。',
+                    'total_pods': total_pods,
+                    'displayed_pods': len(formatted_result['pods']),
+                    'suggestion': '使用namespace和label_selector参数缩小查询范围'
+                }
+            
+            logger.info(f"获取Pod列表成功: {result['total']} 个Pod (返回 {len(formatted_result['pods'])} 个)")
             return MCPCallToolResult.success(formatted_result)
             
         except K8sClientError as e:

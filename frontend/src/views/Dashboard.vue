@@ -96,9 +96,16 @@
       <div class="card">
         <div class="card-header">
           <h3 class="card-title">工具列表</h3>
-          <el-button size="small" @click="loadTools">
-            <el-icon><Refresh /></el-icon>
-          </el-button>
+          <div class="header-actions">
+            <el-button size="small" @click="loadTools" :loading="loadingTools">
+              <el-icon><Refresh /></el-icon>
+              刷新
+            </el-button>
+            <el-button size="small" type="primary" @click="refreshTools" :loading="refreshingTools">
+              <el-icon><RefreshRight /></el-icon>
+              重新加载
+            </el-button>
+          </div>
         </div>
         <div class="tools-list" v-if="tools.length > 0">
           <div 
@@ -152,7 +159,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Refresh } from '@element-plus/icons-vue'
+import { Refresh, RefreshRight } from '@element-plus/icons-vue'
 import { api } from '@/api/client'
 import { renderMarkdown } from '@/utils/markdown'
 
@@ -167,6 +174,8 @@ const systemStatus = ref({
 })
 const tools = ref([])
 const toolsCount = ref(0)
+const loadingTools = ref(false)
+const refreshingTools = ref(false)
 const apiVersion = ref('2.0')
 const compatibility = ref('v1')
 const lastUpdateTime = ref(new Date())
@@ -252,14 +261,44 @@ const loadSystemStatus = async () => {
 }
 
 const loadTools = async () => {
+  loadingTools.value = true
   try {
     const response = await api.system.getTools()
     tools.value = response.data.tools || []
-    // 不再在这里设置toolsCount，避免与健康检查接口冲突
-    // toolsCount由loadSystemStatus统一管理
+    toolsCount.value = response.data.total_count || tools.value.length
+    addLog('info', `工具列表已更新，共 ${tools.value.length} 个工具`)
   } catch (error) {
     console.error('获取工具列表失败:', error)
     tools.value = []
+    toolsCount.value = 0
+    addLog('error', '获取工具列表失败')
+  } finally {
+    loadingTools.value = false
+  }
+}
+
+const refreshTools = async () => {
+  refreshingTools.value = true
+  try {
+    const response = await api.system.refreshTools()
+    if (response.data.success) {
+      tools.value = response.data.tools || []
+      toolsCount.value = response.data.tools_count || 0
+      ElMessage.success(response.data.message)
+      addLog('success', `工具列表已重新加载，共 ${toolsCount.value} 个工具`)
+      
+      // 同时更新系统状态
+      await loadSystemStatus()
+    } else {
+      ElMessage.error(response.data.error || '刷新工具列表失败')
+      addLog('error', response.data.error || '刷新工具列表失败')
+    }
+  } catch (error) {
+    console.error('刷新工具列表失败:', error)
+    ElMessage.error('刷新工具列表失败')
+    addLog('error', '刷新工具列表失败')
+  } finally {
+    refreshingTools.value = false
   }
 }
 
@@ -339,6 +378,18 @@ onUnmounted(() => {
 }
 
 .actions { display: flex; gap: 12px; }
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
+}
 
 .page-title {
   font-size: 24px;

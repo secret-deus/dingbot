@@ -272,6 +272,24 @@ class ToolRegistry:
         self._categories.clear()
         logger.info("工具注册表已清空")
     
+    def clear_category(self, category: str):
+        """清空指定分类的工具"""
+        if category not in self._categories:
+            return
+        
+        # 获取该分类下的所有工具名称
+        tools_to_remove = list(self._categories[category].keys())
+        
+        # 从工具字典中移除
+        for tool_name in tools_to_remove:
+            if tool_name in self._tools:
+                del self._tools[tool_name]
+        
+        # 清空分类
+        self._categories[category].clear()
+        
+        logger.info(f"已清空分类 '{category}' 下的 {len(tools_to_remove)} 个工具")
+    
     def validate_tool_name(self, tool_name: str) -> bool:
         """验证工具名称格式"""
         if not tool_name or not isinstance(tool_name, str):

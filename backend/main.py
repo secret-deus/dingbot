@@ -197,9 +197,30 @@ async def initialize_services():
     except Exception as e:
         logger.warning(f"定时巡检初始化失败: {e}")
 
+    # 5. 启动增强任务调度器（基于现有asyncio模式）
+    try:
+        scheduler_enabled = os.getenv("SCHEDULER_ENABLED", "true").lower() == "true"
+        if scheduler_enabled:
+            logger.info("⏰ 启动增强任务调度器...")
+            from src.scheduler.task_scheduler import initialize_scheduler
+            await initialize_scheduler()
+            logger.info("✅ 增强任务调度器启动成功")
+        else:
+            logger.info("增强任务调度器未启用（SCHEDULER_ENABLED=false）")
+    except Exception as e:
+        logger.warning(f"增强任务调度器初始化失败: {e}")
+
 async def cleanup_services():
     """清理所有服务"""
     global mcp_client, llm_processor, dingtalk_bot
+
+    # 清理增强任务调度器
+    try:
+        from src.scheduler.task_scheduler import cleanup_scheduler
+        await cleanup_scheduler()
+        logger.info("✅ 增强任务调度器已清理")
+    except Exception as e:
+        logger.warning(f"清理增强任务调度器失败: {e}")
 
     if mcp_client:
         await mcp_client.disconnect()

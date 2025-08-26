@@ -69,6 +69,7 @@ class K8sMCPServer:
         self.knowledge_graph = None
         self.cluster_sync_engine = None
         self.summary_generator = None
+        self.metrics_aggregator = None
         self.intelligent_mode_enabled = False
         
         # 监控组件
@@ -129,6 +130,7 @@ class K8sMCPServer:
             from .core.k8s_graph import K8sKnowledgeGraph, get_shared_knowledge_graph
             from .core.cluster_sync import ClusterSyncEngine
             from .core.summary_generator import SummaryGenerator
+            from .core.metrics_aggregator import K8sMetricsAggregator, create_metrics_config_from_env
             
             # 使用共享的知识图谱实例
             self.knowledge_graph = get_shared_knowledge_graph(self.config)
@@ -137,6 +139,17 @@ class K8sMCPServer:
             # 初始化摘要生成器
             self.summary_generator = SummaryGenerator(self.knowledge_graph, self.config)
             logger.info("摘要生成器初始化完成")
+            
+            # 初始化指标聚合器
+            try:
+                metrics_config = create_metrics_config_from_env()
+                if metrics_config.prometheus_url:
+                    self.metrics_aggregator = K8sMetricsAggregator(metrics_config, self.knowledge_graph)
+                    logger.info("指标聚合器初始化完成")
+                else:
+                    logger.warning("未配置Prometheus URL，跳过指标聚合器初始化")
+            except Exception as e:
+                logger.warning(f"指标聚合器初始化失败: {e}")
             
             # 初始化集群同步引擎（需要在K8s客户端连接后启动）
             if self.k8s_client:
@@ -161,12 +174,20 @@ class K8sMCPServer:
     async def _start_intelligent_services(self):
         """启动智能服务（异步）"""
         try:
-            if not self.intelligent_mode_enabled or not self.cluster_sync_engine:
+            if not self.intelligent_mode_enabled:
                 return
             
-            logger.info("启动集群同步引擎...")
-            await self.cluster_sync_engine.start()
-            logger.info("✅ 集群同步引擎已启动")
+            # 启动集群同步引擎
+            if self.cluster_sync_engine:
+                logger.info("启动集群同步引擎...")
+                await self.cluster_sync_engine.start()
+                logger.info("✅ 集群同步引擎已启动")
+            
+            # 启动指标聚合器
+            if self.metrics_aggregator:
+                logger.info("启动指标聚合器...")
+                await self.metrics_aggregator.start()
+                logger.info("✅ 指标聚合器已启动")
             
         except Exception as e:
             logger.error(f"智能服务启动失败: {e}")
@@ -180,6 +201,11 @@ class K8sMCPServer:
                 logger.info("正在停止集群同步引擎...")
                 await self.cluster_sync_engine.stop()
                 logger.info("集群同步引擎已停止")
+            
+            if self.metrics_aggregator:
+                logger.info("正在停止指标聚合器...")
+                await self.metrics_aggregator.stop()
+                logger.info("指标聚合器已停止")
                 
         except Exception as e:
             logger.error(f"停止智能服务失败: {e}")
@@ -237,9 +263,11 @@ class K8sMCPServer:
             "knowledge_graph_available": self.knowledge_graph is not None,
             "cluster_sync_running": self.cluster_sync_engine is not None and getattr(self.cluster_sync_engine, 'running', False),
             "summary_generator_available": self.summary_generator is not None,
+            "metrics_aggregator_running": self.metrics_aggregator is not None and getattr(self.metrics_aggregator, 'is_running', False),
             "graph_nodes_count": len(self.knowledge_graph.graph.nodes) if self.knowledge_graph else 0,
             "graph_edges_count": len(self.knowledge_graph.graph.edges) if self.knowledge_graph else 0,
-            "sync_status": self.cluster_sync_engine.get_sync_status() if self.cluster_sync_engine else None
+            "sync_status": self.cluster_sync_engine.get_sync_status() if self.cluster_sync_engine else None,
+            "aggregator_stats": self.metrics_aggregator.get_statistics() if self.metrics_aggregator else None
         }
     
     def _get_monitoring_status(self) -> Dict[str, Any]:
@@ -260,6 +288,37 @@ class K8sMCPServer:
         except Exception as e:
             logger.error(f"获取监控状态失败: {e}")
             return {"enabled": True, "error": str(e)}
+    
+    async def _broadcast_tools_update(self, tools):
+        """向所有连接的客户端广播工具列表更新"""
+        if not self.clients:
+            return
+        
+        tools_event = {
+            "event": "tools_updated",
+            "data": {
+                "tools": [
+                    {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "category": getattr(tool, 'category', 'kubernetes'),
+                        "input_schema": tool.get_schema().input_schema if hasattr(tool, 'get_schema') else {}
+                    }
+                    for tool in tools
+                ],
+                "total_count": len(tools),
+                "updated_at": time.time()
+            }
+        }
+        
+        # 向所有连接的客户端发送更新事件
+        for client_id in list(self.clients):
+            if client_id in self.event_queues:
+                try:
+                    await self.event_queues[client_id].put(tools_event)
+                    logger.debug(f"向客户端 {client_id} 发送工具更新事件")
+                except Exception as e:
+                    logger.warning(f"向客户端 {client_id} 发送事件失败: {e}")
     
     def _setup_logging(self):
         """设置日志配置"""
@@ -492,14 +551,61 @@ class K8sMCPServer:
                             "name": tool.name,
                             "description": tool.description,
                             "category": getattr(tool, 'category', 'kubernetes'),
-                            "input_schema": tool.get_schema().input_schema
+                            "input_schema": tool.get_schema().input_schema if hasattr(tool, 'get_schema') else {}
                         }
                         for tool in tools
-                    ]
+                    ],
+                    "total_count": len(tools),
+                    "last_updated": time.time()
                 }
             except Exception as e:
                 logger.error(f"获取工具列表失败: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
+        
+        @self.app.post("/tools/refresh")
+        async def refresh_tools():
+            """刷新工具列表"""
+            try:
+                logger.info("🔄 开始刷新工具列表...")
+                
+                # 清除现有工具注册
+                tool_registry.clear_category("kubernetes")
+                
+                # 重新注册所有工具
+                tool_count = register_all_tools()
+                
+                # 获取更新后的工具列表
+                tools = tool_registry.list_tools("kubernetes", enabled_only=True)
+                
+                result = {
+                    "success": True,
+                    "message": f"成功刷新工具列表，注册了 {tool_count} 个工具",
+                    "tools_count": len(tools),
+                    "tools": [
+                        {
+                            "name": tool.name,
+                            "description": tool.description,
+                            "category": getattr(tool, 'category', 'kubernetes')
+                        }
+                        for tool in tools
+                    ],
+                    "refreshed_at": time.time()
+                }
+                
+                logger.info(f"✅ 工具列表刷新完成，当前有 {len(tools)} 个可用工具")
+                
+                # 向所有连接的客户端发送工具列表更新事件
+                await self._broadcast_tools_update(tools)
+                
+                return result
+                
+            except Exception as e:
+                logger.error(f"刷新工具列表失败: {e}")
+                return {
+                    "success": False,
+                    "error": str(e),
+                    "refreshed_at": time.time()
+                }
         
         @self.app.post("/tools/call")
         async def call_tool(request: ToolCallRequest):
@@ -615,7 +721,8 @@ class K8sMCPServer:
                     {
                         "name": tool.name,
                         "description": tool.description,
-                        "category": getattr(tool, 'category', 'kubernetes')
+                        "category": getattr(tool, 'category', 'kubernetes'),
+                        "input_schema": tool.get_schema().input_schema if hasattr(tool, 'get_schema') else {}
                     }
                     for tool in tools
                 ]
@@ -740,6 +847,7 @@ class K8sMCPServer:
                 logger.info(f"   - 知识图谱: {'✅' if status['knowledge_graph_available'] else '❌'}")
                 logger.info(f"   - 集群同步: {'✅' if status['cluster_sync_running'] else '❌'}")
                 logger.info(f"   - 摘要生成: {'✅' if status['summary_generator_available'] else '❌'}")
+                logger.info(f"   - 指标聚合: {'✅' if status['metrics_aggregator_running'] else '❌'}")
             else:
                 logger.info("🔧 基础模式运行（智能功能未启用）")
             
@@ -795,6 +903,7 @@ class K8sMCPServer:
             self.knowledge_graph = None
             self.cluster_sync_engine = None
             self.summary_generator = None
+            self.metrics_aggregator = None
             self.intelligent_mode_enabled = False
             
             # 清理所有客户端连接

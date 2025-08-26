@@ -88,10 +88,16 @@
             <template #header>
               <div class="card-header">
                 <span>MCP 工具列表</span>
-                <el-button type="primary" size="small" @click="loadTools">
-                  <el-icon><Refresh /></el-icon>
-                  刷新
-                </el-button>
+                <div class="header-actions">
+                  <el-button size="small" @click="loadTools" :loading="loadingTools">
+                    <el-icon><Refresh /></el-icon>
+                    刷新
+                  </el-button>
+                  <el-button type="primary" size="small" @click="refreshTools" :loading="refreshingTools">
+                    <el-icon><RefreshRight /></el-icon>
+                    重新加载
+                  </el-button>
+                </div>
               </div>
             </template>
             
@@ -264,7 +270,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Refresh, Check } from '@element-plus/icons-vue'
+import { Refresh, RefreshRight, Check } from '@element-plus/icons-vue'
 import axios from 'axios'
 import MCPConfigEditor from '@/components/MCPConfigEditor.vue'
 
@@ -279,6 +285,7 @@ const serverError = ref(null)
 // 工具管理
 const tools = ref([])
 const loadingTools = ref(false)
+const refreshingTools = ref(false)
 const toolsError = ref(null)
 
 // 配置验证
@@ -323,6 +330,28 @@ const loadTools = async () => {
     toolsError.value = e.response?.data?.detail || e.message || '未知错误'
   } finally {
     loadingTools.value = false
+  }
+}
+
+const refreshTools = async () => {
+  refreshingTools.value = true
+  toolsError.value = null
+  
+  try {
+    const response = await axios.post('/api/v2/tools/refresh')
+    if (response.data.success) {
+      ElMessage.success(response.data.message)
+      // 重新加载工具列表
+      await loadTools()
+    } else {
+      ElMessage.error(response.data.error || '刷新工具列表失败')
+    }
+  } catch (e) {
+    console.error('刷新工具失败:', e)
+    toolsError.value = e.response?.data?.detail || e.message || '刷新失败'
+    ElMessage.error('刷新工具列表失败')
+  } finally {
+    refreshingTools.value = false
   }
 }
 
@@ -427,6 +456,11 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .loading-container, .error-container, .empty-container {

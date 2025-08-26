@@ -303,7 +303,42 @@ class MCPServerConnection:
             tools_data = data.get('tools', [])
             logger.info(f"收到工具列表: {len(tools_data)} 个工具")
             
-            # 🔥 新增：自动同步工具配置
+            # 清空现有工具并添加新工具
+            self.tools.clear()
+            
+            for tool_data in tools_data:
+                tool_name = tool_data.get("name")
+                if not tool_name:
+                    continue
+                
+                # 🔍 调试：检查工具数据
+                if tool_name == "k8s-get-pods":
+                    logger.info(f"🔍 调试k8s-get-pods工具数据:")
+                    logger.info(f"   原始数据: {tool_data}")
+                    logger.info(f"   input_schema字段: {tool_data.get('input_schema', 'NOT_FOUND')}")
+                    logger.info(f"   inputSchema字段: {tool_data.get('inputSchema', 'NOT_FOUND')}")
+                
+                tool = MCPTool(
+                    name=tool_name,
+                    description=tool_data.get("description", ""),
+                    input_schema=tool_data.get("input_schema", {}),
+                    category=tool_data.get("category"),
+                    version=tool_data.get("version"),
+                    provider=self.config.name
+                )
+                self.tools[tool.name] = tool
+                logger.debug(f"✅ 添加工具: {tool_name}")
+                
+                # 🔍 调试：检查创建的工具对象
+                if tool_name == "k8s-get-pods":
+                    logger.info(f"🔍 创建的k8s-get-pods工具对象:")
+                    logger.info(f"   Schema: {tool.input_schema}")
+                    logger.info(f"   Schema类型: {type(tool.input_schema)}")
+                    logger.info(f"   Schema长度: {len(str(tool.input_schema))}")
+            
+            logger.info(f"✅ SSE工具发现完成，共加载 {len(self.tools)} 个工具")
+            
+            # 🔥 自动同步工具配置
             await self._auto_sync_tools_config(tools_data)
             
         elif event_type == "tool_start":
@@ -666,35 +701,25 @@ class MCPServerConnection:
     
     async def _discover_tools_sse(self):
         """通过SSE发现工具"""
-        # SSE工具发现：通过HTTP API获取工具列表
-        if not self.session:
-            self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.config.timeout))
+        # SSE工具发现：等待SSE事件流中的tools_list事件
+        # 工具将通过_handle_sse_event方法中的tools_list事件处理逻辑添加
+        logger.info(f"SSE工具发现：等待来自 {self.config.name} 的工具列表事件...")
         
-        headers = {}
-        if self.config.auth_headers:
-            headers.update(self.config.auth_headers)
-        if self.config.auth_token:
-            headers["Authorization"] = f"Bearer {self.config.auth_token}"
+        # 等待一段时间让SSE连接建立并接收工具列表
+        max_wait_time = 10  # 最多等待10秒
+        wait_interval = 0.5  # 每0.5秒检查一次
+        waited_time = 0
         
-        async with self.session.get(f"http://{self.config.host}:{self.config.port}/tools", headers=headers) as response:
-            if response.status != 200:
-                raise MCPException("TOOL_DISCOVERY_FAILED", f"SSE工具发现失败: {response.status}")
+        while waited_time < max_wait_time:
+            if len(self.tools) > 0:
+                logger.info(f"✅ SSE工具发现成功，收到 {len(self.tools)} 个工具")
+                return
             
-            response_data = await response.json()
-            tools_data = response_data.get("tools", [])
-            
-            for tool_data in tools_data:
-                tool = MCPTool(
-                    name=tool_data["name"],
-                    description=tool_data.get("description", ""),
-                    input_schema=tool_data.get("input_schema", {}),
-                    category=tool_data.get("category"),
-                    version=tool_data.get("version"),
-                    provider=self.config.name
-                )
-                self.tools[tool.name] = tool
-                
-            logger.info(f"通过SSE发现 {len(self.tools)} 个工具")
+            await asyncio.sleep(wait_interval)
+            waited_time += wait_interval
+        
+        # 如果等待超时，记录警告但不抛出异常（SSE可能稍后发送工具列表）
+        logger.warning(f"⚠️ SSE工具发现超时，未在 {max_wait_time} 秒内收到工具列表，将继续等待SSE事件")
     
     async def _discover_tools_stream_http(self):
         """通过Stream HTTP发现工具"""

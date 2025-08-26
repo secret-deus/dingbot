@@ -5,6 +5,7 @@ const Dashboard = () => import('@/views/Dashboard.vue')
 const Chat = () => import('@/views/Chat.vue')
 const Settings = () => import('@/views/Settings.vue')
 const MCPConfig = () => import('@/views/MCPConfig.vue')
+const Scheduler = () => import('@/views/Scheduler.vue')
 
 const routes = [
   {
@@ -45,6 +46,15 @@ const routes = [
     meta: {
       title: 'MCP配置',
       icon: 'Tools'
+    }
+  },
+  {
+    path: '/scheduler',
+    name: 'Scheduler',
+    component: Scheduler,
+    meta: {
+      title: '定时任务',
+      icon: 'Timer'
     }
   },
   {

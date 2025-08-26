@@ -38,6 +38,11 @@
             <el-icon><Tools /></el-icon>
             <template #title>MCP配置</template>
           </el-menu-item>
+          
+          <el-menu-item index="/scheduler">
+            <el-icon><Timer /></el-icon>
+            <template #title>定时任务</template>
+          </el-menu-item>
         </el-menu>
       </el-aside>
       
@@ -99,6 +104,7 @@ import {
   ChatDotSquare,
   Setting,
   Tools,
+  Timer,
   Fold,
   Expand,
   User,
@@ -116,7 +122,9 @@ const breadcrumbTitle = computed(() => {
   const titles = {
     '/dashboard': '仪表板',
     '/chat': '智能对话',
-    '/settings': '配置管理'
+    '/settings': '配置管理',
+    '/mcp-config': 'MCP配置',
+    '/scheduler': '定时任务'
   }
   return titles[route.path] || '钉钉K8s运维机器人'
 })

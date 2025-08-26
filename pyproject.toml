@@ -35,6 +35,8 @@ psutil = "^7.0.0"
 pycryptodome = "^3.23.0"
 # 文件监控
 watchdog = "^4.0.0"
+# Cron表达式处理
+croniter = "^2.0.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.0"

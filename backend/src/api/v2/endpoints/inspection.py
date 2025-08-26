@@ -80,7 +80,39 @@ async def perform_inspection(
         cluster_summary = await mcp_client.call_tool("k8s-cluster-summary", tool_params)
     except Exception as e:
         logger.error(f"k8s-cluster-summary 调用失败: {e}")
-        raise HTTPException(status_code=502, detail=f"集群摘要工具调用失败: {e}")
+        
+        # 如果k8s-cluster-summary不可用，尝试使用其他工具组合
+        logger.info("尝试使用备用工具组合进行巡检...")
+        try:
+            # 使用知识图谱资源指标查询工具
+            metrics_result = await mcp_client.call_tool("k8s-resource-metrics-query", {
+                "cpu_threshold": 70.0,
+                "memory_threshold": 70.0,
+                "include_optimization_only": False,
+                "limit": 50
+            })
+            
+            # 获取基础集群信息
+            pods_result = await mcp_client.call_tool("k8s-get-pods", {
+                "all_namespaces": True,
+                "show_status": True
+            })
+            
+            # 组合结果
+            cluster_summary = {
+                "cluster_overview": {
+                    "status": "partial_data",
+                    "message": "使用备用工具获取集群信息"
+                },
+                "resource_metrics": metrics_result,
+                "pod_status": pods_result
+            }
+            
+            logger.info("✅ 使用备用工具组合成功获取巡检数据")
+            
+        except Exception as backup_e:
+            logger.error(f"备用工具调用也失败: {backup_e}")
+            raise HTTPException(status_code=502, detail=f"集群巡检工具调用失败: 主工具({e}), 备用工具({backup_e})")
 
     # 2) 使用LLM生成Markdown分析
     system_prompt = (

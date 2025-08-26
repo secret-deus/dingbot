@@ -63,7 +63,8 @@ class K8sKnowledgeGraph:
         logger.info("K8s知识图谱初始化完成")
     
     def add_resource(self, kind: str, namespace: str, name: str, 
-                    metadata: dict = None, labels: dict = None) -> str:
+                    metadata: dict = None, labels: dict = None, 
+                    metrics: dict = None) -> str:
         """添加资源节点
         
         Args:
@@ -72,6 +73,7 @@ class K8sKnowledgeGraph:
             name: 资源名称
             metadata: 资源元数据
             labels: 资源标签
+            metrics: 资源指标数据（CPU/内存使用率等）
             
         Returns:
             str: 节点ID
@@ -100,6 +102,7 @@ class K8sKnowledgeGraph:
                 name=name,
                 metadata=metadata or {},
                 labels=labels or {},
+                metrics=metrics or {},
                 last_updated=current_time,
                 created_at=current_time if node_id not in self.graph else 
                           self.graph.nodes[node_id].get('created_at', current_time)
@@ -110,6 +113,52 @@ class K8sKnowledgeGraph:
             
             logger.debug(f"添加资源节点: {node_id}")
             return node_id
+    
+    def update_resource_metrics(self, resource_id: str, metrics: dict) -> bool:
+        """更新资源指标数据
+        
+        Args:
+            resource_id: 资源ID
+            metrics: 指标数据字典，包含CPU/内存使用率等
+            
+        Returns:
+            bool: 是否成功更新
+        """
+        with self.lock:
+            if resource_id not in self.graph:
+                logger.warning(f"资源不存在，无法更新指标: {resource_id}")
+                return False
+            
+            current_time = time.time()
+            node_data = self.graph.nodes[resource_id]
+            
+            # 更新指标数据
+            existing_metrics = node_data.get('metrics', {})
+            existing_metrics.update(metrics)
+            
+            # 更新节点属性
+            self.graph.nodes[resource_id]['metrics'] = existing_metrics
+            self.graph.nodes[resource_id]['last_updated'] = current_time
+            self._node_timestamps[resource_id] = current_time
+            
+            logger.debug(f"更新资源指标: {resource_id}, 指标数量: {len(metrics)}")
+            return True
+    
+    def get_resource_metrics(self, resource_id: str) -> Optional[Dict]:
+        """获取资源指标数据
+        
+        Args:
+            resource_id: 资源ID
+            
+        Returns:
+            Optional[Dict]: 指标数据，不存在则返回None
+        """
+        with self.lock:
+            if resource_id not in self.graph:
+                return None
+            
+            node_data = self.graph.nodes[resource_id]
+            return node_data.get('metrics', {})
     
     def add_relation(self, source: str, target: str, relation_type: str, 
                     metadata: dict = None) -> bool:
@@ -434,6 +483,7 @@ class K8sKnowledgeGraph:
                 "name": node_data.get("name", "unknown"),
                 "metadata": node_data.get("metadata", {}),
                 "labels": node_data.get("labels", {}),
+                "metrics": node_data.get("metrics", {}),
                 "created_at": node_data.get("created_at", 0),
                 "last_updated": node_data.get("last_updated", 0),
                 "in_degree": in_degree,
@@ -556,6 +606,7 @@ class K8sKnowledgeGraph:
                     "name": data.get("name", "unknown"),
                     "metadata": data.get("metadata", {}),
                     "labels": data.get("labels", {}),
+                    "metrics": data.get("metrics", {}),
                     "created_at": data.get("created_at", 0),
                     "last_updated": data.get("last_updated", 0)
                 })

@@ -296,6 +296,49 @@ async def get_v2_tools(mcp_client: Optional[EnhancedMCPClient] = Depends(get_mcp
         logger.error(f"获取工具失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取工具失败: {e}")
 
+@api_v2_router.post("/tools/refresh", summary="刷新MCP工具列表", tags=["MCP"])
+async def refresh_v2_tools(mcp_client: Optional[EnhancedMCPClient] = Depends(get_mcp_client)):
+    """强制刷新MCP工具列表"""
+    try:
+        if not mcp_client:
+            return {
+                "success": False,
+                "message": "MCP客户端未连接",
+                "timestamp": time.time()
+            }
+        
+        logger.info("🔄 开始刷新MCP工具列表...")
+        
+        # 重新连接MCP服务器以刷新工具列表
+        await mcp_client.connect()
+        
+        # 获取刷新后的工具列表
+        tools = await mcp_client.list_tools()
+        
+        logger.info(f"✅ MCP工具列表刷新完成，当前有 {len(tools)} 个工具")
+        
+        return {
+            "success": True,
+            "message": f"成功刷新工具列表，当前有 {len(tools)} 个工具",
+            "tools": [tool.model_dump() for tool in tools],
+            "total": len(tools),
+            "timestamp": time.time()
+        }
+    except MCPException as e:
+        logger.error(f"刷新工具失败: {e}")
+        return {
+            "success": False,
+            "error": f"刷新工具失败: {e.message}",
+            "timestamp": time.time()
+        }
+    except Exception as e:
+        logger.error(f"刷新工具失败: {e}")
+        return {
+            "success": False,
+            "error": f"刷新工具失败: {str(e)}",
+            "timestamp": time.time()
+        }
+
 # 配置管理相关的请求模型
 class ConfigTestRequest(BaseModel):
     config_type: str  # "llm" or "mcp"
@@ -314,6 +357,9 @@ from .endpoints.mcp_config_current import router as mcp_config_current_router
 # 导入LLM配置管理端点
 from .endpoints.llm_config import router as llm_config_router
 
+# 导入任务调度管理端点
+from .endpoints.scheduler import router as scheduler_router
+
 # 注册MCP配置路由
 api_v2_router.include_router(mcp_config_router)
 api_v2_router.include_router(mcp_config_update_router)
@@ -324,6 +370,9 @@ api_v2_router.include_router(llm_config_router)
 
 # 注册巡检路由
 api_v2_router.include_router(inspection_router)
+
+# 注册任务调度路由
+api_v2_router.include_router(scheduler_router)
 
 # 多供应商LLM配置管理API - 简化版本
 @api_v2_router.get("/config/llm/providers", summary="获取LLM配置（简化版）")
