@@ -549,7 +549,8 @@ class EnhancedLLMProcessor:
                     session_id = f'demo_session_{int(time.time())}'
                     
                     # 🔒 执行脱敏演示
-                    masked_tool_results = self.data_masker.mask_tool_results(tool_results, session_id)
+                    # 在演示模式下，工具名称可能不可用，传递空列表
+                    masked_tool_results = self.data_masker.mask_tool_results(tool_results, session_id, [])
                     
                     # 📝 在日志中记录脱敏效果
                     import json
@@ -1033,7 +1034,7 @@ Kubernetes 节点信息:
                 
                 # 🔧 阶段2: 完整内容恢复（修复因chunk分割导致的恢复失败）
                 if response_generated and full_response and session_id:
-                    logger.info(f"🔧 开始完整响应恢复处理...")
+                    # logger.info(f"🔧 开始完整响应恢复处理...")
                     
                     # 对完整响应进行脱敏恢复
                     final_restored_response = self.data_masker.restore_llm_response(
@@ -1140,35 +1141,39 @@ Kubernetes 节点信息:
         session_id = f'session_{int(time.time() * 1000)}_{hash(str(tool_results))}'
         self.current_session_id = session_id  # 确保保存会话ID
         
-        logger.error(f"🆔 会话ID生成: {session_id}")
+        # logger.error(f"🆔 会话ID生成: {session_id}")
         
-        masked_tool_results = self.data_masker.mask_tool_results(tool_results, session_id)
+        # 提取工具名称用于白名单检查
+        tool_names = [tool_call.get("name", "") for tool_call in tool_calls]
+        # logger.info(f"🔧 工具调用列表: {tool_names}")
+        
+        masked_tool_results = self.data_masker.mask_tool_results(tool_results, session_id, tool_names)
         
         # 📝 在日志中记录详细的脱敏效果
         import json
-        logger.error(f"🔒🔒🔒 脱敏处理详细日志 (会话ID: {session_id}) 🔒🔒🔒")
-        logger.error(f"📋 原始工具结果:")
+        # logger.error(f"🔒🔒🔒 脱敏处理详细日志 (会话ID: {session_id}) 🔒🔒🔒")
+        # logger.error(f"📋 原始工具结果:")
         for i, result in enumerate(tool_results, 1):
             result_json = json.dumps(result, ensure_ascii=False)
-            logger.error(f"   工具结果#{i}: {result_json[:500]}...")
+            # logger.error(f"   工具结果#{i}: {result_json[:500]}...")
         
         logger.error(f"🔒 脱敏后工具结果:")
         for i, result in enumerate(masked_tool_results, 1):
             result_json = json.dumps(result, ensure_ascii=False)
-            logger.error(f"   脱敏结果#{i}: {result_json[:500]}...")
+            # logger.error(f"   脱敏结果#{i}: {result_json[:500]}...")
         
         # 获取映射统计
         stats = self.data_masker.get_session_stats(session_id)
-        logger.error(f"📊 脱敏映射统计: {stats['mapping_count']} 个映射关系")
+        # logger.error(f"📊 脱敏映射统计: {stats['mapping_count']} 个映射关系")
         
-        # 显示具体的映射关系（调试用）
-        mapping_store = self.data_masker.session_manager.get_session(session_id)
-        if mapping_store:
-            logger.error(f"🗄️ 映射关系详情:")
-            for original, masked in list(mapping_store.original_to_masked.items())[:10]:  # 只显示前10个
-                logger.error(f"   '{original}' → '{masked}'")
+        # # 显示具体的映射关系（调试用）
+        # mapping_store = self.data_masker.session_manager.get_session(session_id)
+        # if mapping_store:
+        #     logger.error(f"🗄️ 映射关系详情:")
+        #     for original, masked in list(mapping_store.original_to_masked.items())[:10]:  # 只显示前10个
+        #         logger.error(f"   '{original}' → '{masked}'")
         
-        logger.error(f"🔒🔒🔒 脱敏处理日志结束 🔒🔒🔒")
+        # logger.error(f"🔒🔒🔒 脱敏处理日志结束 🔒🔒🔒")
         
         # 格式化工具执行结果（使用脱敏后的数据）
         formatted_results = []

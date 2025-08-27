@@ -19,18 +19,33 @@ class DataMasker:
         self.enabled = self.config.masking_enabled
         
         logger.info(f"🔒 数据脱敏器初始化完成，状态: {'启用' if self.enabled else '禁用'}")
+        if self.enabled and self.config.tool_whitelist:
+            logger.info(f"🔓 工具白名单: {', '.join(self.config.tool_whitelist)}")
     
-    def mask_tool_results(self, tool_results: List[Any], session_id: str) -> List[Any]:
-        """脱敏工具结果 - 在第二阶段LLM调用前执行"""
+    def mask_tool_results(self, tool_results: List[Any], session_id: str, tool_names: List[str] = None) -> List[Any]:
+        """脱敏工具结果 - 在第二阶段LLM调用前执行
+        
+        Args:
+            tool_results: 工具执行结果列表
+            session_id: 会话ID
+            tool_names: 工具名称列表，用于白名单检查
+        """
         if not self.enabled:
-            logger.debug("脱敏功能已禁用，跳过脱敏处理")
+            # logger.debug("脱敏功能已禁用，跳过脱敏处理")
             return tool_results
+        
+        # 检查工具白名单
+        if tool_names and self.config.tool_whitelist:
+            whitelisted_tools = [name for name in tool_names if name in self.config.tool_whitelist]
+            if whitelisted_tools:
+                logger.info(f"🔓 工具白名单匹配，跳过脱敏处理: {whitelisted_tools}")
+                return tool_results
         
         try:
             session_store = self.session_manager.get_session_store(session_id)
             masked_results = []
             
-            logger.info(f"🔒 开始脱敏工具结果，会话ID: {session_id}")
+            # logger.info(f"🔒 开始脱敏工具结果，会话ID: {session_id}")
             
             for i, result in enumerate(tool_results):
                 if result is not None:
@@ -44,7 +59,7 @@ class DataMasker:
                     masked_json = json.dumps(masked_result, ensure_ascii=False, default=str)
                     
                     # 记录脱敏后数据
-                    logger.warning(f"🔒 脱敏后工具结果 #{i+1} (长度: {len(masked_json)}):")
+                    # logger.warning(f"🔒 脱敏后工具结果 #{i+1} (长度: {len(masked_json)}):")
                     logger.warning(f"   {masked_json[:500]}{'...' if len(masked_json) > 500 else ''}")
                     
                     masked_results.append(masked_result)
@@ -76,7 +91,8 @@ class DataMasker:
             
             # 记录恢复前的响应
             if self.config.debug_logging:
-                logger.debug(f"🔓 恢复前响应片段: {response_text[:100]}...")
+                # logger.debug(f"🔓 恢复前响应片段: {response_text[:100]}...")
+                pass
             
             restored_text = session_store.restore_text(response_text)
             
@@ -86,7 +102,8 @@ class DataMasker:
                 logger.info(f"🔓 响应已恢复，当前有 {mapping_count} 个脱敏映射可用")
                 
                 if self.config.debug_logging:
-                    logger.debug(f"🔓 恢复后响应片段: {restored_text[:100]}...")
+                    # logger.debug(f"🔓 恢复后响应片段: {restored_text[:100]}...")
+                    pass
             
             return restored_text
             

@@ -66,7 +66,7 @@ class SensitiveDataRules:
         """对字符串应用脱敏规则"""
         from loguru import logger
         
-        logger.error(f"🔍 开始脱敏字符串: '{text[:200]}...'")
+        # logger.error(f"🔍 开始脱敏字符串: '{text[:200]}...'")
         masked_text = text
         total_replacements = 0
         
@@ -74,7 +74,7 @@ class SensitiveDataRules:
         chinese_name_rule = self.rules.get("chinese_name")
         if chinese_name_rule and chinese_name_rule["strategy"] == "name_mask_dict":
             names_found = self.surname_dict.find_names_in_text(masked_text)
-            logger.error(f"📋 词典匹配找到 {len(names_found)} 个姓名:")
+            # logger.error(f"📋 词典匹配找到 {len(names_found)} 个姓名:")
             
             # 从后向前替换，避免位置偏移
             for name, start, end in reversed(names_found):
@@ -94,7 +94,7 @@ class SensitiveDataRules:
                 # 存储映射关系
                 mapping_store.add_mapping(name, masked, "chinese_name")
                 total_replacements += 1
-                logger.error(f"✅ 脱敏完成: '{name}' → '{masked}' (规则: chinese_name)")
+                # logger.error(f"✅ 脱敏完成: '{name}' → '{masked}' (规则: chinese_name)")
         
         # 处理其他基于正则表达式的规则
         for rule_name, rule_config in self.rules.items():
@@ -109,7 +109,7 @@ class SensitiveDataRules:
             
             # 先检查是否有匹配
             matches = list(re.finditer(pattern, masked_text))
-            logger.error(f"📋 规则 '{rule_name}' 匹配了 {len(matches)} 项:")
+            # logger.error(f"📋 规则 '{rule_name}' 匹配了 {len(matches)} 项:")
             for match in matches:
                 logger.error(f"   匹配项: '{match.group(0)}' (位置: {match.start()}-{match.end()})")
             
@@ -141,7 +141,7 @@ class SensitiveDataRules:
                 # 存储映射关系
                 mapping_store.add_mapping(original, masked, rule_name)
                 total_replacements += 1
-                logger.error(f"✅ 脱敏完成: '{original}' → '{masked}' (规则: {rule_name})")
+                # logger.error(f"✅ 脱敏完成: '{original}' → '{masked}' (规则: {rule_name})")
                 return masked
             
             masked_text = re.sub(pattern, replace_match, masked_text)

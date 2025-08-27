@@ -7,6 +7,7 @@ K8s MCP服务器 - 基于SSE协议
 
 import asyncio
 import json
+import os
 import time
 import uuid
 import sys
@@ -142,12 +143,17 @@ class K8sMCPServer:
             
             # 初始化指标聚合器
             try:
-                metrics_config = create_metrics_config_from_env()
-                if metrics_config.prometheus_url:
-                    self.metrics_aggregator = K8sMetricsAggregator(metrics_config, self.knowledge_graph)
-                    logger.info("指标聚合器初始化完成")
+                # 检查是否禁用指标聚合
+                disable_aggregation = os.getenv("DISABLE_METRICS_AGGREGATION", "false").lower() == "true"
+                if disable_aggregation:
+                    logger.info("指标聚合器已被禁用 (DISABLE_METRICS_AGGREGATION=true)")
                 else:
-                    logger.warning("未配置Prometheus URL，跳过指标聚合器初始化")
+                    metrics_config = create_metrics_config_from_env()
+                    if metrics_config.prometheus_url:
+                        self.metrics_aggregator = K8sMetricsAggregator(metrics_config, self.knowledge_graph)
+                        logger.info("指标聚合器初始化完成")
+                    else:
+                        logger.warning("未配置Prometheus URL，跳过指标聚合器初始化")
             except Exception as e:
                 logger.warning(f"指标聚合器初始化失败: {e}")
             

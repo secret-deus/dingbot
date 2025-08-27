@@ -226,17 +226,21 @@ class K8sMetricsAggregator:
             try:
                 logger.debug(f"执行聚合查询: {query_name}")
                 
-                # 构建查询请求
+                # 构建查询请求 - 使用和工具相同的格式
                 current_time = int(datetime.now().timestamp())
-                request_body = {
+                start_time = current_time - (self.config.analysis_days * 24 * 3600)
+                
+                # 使用query_range API和params参数
+                params = {
                     "query": query,
-                    "time": str(current_time),
-                    "timeout": "60000"  # 60秒超时
+                    "start": str(start_time),
+                    "end": str(current_time),
+                    "step": "1h"
                 }
                 
-                url = f"{self.config.prometheus_url}/api/v1/query"
+                url = f"{self.config.prometheus_url}/api/v1/query_range"
                 
-                async with self.session.post(url, json=request_body) as response:
+                async with self.session.post(url, data=params) as response:
                     if response.status == 200:
                         data = await response.json()
                         if data.get('status') == 'success':
@@ -279,8 +283,11 @@ class K8sMetricsAggregator:
                     'last_updated': datetime.now().isoformat()
                 }
             
-            value = float(result.get('value', [0, '0'])[1])
-            app_metrics[app_key]['cpu_utilization_avg_14d'] = round(value, 2)
+            # query_range返回values数组，计算平均值
+            values = result.get('values', [])
+            if values:
+                avg_value = sum(float(v[1]) for v in values) / len(values)
+                app_metrics[app_key]['cpu_utilization_avg_14d'] = round(avg_value, 2)
         
         # 处理内存利用率平均值
         for result in raw_data.get("memory_utilization_avg", []):
@@ -300,8 +307,11 @@ class K8sMetricsAggregator:
                     'last_updated': datetime.now().isoformat()
                 }
             
-            value = float(result.get('value', [0, '0'])[1])
-            app_metrics[app_key]['memory_utilization_avg_14d'] = round(value, 2)
+            # query_range返回values数组，计算平均值
+            values = result.get('values', [])
+            if values:
+                avg_value = sum(float(v[1]) for v in values) / len(values)
+                app_metrics[app_key]['memory_utilization_avg_14d'] = round(avg_value, 2)
         
         # 处理CPU请求量
         for result in raw_data.get("cpu_requests", []):
@@ -311,8 +321,11 @@ class K8sMetricsAggregator:
             
             app_key = f"{namespace}/{app_name}"
             if app_key in app_metrics:
-                value = float(result.get('value', [0, '0'])[1])
-                app_metrics[app_key]['cpu_requests'] = round(value, 3)
+                # query_range返回values数组，取最新值
+                values = result.get('values', [])
+                if values:
+                    latest_value = float(values[-1][1])
+                    app_metrics[app_key]['cpu_requests'] = round(latest_value, 3)
         
         # 处理内存请求量
         for result in raw_data.get("memory_requests", []):
@@ -322,8 +335,11 @@ class K8sMetricsAggregator:
             
             app_key = f"{namespace}/{app_name}"
             if app_key in app_metrics:
-                value = float(result.get('value', [0, '0'])[1])
-                app_metrics[app_key]['memory_requests'] = round(value, 2)
+                # query_range返回values数组，取最新值
+                values = result.get('values', [])
+                if values:
+                    latest_value = float(values[-1][1])
+                    app_metrics[app_key]['memory_requests'] = round(latest_value, 2)
         
         return app_metrics
     

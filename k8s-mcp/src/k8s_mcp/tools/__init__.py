@@ -38,6 +38,12 @@ from .k8s_cluster_summary import K8sClusterSummaryTool
 from .k8s_get_cluster_metrics import K8sGetClusterMetricsTool
 from .k8s_resource_metrics_query import K8sResourceMetricsQueryTool
 
+# Prometheus应用资源分析工具
+from .k8s_prometheus_app_metrics import K8sPrometheusAppMetricsTool
+
+# 知识图谱指标更新工具
+from .k8s_update_knowledge_graph_metrics import K8sUpdateKnowledgeGraphMetricsTool
+
 from ..core.tool_registry import tool_registry
 
 # 可用工具列表
@@ -63,6 +69,12 @@ SAFE_QUERY_TOOLS = [
     # 资源监控工具
     K8sGetClusterMetricsTool,
     K8sResourceMetricsQueryTool,
+    
+    # Prometheus应用资源分析工具
+    K8sPrometheusAppMetricsTool,
+    
+    # 知识图谱指标更新工具
+    K8sUpdateKnowledgeGraphMetricsTool,
 ]
 
 # 危险的修改工具列表 - 这些工具会修改集群状态，已被禁用

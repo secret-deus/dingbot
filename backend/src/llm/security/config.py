@@ -30,4 +30,8 @@ class MaskingConfig:
         self.max_cache_size = int(os.getenv('LLM_MASKING_CACHE_SIZE', '1000'))
         
         # 调试配置
-        self.debug_logging = os.getenv('LLM_MASKING_DEBUG', 'false').lower() == 'true' 
+        self.debug_logging = os.getenv('LLM_MASKING_DEBUG', 'false').lower() == 'true'
+        
+        # 工具白名单配置 - 这些工具的结果不会被脱敏
+        whitelist_str = os.getenv('LLM_MASKING_TOOL_WHITELIST', 'k8s-prometheus-app-metrics,k8s-update-knowledge-graph-metrics')
+        self.tool_whitelist = [tool.strip() for tool in whitelist_str.split(',') if tool.strip()] 

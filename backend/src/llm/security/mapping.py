@@ -77,19 +77,19 @@ class MaskingMappingStore:
                     if re.match(r'^\d+\.\d+\.[a-zA-Z0-9]+\.\d+$', masked_value):
                         # 脱敏IP地址格式（如：10.0.cac9.79, 10.0.c9aa.80）
                         pattern = escaped_masked
-                        logger.debug(f"🌐 使用脱敏IP地址模式恢复: {pattern}")
+                        # logger.debug(f"🌐 使用脱敏IP地址模式恢复: {pattern}")
                     elif re.match(r'^\d+\.\d+\.\d+\.\d+$', masked_value):
                         # 标准IP地址格式（如：192.168.1.100）
                         pattern = escaped_masked
-                        logger.debug(f"🌐 使用标准IP地址模式恢复: {pattern}")
+                        # logger.debug(f"🌐 使用标准IP地址模式恢复: {pattern}")
                     elif re.match(r'^host-\w+-+\d+$', masked_value):
                         # 主机名格式（如：host-abc123--001）
                         pattern = r'\b' + escaped_masked + r'\b'
-                        logger.debug(f"🖥️ 使用主机名模式恢复: {pattern}")
+                        # logger.debug(f"🖥️ 使用主机名模式恢复: {pattern}")
                     else:
                         # 通用格式，使用直接替换
                         pattern = escaped_masked
-                        logger.debug(f"🔧 使用通用模式恢复: {pattern}")
+                        # logger.debug(f"🔧 使用通用模式恢复: {pattern}")
                     
                     new_text = re.sub(pattern, original_value, restored_text)
                     if new_text != restored_text:
@@ -99,12 +99,14 @@ class MaskingMappingStore:
                     else:
                         logger.warning(f"⚠️ 恢复失败，未找到匹配项: '{masked_value}' (使用模式: {pattern})")
                 else:
-                    logger.debug(f"⏭️ 文本中未找到脱敏值: '{masked_value}'")
+                    # logger.info(f"⏭️ 文本中未找到脱敏值: '{masked_value}'")
+                    pass
             
             if restore_count > 0:
                 logger.info(f"🔓 成功恢复 {restore_count} 个脱敏值")
             else:
-                logger.debug("💭 无脱敏内容需要恢复")
+                # logger.debug("💭 无脱敏内容需要恢复")
+                pass
             
             return restored_text
     
