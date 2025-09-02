@@ -360,6 +360,12 @@ from .endpoints.llm_config import router as llm_config_router
 # 导入任务调度管理端点
 from .endpoints.scheduler import router as scheduler_router
 
+# 导入资源告警管理端点
+from .endpoints.alerts import router as alerts_router
+
+# 导入资源管理端点
+from .endpoints.resources import router as resources_router
+
 # 注册MCP配置路由
 api_v2_router.include_router(mcp_config_router)
 api_v2_router.include_router(mcp_config_update_router)
@@ -373,6 +379,12 @@ api_v2_router.include_router(inspection_router)
 
 # 注册任务调度路由
 api_v2_router.include_router(scheduler_router)
+
+# 注册资源告警路由
+api_v2_router.include_router(alerts_router)
+
+# 注册资源管理路由
+api_v2_router.include_router(resources_router)
 
 # 多供应商LLM配置管理API - 简化版本
 @api_v2_router.get("/config/llm/providers", summary="获取LLM配置（简化版）")

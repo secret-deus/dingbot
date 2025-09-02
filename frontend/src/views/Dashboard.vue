@@ -10,6 +10,10 @@
         <el-button type="success" @click="onRunInspection" :loading="inspectionLoading">
           一键巡检
         </el-button>
+        <el-button type="warning" @click="onUpdateResourceMetrics" :loading="resourceUpdateLoading">
+          <el-icon><DataAnalysis /></el-icon>
+          更新资源指标
+        </el-button>
       </div>
     </div>
 
@@ -159,7 +163,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Refresh, RefreshRight } from '@element-plus/icons-vue'
+import { Refresh, RefreshRight, DataAnalysis } from '@element-plus/icons-vue'
 import { api } from '@/api/client'
 import { renderMarkdown } from '@/utils/markdown'
 
@@ -191,6 +195,9 @@ let refreshTimer = null
 const inspectionLoading = ref(false)
 const inspectionDialogVisible = ref(false)
 const inspectionMarkdown = ref('')
+
+// 资源更新数据
+const resourceUpdateLoading = ref(false)
 
 // 方法
 const refreshData = async () => {
@@ -226,6 +233,73 @@ const onRunInspection = async () => {
     addLog('error', `巡检失败: ${e?.message || e}`)
   } finally {
     inspectionLoading.value = false
+  }
+}
+
+const onUpdateResourceMetrics = async () => {
+  resourceUpdateLoading.value = true
+  try {
+    addLog('info', '开始更新资源指标...')
+    
+    const res = await api.resources.updateMetrics({
+      days: 14,
+      maxConcurrent: 5,
+      forceUpdate: false
+    })
+    
+    const data = res.data
+    if (data.success) {
+      const message = `资源指标更新完成: 总计 ${data.total_apps} 个应用，成功 ${data.successful_updates} 个，失败 ${data.failed_updates} 个`
+      ElMessage.success(message)
+      addLog('success', message)
+      
+      // 显示摘要信息
+      if (data.details && data.details.summary) {
+        addLog('info', data.details.summary)
+      }
+      
+      // 显示失败资源详情
+      if (data.failed_updates > 0 && data.details && data.details.failed_resources) {
+        addLog('warning', `失败资源详情:`)
+        data.details.failed_resources.forEach((failedResource, index) => {
+          if (index < 5) { // 只显示前5个失败资源
+            addLog('error', `${index + 1}. ${failedResource}`)
+          }
+        })
+        if (data.details.failed_resources.length > 5) {
+          addLog('warning', `... 还有 ${data.details.failed_resources.length - 5} 个失败资源`)
+        }
+      }
+      
+      // 显示资源分析报告
+      if (data.details && data.details.analysis_report) {
+        addLog('info', '📊 资源分析报告已生成')
+        addLog('info', '异常资源和优化建议已通过钉钉发送')
+        
+        // 可以选择显示报告摘要
+        const reportLines = data.details.analysis_report.split('\n')
+        const summaryLines = reportLines.slice(0, 10) // 只显示前10行作为摘要
+        summaryLines.forEach(line => {
+          if (line.trim()) {
+            addLog('info', line.trim())
+          }
+        })
+        
+        if (reportLines.length > 10) {
+          addLog('info', '... (完整报告已发送至钉钉)')
+        }
+      }
+    } else {
+      ElMessage.error(data.message || '资源指标更新失败')
+      addLog('error', data.message || '资源指标更新失败')
+    }
+  } catch (error) {
+    console.error('资源指标更新失败:', error)
+    const errorMessage = error?.response?.data?.detail || error?.message || '资源指标更新失败'
+    ElMessage.error(errorMessage)
+    addLog('error', errorMessage)
+  } finally {
+    resourceUpdateLoading.value = false
   }
 }
 

@@ -18,6 +18,14 @@
 - **Prometheus集成**: 支持Prometheus格式指标导出
 - **监控API**: 完整的RESTful监控API接口
 
+### 🔔 资源告警系统 (V2)
+- **智能监控**: 自动监控K8s应用的CPU和内存利用率
+- **阈值告警**: 可配置的资源利用率阈值检测（默认CPU 80%，内存 70%）
+- **冷却机制**: 防止频繁告警的智能冷却系统
+- **LLM分析**: 集成LLM智能分析资源问题并生成优化建议
+- **钉钉推送**: 自动发送格式化告警消息到钉钉群
+- **架构分离**: MCP服务器专注监控检测，后端API处理分析和通知
+
 ### 🚀 基础能力
 - **真实K8s操作**: 使用kubernetes Python客户端进行真实的K8s操作
 - **安全配置**: 支持命名空间权限控制和操作审计
@@ -41,6 +49,11 @@
 ### 智能工具 🧠
 - `k8s-relation-query` - 资源关联查询和依赖分析
 - `k8s-cluster-summary` - 智能集群状态摘要生成
+
+### 监控告警工具 🔔
+- `k8s-resource-monitor` - 手动触发资源监控和告警测试
+- `k8s-prometheus-app-metrics` - 获取应用的Prometheus指标数据
+- `k8s-update-knowledge-graph-metrics` - 更新知识图谱中的指标数据
 
 ## 🚀 快速开始
 
@@ -125,6 +138,30 @@ ALERT_CPU_PERCENT_MAX=80.0
 ALERT_MEMORY_PERCENT_MAX=85.0
 ALERT_ERROR_RATE_MAX=5.0
 ALERT_SYNC_DELAY_MAX=300.0
+
+# =============================================================================
+# 🔔 资源告警配置 (V2) - 可选
+# =============================================================================
+
+# 启用资源告警功能
+RESOURCE_ALERT_ENABLED=true
+
+# 告警阈值设置 (0.0-1.0)
+MEMORY_ALERT_THRESHOLD=0.7
+CPU_ALERT_THRESHOLD=0.8
+
+# 告警冷却时间 (秒)
+ALERT_COOLDOWN_SECONDS=300
+
+# 启用LLM智能分析
+ENABLE_LLM_ANALYSIS=true
+LLM_ANALYSIS_TIMEOUT=30
+
+# 后端API通信配置
+BACKEND_API_URL=http://localhost:8000
+ENABLE_BACKEND_NOTIFICATIONS=true
+API_TIMEOUT=30
+API_MAX_RETRIES=3
 ```
 
 ### 3. 启动服务器

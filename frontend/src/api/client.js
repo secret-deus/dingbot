@@ -37,7 +37,7 @@ export const SCHEDULER_CONSTANTS = {
   
   // 请求超时配置
   REQUEST_TIMEOUT: 30000,
-  LONG_REQUEST_TIMEOUT: 60000,
+  LONG_REQUEST_TIMEOUT: 600000, // 10分钟，用于长时间运行的操作
   
   // 重试配置
   DEFAULT_MAX_RETRIES: 3,
@@ -62,7 +62,7 @@ export const SCHEDULER_CONSTANTS = {
 // 创建axios实例
 const apiClient = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
-  timeout: 30000,
+  timeout: 600000, // 10分钟超时，支持长时间运行的工具调用
   headers: {
     'Content-Type': 'application/json',
   }
@@ -166,9 +166,31 @@ export const api = {
     testConfig: (type, config) => apiClient.post('/v2/config/test', {
       config_type: type,
       config_data: config
+    })
+  },
+
+  // K8s资源管理API
+  resources: {
+    // 触发资源指标更新
+    updateMetrics: (params = {}) => apiClient.post('/v2/resources/update-metrics', {
+      namespace_filter: params.namespaceFilter || '',
+      app_name_filter: params.appNameFilter || '',
+      days: params.days || 14,
+      max_concurrent: params.maxConcurrent || 5,
+      force_update: params.forceUpdate || false
     }),
-    // 获取支持的提供商
-    getProviders: () => apiClient.get('/v2/config/providers'),
+    
+    // 获取指标覆盖情况
+    getMetricsCoverage: (params = {}) => apiClient.get('/v2/resources/metrics-coverage', {
+      params: {
+        include_details: params.includeDetails || false,
+        filter_namespace: params.filterNamespace || '',
+        show_failed_only: params.showFailedOnly || false
+      }
+    }),
+    
+    // 强制触发指标聚合
+    forceAggregation: () => apiClient.post('/v2/resources/force-aggregation')
   },
 
   // 聊天相关

@@ -44,6 +44,13 @@ from .k8s_prometheus_app_metrics import K8sPrometheusAppMetricsTool
 # 知识图谱指标更新工具
 from .k8s_update_knowledge_graph_metrics import K8sUpdateKnowledgeGraphMetricsTool
 
+# 资源监控MCP工具
+from .k8s_resource_monitor import K8sResourceMonitorTool
+
+# 指标覆盖报告工具
+from .k8s_metrics_coverage_report import K8sMetricsCoverageReportTool
+from .k8s_resource_analysis_report_tool import K8sResourceAnalysisReportTool
+
 from ..core.tool_registry import tool_registry
 
 # 可用工具列表
@@ -75,6 +82,13 @@ SAFE_QUERY_TOOLS = [
     
     # 知识图谱指标更新工具
     K8sUpdateKnowledgeGraphMetricsTool,
+    
+    # 资源监控MCP工具
+    K8sResourceMonitorTool,
+    
+    # 指标覆盖报告工具
+    K8sMetricsCoverageReportTool,
+    K8sResourceAnalysisReportTool,
 ]
 
 # 危险的修改工具列表 - 这些工具会修改集群状态，已被禁用
@@ -139,6 +153,9 @@ __all__ = [
     
     # 智能查询工具
     "K8sRelationQueryTool", "K8sClusterSummaryTool",
+    
+    # 资源分析工具
+    "K8sResourceMonitorTool", "K8sMetricsCoverageReportTool", "K8sResourceAnalysisReportTool",
     
     # 工具列表
     "SAFE_QUERY_TOOLS", "DANGEROUS_MODIFICATION_TOOLS", "AVAILABLE_TOOLS",

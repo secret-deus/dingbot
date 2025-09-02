@@ -39,6 +39,9 @@ class MCPServerConnection:
         self.last_ping = None
         self.message_queue = asyncio.Queue()
         
+        # 工具调用跟踪，用于SSE重连后的状态恢复
+        self.active_tool_calls: Dict[str, Dict[str, Any]] = {}
+        
         # 添加配置管理器引用，用于自动同步
         self.config_manager = None
     
@@ -228,7 +231,9 @@ class MCPServerConnection:
         while retry_count < max_retries:
             try:
                 logger.info(f"正在连接SSE事件流: {uri} (尝试 {retry_count + 1}/{max_retries})")
-                async with self.session.get(uri, headers=headers) as response:
+                # 为SSE连接设置更长的超时时间，支持长时间运行的工具
+                timeout = aiohttp.ClientTimeout(total=None, sock_read=self.config.timeout)
+                async with self.session.get(uri, headers=headers, timeout=timeout) as response:
                     if response.status != 200:
                         error_msg = f"SSE连接失败: HTTP {response.status}"
                         if response.status == 404:
@@ -241,6 +246,13 @@ class MCPServerConnection:
                     
                     logger.info("SSE事件流连接成功，开始监听事件")
                     retry_count = 0  # 重置重试计数器
+                    
+                    # 检查是否有活跃的工具调用
+                    if self.active_tool_calls:
+                        logger.warning(f"⚠️ SSE重连时发现 {len(self.active_tool_calls)} 个活跃工具调用，可能会丢失结果")
+                        for call_id, call_info in self.active_tool_calls.items():
+                            elapsed = asyncio.get_event_loop().time() - call_info["start_time"]
+                            logger.warning(f"   - {call_info['tool_name']} (ID: {call_id[:8]}..., 已运行: {elapsed:.1f}秒)")
                     
                     current_event = None
                     async for line in response.content:
@@ -265,7 +277,7 @@ class MCPServerConnection:
                 retry_count += 1
                 logger.error(f"SSE连接网络错误 (尝试 {retry_count}/{max_retries}): {e}")
                 if retry_count < max_retries:
-                    wait_time = min(2 ** retry_count, 30)  # 指数退避，最大30秒
+                    wait_time = min(2 ** retry_count, 120)  # 指数退避，最大120秒
                     logger.info(f"网络连接失败，等待 {wait_time} 秒后重连...")
                     await asyncio.sleep(wait_time)
                 else:
@@ -275,7 +287,7 @@ class MCPServerConnection:
                 retry_count += 1
                 logger.error(f"SSE连接超时 (尝试 {retry_count}/{max_retries}): {e}")
                 if retry_count < max_retries:
-                    wait_time = min(2 ** retry_count, 30)
+                    wait_time = min(2 ** retry_count, 120)
                     logger.info(f"连接超时，等待 {wait_time} 秒后重连...")
                     await asyncio.sleep(wait_time)
                 else:
@@ -286,7 +298,7 @@ class MCPServerConnection:
                 logger.error(f"SSE连接未知错误 (尝试 {retry_count}/{max_retries}): {type(e).__name__}: {e}")
                 
                 if retry_count < max_retries:
-                    wait_time = min(2 ** retry_count, 30)
+                    wait_time = min(2 ** retry_count, 120)
                     logger.info(f"发生未知错误，等待 {wait_time} 秒后重连...")
                     await asyncio.sleep(wait_time)
                 else:
@@ -771,7 +783,7 @@ class MCPServerConnection:
             for tool_name in self.config.disabled_tools:
                 self.tools.pop(tool_name, None)
     
-    async def call_tool(self, name: str, parameters: Dict[str, Any], timeout: float = 30.0) -> Any:
+    async def call_tool(self, name: str, parameters: Dict[str, Any], timeout: float = 600.0) -> Any:
         """调用工具"""
         if name not in self.tools:
             raise MCPException("TOOL_NOT_FOUND", f"工具不存在: {name}")
@@ -788,7 +800,8 @@ class MCPServerConnection:
             elif self.config.type in ["subprocess", "local"]:
                 return await self._call_tool_rpc(name, parameters)
         except Exception as e:
-            logger.error(f"工具调用失败 {name}: {e}")
+            logger.error(f"工具调用失败 {name}: {type(e).__name__}: {str(e)}")
+            logger.error(f"异常详情: {repr(e)}")
             raise
     
     async def _call_tool_websocket(self, name: str, parameters: Dict[str, Any]) -> Any:
@@ -823,7 +836,7 @@ class MCPServerConnection:
             
             return await response.json()
     
-    async def _call_tool_sse(self, name: str, parameters: Dict[str, Any], timeout: float = 30.0) -> Any:
+    async def _call_tool_sse(self, name: str, parameters: Dict[str, Any], timeout: float = 600.0) -> Any:
         """通过SSE调用工具"""
         # SSE工具调用：通过HTTP POST发送请求，通过SSE接收响应
         
@@ -857,26 +870,55 @@ class MCPServerConnection:
         
         logger.info(f"发送SSE工具调用请求: {name}, ID: {request_id}")
         
-        async with self.session.post(
-            f"http://{self.config.host}:{self.config.port}/tools/call",
-            json=request_data,
-            headers=headers
-        ) as response:
-            if response.status != 200:
-                raise MCPException("TOOL_CALL_FAILED", f"SSE工具调用失败: {response.status}")
-            
-            # HTTP响应只是确认请求已接收，实际结果通过SSE返回
-            response_data = await response.json()
-            logger.info(f"工具调用请求已发送: {response_data}")
+        # 记录活跃的工具调用
+        self.active_tool_calls[request_id] = {
+            "tool_name": name,
+            "parameters": parameters,
+            "start_time": asyncio.get_event_loop().time(),
+            "timeout": timeout
+        }
+        
+        try:
+            logger.info(f"🔄 开始POST请求到: http://{self.config.host}:{self.config.port}/tools/call")
+            # POST请求现在会立即返回，不需要特殊超时设置
+            async with self.session.post(
+                f"http://{self.config.host}:{self.config.port}/tools/call",
+                json=request_data,
+                headers=headers
+            ) as response:
+                logger.info(f"📡 收到POST响应，状态码: {response.status}")
+                if response.status != 200:
+                    error_text = await response.text()
+                    logger.error(f"❌ POST请求失败: 状态码={response.status}, 响应={error_text}")
+                    raise MCPException("TOOL_CALL_FAILED", f"SSE工具调用失败: {response.status}")
+                
+                # HTTP响应只是确认请求已接收，实际结果通过SSE返回
+                logger.info("📄 开始解析响应JSON...")
+                try:
+                    response_data = await response.json()
+                    logger.info(f"✅ 工具调用请求已发送: {response_data}")
+                except Exception as json_error:
+                    response_text = await response.text()
+                    logger.error(f"🔥 JSON解析失败: {json_error}, 响应内容: {response_text}")
+                    raise
+        except Exception as e:
+            logger.error(f"💥 POST请求过程中发生异常: {type(e).__name__}: {str(e)}")
+            raise
         
         # 等待SSE事件中的工具执行结果
         return await self._wait_for_tool_result(request_id, timeout)
     
-    async def _wait_for_tool_result(self, request_id: str, timeout: float = 30.0) -> Any:
+    async def _wait_for_tool_result(self, request_id: str, timeout: float = 600.0) -> Any:
         """等待工具执行结果"""
-        logger.info(f"等待工具执行结果: {request_id}")
+        logger.info(f"等待工具执行结果: {request_id}, 超时设置: {timeout}秒")
+        logger.info(f"🔍 调试信息 - 配置超时: {self.config.timeout}秒, 传入超时: {timeout}秒")
+        logger.info(f"🔍 配置对象详情 - 类型: {self.config.type}, 主机: {self.config.host}:{self.config.port}")
         
         start_time = asyncio.get_event_loop().time()
+        
+        # 调试日志 - 写入文件
+        with open("/tmp/resource_debug.log", "a", encoding="utf-8") as f:
+            f.write(f"开始等待工具结果: {request_id}, 超时: {timeout}秒, 时间: {datetime.now()}\n")
         
         while True:
             try:
@@ -886,13 +928,25 @@ class MCPServerConnection:
                     timeout=1.0  # 短超时，用于检查总超时
                 )
                 
+                # 调试日志 - 收到消息
+                with open("/tmp/resource_debug.log", "a", encoding="utf-8") as f:
+                    f.write(f"收到消息: {message.get('type', 'unknown')}, ID: {message.get('id', 'none')}, 目标ID: {request_id}, 时间: {datetime.now()}\n")
+                
                 # 检查是否是我们等待的结果
                 if message.get("id") == request_id:
                     if message.get("type") == "tool_result":
                         logger.info(f"收到工具执行结果: {request_id}")
+                        # 清理活跃工具调用记录
+                        self.active_tool_calls.pop(request_id, None)
+                        with open("/tmp/resource_debug.log", "a", encoding="utf-8") as f:
+                            f.write(f"工具执行成功: {request_id}, 时间: {datetime.now()}\n")
                         return message.get("result")
                     elif message.get("type") == "tool_error":
                         logger.error(f"工具执行失败: {request_id}, 错误: {message.get('error')}")
+                        # 清理活跃工具调用记录
+                        self.active_tool_calls.pop(request_id, None)
+                        with open("/tmp/resource_debug.log", "a", encoding="utf-8") as f:
+                            f.write(f"工具执行错误: {request_id}, 错误: {message.get('error')}, 时间: {datetime.now()}\n")
                         raise MCPException("TOOL_EXECUTION_FAILED", message.get("error", "未知错误"))
                 else:
                     # 不是我们等待的结果，重新放回队列
@@ -900,9 +954,21 @@ class MCPServerConnection:
                 
             except asyncio.TimeoutError:
                 # 检查总超时
-                if asyncio.get_event_loop().time() - start_time > timeout:
+                elapsed_time = asyncio.get_event_loop().time() - start_time
+                if elapsed_time > timeout:
+                    # 清理活跃工具调用记录
+                    self.active_tool_calls.pop(request_id, None)
+                    with open("/tmp/resource_debug.log", "a", encoding="utf-8") as f:
+                        f.write(f"工具调用总超时: {request_id}, 已用时: {elapsed_time:.1f}秒, 超时设置: {timeout}秒, 时间: {datetime.now()}\n")
                     raise MCPException("TOOL_CALL_TIMEOUT", f"工具调用超时: {request_id}")
                 continue
+            except Exception as e:
+                # 捕获其他异常并记录详细信息
+                elapsed_time = asyncio.get_event_loop().time() - start_time
+                with open("/tmp/resource_debug.log", "a", encoding="utf-8") as f:
+                    f.write(f"工具等待过程中发生异常: {request_id}, 异常: {type(e).__name__}: {str(e)}, 已用时: {elapsed_time:.1f}秒, 时间: {datetime.now()}\n")
+                logger.error(f"工具等待过程中发生异常: {request_id}, 异常: {type(e).__name__}: {str(e)}")
+                raise
     
     async def _call_tool_stream_http(self, name: str, parameters: Dict[str, Any]) -> Any:
         """通过Stream HTTP调用工具"""
@@ -990,7 +1056,7 @@ class MCPServerConnection:
                 if self.last_ping:
                     # 检查最后一次心跳时间
                     time_since_ping = (datetime.now() - self.last_ping).total_seconds()
-                    return time_since_ping < 60  # 60秒内有心跳认为连接正常
+                    return time_since_ping < 180  # 180秒内有心跳认为连接正常
                 return False
             elif self.config.type == "subprocess" and self.process:
                 self.last_ping = datetime.now()
@@ -1119,21 +1185,36 @@ class EnhancedMCPClient:
         
         # 应用工具配置
         tool_config = self.config_manager.get_tool_by_name(name)
-        tool_timeout = 30.0  # 默认超时时间
+        tool_timeout = 600.0  # 默认超时时间
+
+        # 先应用配置文件中的超时设置
         if tool_config:
             # 合并默认参数
             if tool_config.default_parameters:
                 merged_params = tool_config.default_parameters.copy()
                 merged_params.update(parameters)
                 parameters = merged_params
-            
+
             # 设置超时
             if hasattr(tool_config, 'timeout') and tool_config.timeout:
                 tool_timeout = float(tool_config.timeout)
-                logger.info(f"使用工具 {name} 的自定义超时时间: {tool_timeout}秒")
-        
+                logger.info(f"使用工具 {name} 的配置超时时间: {tool_timeout}秒")
+
+        # 特殊工具的超时时间设置（优先级最高）
+        if name == "k8s-update-knowledge-graph-metrics":
+            tool_timeout = 600.0  # 10分钟
+            logger.info(f"🔧 强制使用资源更新工具的特殊超时时间: {tool_timeout}秒")
+        elif name == "k8s-resource-analysis-report":
+            tool_timeout = 300.0  # 5分钟
+            logger.info(f"🔧 强制使用资源分析工具的特殊超时时间: {tool_timeout}秒")
+
         # 执行工具调用
         start_time = datetime.now()
+
+        # 强制日志输出 - 写入文件
+        with open("/tmp/resource_debug.log", "a", encoding="utf-8") as f:
+            f.write(f"准备调用工具: {name}, 超时时间: {tool_timeout}秒, 时间: {start_time}\n")
+
         try:
             result = await connection.call_tool(name, parameters, tool_timeout)
             

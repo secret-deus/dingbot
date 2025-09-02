@@ -13,11 +13,11 @@ import tempfile
 import os
 import json
 
-from src.llm.config_manager import (
+from ....llm.config_manager import (
     LLMConfigManager,
     get_llm_config_manager
 )
-from src.llm.config import LLMProviderConfig, LLMConfiguration
+from ....llm.config import LLMProviderConfig, LLMConfiguration
 
 router = APIRouter(prefix="/llm/config", tags=["LLM配置"])
 

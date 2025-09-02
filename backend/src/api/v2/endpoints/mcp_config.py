@@ -12,13 +12,13 @@ import tempfile
 import os
 import json
 
-from src.mcp.config_manager import (
+from ....mcp.config_manager import (
     MCPConfigManager, 
     MCPConfigTemplate, 
     MCPConfigValidationResult,
     get_mcp_config_manager
 )
-from src.mcp.config import MCPServerConfig, MCPToolConfig, MCPConfiguration
+from ....mcp.config import MCPServerConfig, MCPToolConfig, MCPConfiguration
 
 router = APIRouter(prefix="/mcp/config", tags=["MCP配置"])
 

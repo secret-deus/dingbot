@@ -8,6 +8,7 @@
 - [基础配置](#基础配置)
 - [智能功能配置](#智能功能配置)
 - [监控配置](#监控配置)
+- [资源告警配置](#资源告警配置) 🆕
 - [安全配置](#安全配置)
 - [性能调优](#性能调优)
 - [环境配置](#环境配置)
@@ -248,6 +249,122 @@ PROMETHEUS_LABELS_REGION=us-west-2
 | 禁止的命名空间 | `K8S_FORBIDDEN_NAMESPACES` | 禁止访问的命名空间 | `kube-system,kube-public` |
 | 操作审计 | `K8S_AUDIT_ENABLED` | 是否启用操作审计 | `true` |
 | 审计日志文件 | `K8S_AUDIT_LOG_FILE` | 审计日志文件路径 | `logs/audit.log` |
+
+## 🔔 资源告警配置
+
+### 告警功能概述
+
+V2版本的资源告警系统采用架构分离设计：
+- **MCP服务器**: 专注资源监控和告警检测
+- **后端API**: 处理LLM分析和钉钉发送
+- **HTTP通信**: 通过标准API实现服务间通信
+
+### 基础告警配置
+
+| 配置项 | 环境变量 | 描述 | 默认值 |
+|--------|----------|------|--------|
+| 启用告警 | `RESOURCE_ALERT_ENABLED` | 是否启用资源告警功能 | `true` |
+| 内存阈值 | `MEMORY_ALERT_THRESHOLD` | 内存告警阈值 (0.0-1.0) | `0.7` |
+| CPU阈值 | `CPU_ALERT_THRESHOLD` | CPU告警阈值 (0.0-1.0) | `0.8` |
+| 冷却时间 | `ALERT_COOLDOWN_SECONDS` | 告警冷却时间（秒） | `300` |
+
+### LLM分析配置
+
+| 配置项 | 环境变量 | 描述 | 默认值 |
+|--------|----------|------|--------|
+| 启用LLM | `ENABLE_LLM_ANALYSIS` | 启用LLM智能分析 | `true` |
+| 分析超时 | `LLM_ANALYSIS_TIMEOUT` | LLM分析超时时间（秒） | `30` |
+
+### 后端API通信配置
+
+| 配置项 | 环境变量 | 描述 | 默认值 |
+|--------|----------|------|--------|
+| API地址 | `BACKEND_API_URL` | 后端API服务地址 | `http://localhost:8000` |
+| 启用通知 | `ENABLE_BACKEND_NOTIFICATIONS` | 启用后端通知 | `true` |
+| API超时 | `API_TIMEOUT` | API请求超时时间（秒） | `30` |
+| 最大重试 | `API_MAX_RETRIES` | API请求最大重试次数 | `3` |
+
+### 资源告警配置示例
+
+**开发环境配置**:
+```env
+# =============================================================================
+# 🔔 资源告警配置 (开发环境)
+# =============================================================================
+
+# 基础告警配置
+RESOURCE_ALERT_ENABLED=true
+MEMORY_ALERT_THRESHOLD=0.8
+CPU_ALERT_THRESHOLD=0.9
+ALERT_COOLDOWN_SECONDS=180
+
+# LLM分析配置
+ENABLE_LLM_ANALYSIS=true
+LLM_ANALYSIS_TIMEOUT=20
+
+# 后端API配置
+BACKEND_API_URL=http://localhost:8000
+ENABLE_BACKEND_NOTIFICATIONS=true
+API_TIMEOUT=15
+API_MAX_RETRIES=2
+```
+
+**生产环境配置**:
+```env
+# =============================================================================
+# 🔔 资源告警配置 (生产环境)
+# =============================================================================
+
+# 基础告警配置
+RESOURCE_ALERT_ENABLED=true
+MEMORY_ALERT_THRESHOLD=0.75
+CPU_ALERT_THRESHOLD=0.80
+ALERT_COOLDOWN_SECONDS=600
+
+# LLM分析配置
+ENABLE_LLM_ANALYSIS=true
+LLM_ANALYSIS_TIMEOUT=45
+
+# 后端API配置
+BACKEND_API_URL=https://api.company.com
+ENABLE_BACKEND_NOTIFICATIONS=true
+API_TIMEOUT=30
+API_MAX_RETRIES=5
+```
+
+### 配置验证规则
+
+系统启动时会自动验证配置：
+
+1. **阈值验证**:
+   - 内存和CPU阈值必须在0.0-1.0之间
+   - 告警冷却时间不能为负数
+
+2. **API配置验证**:
+   - 后端API URL格式检查
+   - 超时时间合理范围验证（5-120秒）
+   - 重试次数合理范围验证（0-10次）
+
+3. **依赖性检查**:
+   - 启用后端通知时必须配置API URL
+   - LLM功能依赖后端API可用性
+
+### 配置最佳实践
+
+**阈值设置建议**:
+- **关键应用**: 内存70%，CPU75%
+- **一般应用**: 内存75%，CPU80%
+- **批处理任务**: 内存85%，CPU90%
+
+**冷却时间建议**:
+- **生产环境**: 10-15分钟（避免告警风暴）
+- **测试环境**: 3-5分钟（快速响应）
+- **开发环境**: 1-3分钟（调试方便）
+
+**API配置建议**:
+- **内网环境**: 超时15-30秒，重试2-3次
+- **跨网络**: 超时30-60秒，重试3-5次
+- **高延迟**: 超时60-120秒，重试5-10次
 
 ### RBAC配置示例
 

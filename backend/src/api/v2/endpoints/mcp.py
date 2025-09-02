@@ -6,13 +6,9 @@ from typing import Dict, List, Any, Optional
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
-import sys
-import os
-sys.path.append(os.path.join(os.path.dirname(__file__), '../../..'))
-
-from src.mcp.config import get_config_manager
-from src.mcp.config_manager import MCPConfigManager
-from src.mcp.enhanced_client import EnhancedMCPClient
+from ....mcp.config_manager import MCPConfigManager
+from ....mcp.enhanced_client import EnhancedMCPClient
+from ....mcp.config import get_config_manager
 
 
 router = APIRouter(prefix="/mcp", tags=["MCP配置"])

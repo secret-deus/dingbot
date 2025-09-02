@@ -40,7 +40,7 @@ class MCPServerConfig(BaseModel):
     env: Optional[Dict[str, str]] = Field(None, description="环境变量")
     
     # 连接配置
-    timeout: int = Field(30, description="连接超时时间(秒)")
+    timeout: int = Field(300, description="连接超时时间(秒)")
     retry_attempts: int = Field(3, description="重试次数")
     retry_delay: int = Field(1, description="重试延迟(秒)")
     

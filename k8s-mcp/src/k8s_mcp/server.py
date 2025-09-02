@@ -615,7 +615,7 @@ class K8sMCPServer:
         
         @self.app.post("/tools/call")
         async def call_tool(request: ToolCallRequest):
-            """调用工具"""
+            """调用工具（异步执行）"""
             start_time = time.time()
             try:
                 logger.info(f"📥 收到工具调用请求: {request.name}")
@@ -629,80 +629,97 @@ class K8sMCPServer:
                     "timestamp": start_time
                 })
                 
-                # 执行工具
-                logger.info(f"🚀 开始执行工具: {request.name}")
-                result = await tool_registry.execute_tool(request.name, request.arguments)
-                execution_time = time.time() - start_time
+                # 立即返回确认响应，工具异步执行
+                logger.info(f"🚀 启动异步工具执行: {request.name}")
                 
-                # 记录执行结果详情
-                if hasattr(result, 'is_error') and result.is_error:
-                    logger.error(f"❌ 工具执行失败: {request.name}, 错误: {result.content}")
-                    error_detail = str(result.content) if hasattr(result, 'content') else "未知错误"
-                    
-                    # 广播工具执行错误事件
-                    await self._broadcast_event("tool_error", {
-                        "id": request.id,
-                        "tool": request.name,
-                        "error": error_detail,
-                        "success": False,
-                        "execution_time": execution_time,
-                        "timestamp": time.time()
-                    })
-                    
-                    raise HTTPException(status_code=500, detail=error_detail)
+                # 创建异步任务执行工具
+                asyncio.create_task(self._execute_tool_async(request, start_time))
                 
-                # 序列化结果
-                result_data = self._serialize_result(result)
+                # 立即返回HTTP响应
+                return ToolCallResponse(status="accepted", message="工具调用已接受，正在异步执行")
                 
-                # 记录成功执行的详细日志
-                result_size = len(str(result_data)) if result_data else 0
-                result_type = type(result).__name__ if result else "None"
-                
-                logger.info(f"✅ 工具执行成功: {request.name}")
-                logger.info(f"📊 执行统计: 耗时={execution_time:.3f}s, 结果大小={result_size}字节, 类型={result_type}")
-                
-                # 记录结果摘要（如果结果是字典且有特定字段）
-                if isinstance(result_data, dict):
-                    if 'total' in result_data:
-                        logger.info(f"📋 结果摘要: 总数={result_data.get('total', 0)}")
-                    if 'items' in result_data and isinstance(result_data['items'], list):
-                        logger.info(f"📋 结果摘要: 返回项目数={len(result_data['items'])}")
-                    if 'namespace' in result_data:
-                        logger.info(f"📋 结果摘要: 命名空间={result_data.get('namespace', 'unknown')}")
-                
-                # 广播工具执行完成事件
-                await self._broadcast_event("tool_complete", {
-                    "id": request.id,
-                    "tool": request.name,
-                    "result": result_data,
-                    "success": True,
-                    "execution_time": execution_time,
-                    "result_size": result_size,
-                    "timestamp": time.time()
-                })
-                
-                return ToolCallResponse(status="success", message="工具执行完成")
-                
-            except HTTPException:
-                # 重新抛出HTTP异常
-                raise
             except Exception as e:
-                execution_time = time.time() - start_time
-                error_msg = str(e)
-                logger.error(f"❌ 工具调用异常: {request.name}, 错误: {error_msg}, 耗时: {execution_time:.3f}s")
-                logger.exception(f"🔍 工具调用异常堆栈: {request.name}")
+                logger.error(f"💥 工具调用请求处理失败: {request.name}, 错误: {e}")
                 
                 # 广播工具执行错误事件
                 await self._broadcast_event("tool_error", {
                     "id": request.id,
                     "tool": request.name,
-                    "error": error_msg,
+                    "error": str(e),
+                    "success": False,
+                    "execution_time": time.time() - start_time,
+                    "timestamp": time.time()
+                })
+                
+                raise HTTPException(status_code=500, detail=str(e))
+    
+    async def _execute_tool_async(self, request: ToolCallRequest, start_time: float):
+        """异步执行工具"""
+        try:
+            # 执行工具
+            logger.info(f"🔧 异步执行工具: {request.name}")
+            result = await tool_registry.execute_tool(request.name, request.arguments)
+            execution_time = time.time() - start_time
+            
+            # 记录执行结果详情
+            if hasattr(result, 'is_error') and result.is_error:
+                logger.error(f"❌ 工具执行失败: {request.name}, 错误: {result.content}")
+                error_detail = str(result.content) if hasattr(result, 'content') else "未知错误"
+                
+                # 广播工具执行错误事件
+                await self._broadcast_event("tool_error", {
+                    "id": request.id,
+                    "tool": request.name,
+                    "error": error_detail,
                     "success": False,
                     "execution_time": execution_time,
                     "timestamp": time.time()
                 })
-                
-                raise HTTPException(status_code=500, detail=error_msg)
+                return
+            
+            # 序列化结果
+            result_data = self._serialize_result(result)
+            
+            # 记录成功执行的详细日志
+            result_size = len(str(result_data)) if result_data else 0
+            result_type = type(result).__name__ if result else "None"
+            
+            logger.info(f"✅ 工具执行成功: {request.name}")
+            logger.info(f"📊 执行统计: 耗时={execution_time:.3f}s, 结果大小={result_size}字节, 类型={result_type}")
+            
+            # 记录结果摘要（如果结果是字典且有特定字段）
+            if isinstance(result_data, dict):
+                if 'total' in result_data:
+                    logger.info(f"📋 结果摘要: 总数={result_data.get('total', 0)}")
+                if 'items' in result_data and isinstance(result_data['items'], list):
+                    logger.info(f"📋 结果摘要: 返回项目数={len(result_data['items'])}")
+                if 'namespace' in result_data:
+                    logger.info(f"📋 结果摘要: 命名空间={result_data.get('namespace', 'unknown')}")
+            
+            # 广播工具执行完成事件
+            await self._broadcast_event("tool_complete", {
+                "id": request.id,
+                "tool": request.name,
+                "result": result_data,
+                "success": True,
+                "execution_time": execution_time,
+                "result_size": result_size,
+                "timestamp": time.time()
+            })
+            
+        except Exception as e:
+            execution_time = time.time() - start_time
+            logger.error(f"💥 异步工具执行失败: {request.name}, 错误: {e}")
+            
+            # 广播工具执行错误事件
+            await self._broadcast_event("tool_error", {
+                "id": request.id,
+                "tool": request.name,
+                "error": str(e),
+                "success": False,
+                "execution_time": execution_time,
+                "timestamp": time.time()
+            })
     
     async def _event_stream(self, request: Request):
         """SSE事件流生成器"""

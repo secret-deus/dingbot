@@ -73,7 +73,7 @@ async def reload_mcp_client_async():
                 # 尝试其他可能的导入路径
                 try:
                     logger.info("🔍 尝试从src.mcp导入MCP客户端")
-                    from src.mcp import get_mcp_client
+                    from ....mcp import get_mcp_client
                     mcp_client = get_mcp_client()
                     if mcp_client and hasattr(mcp_client, 'reload_config'):
                         if asyncio.iscoroutinefunction(mcp_client.reload_config):

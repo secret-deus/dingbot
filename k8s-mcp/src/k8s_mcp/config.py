@@ -8,7 +8,7 @@ Kubernetes MCP简化配置管理
 
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
 from pydantic import BaseModel, Field
 from loguru import logger
 from dotenv import load_dotenv
@@ -45,6 +45,22 @@ class K8sConfig(BaseModel):
     alert_memory_percent_max: float = Field(85.0, description="内存使用率阈值（%）")
     alert_error_rate_max: float = Field(5.0, description="错误率阈值（%）")
     alert_sync_delay_max: float = Field(300.0, description="同步延迟阈值（秒）")
+    
+    # 新增：资源告警配置
+    resource_alert_enabled: bool = Field(True, description="启用资源告警功能")
+    memory_alert_threshold: float = Field(0.7, description="内存告警阈值（0.0-1.0）")
+    cpu_alert_threshold: float = Field(0.8, description="CPU告警阈值（0.0-1.0）")
+    alert_cooldown_seconds: int = Field(300, description="告警冷却时间（秒）")
+    
+    # LLM分析配置
+    enable_llm_analysis: bool = Field(True, description="启用LLM智能分析")
+    llm_analysis_timeout: int = Field(30, description="LLM分析超时时间（秒）")
+    
+    # 后端API通信配置
+    backend_api_url: str = Field("http://localhost:8000", description="后端API地址")
+    enable_backend_notifications: bool = Field(True, description="启用后端通知")
+    api_timeout: int = Field(30, description="API请求超时时间（秒）")
+    api_max_retries: int = Field(3, description="API请求最大重试次数")
     
     @classmethod
     def from_env(cls) -> "K8sConfig":
@@ -95,6 +111,22 @@ class K8sConfig(BaseModel):
         alert_error_rate_max = float(os.getenv("ALERT_ERROR_RATE_MAX", "5.0"))
         alert_sync_delay_max = float(os.getenv("ALERT_SYNC_DELAY_MAX", "300.0"))
         
+        # 获取资源告警配置
+        resource_alert_enabled = os.getenv("RESOURCE_ALERT_ENABLED", "true").lower() == "true"
+        memory_alert_threshold = float(os.getenv("MEMORY_ALERT_THRESHOLD", "0.7"))
+        cpu_alert_threshold = float(os.getenv("CPU_ALERT_THRESHOLD", "0.8"))
+        alert_cooldown_seconds = int(os.getenv("ALERT_COOLDOWN_SECONDS", "300"))
+        
+        # 获取LLM分析配置
+        enable_llm_analysis = os.getenv("ENABLE_LLM_ANALYSIS", "true").lower() == "true"
+        llm_analysis_timeout = int(os.getenv("LLM_ANALYSIS_TIMEOUT", "30"))
+        
+        # 获取后端API配置
+        backend_api_url = os.getenv("BACKEND_API_URL", "http://localhost:8000")
+        enable_backend_notifications = os.getenv("ENABLE_BACKEND_NOTIFICATIONS", "true").lower() == "true"
+        api_timeout = int(os.getenv("API_TIMEOUT", "30"))
+        api_max_retries = int(os.getenv("API_MAX_RETRIES", "3"))
+        
         return cls(
             kubeconfig_path=kubeconfig_path,
             namespace=namespace,
@@ -118,7 +150,19 @@ class K8sConfig(BaseModel):
             alert_cpu_percent_max=alert_cpu_percent_max,
             alert_memory_percent_max=alert_memory_percent_max,
             alert_error_rate_max=alert_error_rate_max,
-            alert_sync_delay_max=alert_sync_delay_max
+            alert_sync_delay_max=alert_sync_delay_max,
+            # 新增的资源告警配置
+            resource_alert_enabled=resource_alert_enabled,
+            memory_alert_threshold=memory_alert_threshold,
+            cpu_alert_threshold=cpu_alert_threshold,
+            alert_cooldown_seconds=alert_cooldown_seconds,
+            enable_llm_analysis=enable_llm_analysis,
+            llm_analysis_timeout=llm_analysis_timeout,
+            # 后端API配置
+            backend_api_url=backend_api_url,
+            enable_backend_notifications=enable_backend_notifications,
+            api_timeout=api_timeout,
+            api_max_retries=api_max_retries
         )
     
     def validate_config(self) -> bool:
@@ -161,6 +205,62 @@ class K8sConfig(BaseModel):
             else:
                 logger.info("知识图谱功能已关闭，使用传统模式")
             
+            # 验证资源告警配置
+            if self.resource_alert_enabled:
+                logger.info("资源告警功能已启用")
+                
+                # 验证告警阈值合理性
+                if not (0.0 <= self.memory_alert_threshold <= 1.0):
+                    logger.error(f"内存告警阈值无效: {self.memory_alert_threshold}, 应在0.0-1.0之间")
+                    return False
+                if not (0.0 <= self.cpu_alert_threshold <= 1.0):
+                    logger.error(f"CPU告警阈值无效: {self.cpu_alert_threshold}, 应在0.0-1.0之间")
+                    return False
+                
+                logger.info(f"内存告警阈值: {self.memory_alert_threshold:.0%}")
+                logger.info(f"CPU告警阈值: {self.cpu_alert_threshold:.0%}")
+                logger.info(f"告警冷却时间: {self.alert_cooldown_seconds}秒")
+                
+                # 验证冷却时间合理性
+                if self.alert_cooldown_seconds < 60:
+                    logger.warning("告警冷却时间过短，建议至少60秒")
+                elif self.alert_cooldown_seconds > 3600:
+                    logger.warning("告警冷却时间过长，建议不超过3600秒")
+                
+                # 验证LLM分析配置
+                if self.enable_llm_analysis:
+                    logger.info("LLM智能分析已启用")
+                    if self.llm_analysis_timeout < 10:
+                        logger.warning("LLM分析超时时间过短，建议至少10秒")
+                    elif self.llm_analysis_timeout > 120:
+                        logger.warning("LLM分析超时时间过长，建议不超过120秒")
+                else:
+                    logger.info("LLM智能分析已禁用")
+                
+                # 验证后端API配置
+                if self.enable_backend_notifications:
+                    logger.info("后端通知已启用")
+                    if not self.backend_api_url:
+                        logger.warning("后端API URL未配置，将无法发送通知")
+                    else:
+                        # 简单验证URL格式
+                        if not self.backend_api_url.startswith(("http://", "https://")):
+                            logger.warning("后端API URL格式可能无效")
+                        logger.info(f"后端API: {self.backend_api_url}")
+                    
+                    # 验证API配置
+                    if self.api_timeout < 5 or self.api_timeout > 120:
+                        logger.warning("API超时时间建议在5-120秒之间")
+                    if self.api_max_retries < 0 or self.api_max_retries > 10:
+                        logger.warning("API重试次数建议在0-10次之间")
+                    
+                    logger.info(f"API配置: 超时{self.api_timeout}秒, 重试{self.api_max_retries}次")
+                else:
+                    logger.info("后端通知已禁用")
+                
+            else:
+                logger.info("资源告警功能已禁用")
+            
             return True
         except Exception as e:
             logger.error(f"验证配置失败: {e}")
@@ -171,6 +271,27 @@ class K8sConfig(BaseModel):
         if self.kubeconfig_path:
             return os.path.expanduser(self.kubeconfig_path)
         return self.kubeconfig_path
+    
+    def get_tool_default_param(self, param_name: str, default_value: Any = None) -> Any:
+        """获取工具默认参数
+        
+        Args:
+            param_name: 参数名称
+            default_value: 默认值
+            
+        Returns:
+            参数值或默认值
+        """
+        # 定义工具默认参数映射
+        tool_defaults = {
+            "logs_tail_lines": 100,
+            "max_pods_per_page": 50,
+            "default_timeout": 30,
+            "max_events": 100,
+            "default_replicas": 1
+        }
+        
+        return tool_defaults.get(param_name, default_value)
 
 
 # 全局配置实例
@@ -190,4 +311,59 @@ def get_config() -> K8sConfig:
 def set_config(config: K8sConfig):
     """设置全局配置实例"""
     global _global_config
-    _global_config = config 
+    _global_config = config
+
+
+def create_resource_alert_config_from_k8s_config(k8s_config: K8sConfig) -> 'ResourceAlertConfig':
+    """从K8sConfig创建ResourceAlertConfig
+    
+    Args:
+        k8s_config: K8s配置实例
+        
+    Returns:
+        ResourceAlertConfig: 资源告警配置实例
+    """
+    # 导入V2版本ResourceAlertConfig类（避免循环导入）
+    from .core.resource_alert_service_v2 import ResourceAlertConfig
+    
+    return ResourceAlertConfig(
+        memory_alert_threshold=k8s_config.memory_alert_threshold,
+        cpu_alert_threshold=k8s_config.cpu_alert_threshold,
+        alert_cooldown_seconds=k8s_config.alert_cooldown_seconds,
+        backend_api_url=k8s_config.backend_api_url,
+        enable_backend_notifications=k8s_config.enable_backend_notifications,
+        api_timeout=k8s_config.api_timeout,
+        api_max_retries=k8s_config.api_max_retries
+    )
+
+
+def create_metrics_config_from_k8s_config(k8s_config: K8sConfig, 
+                                          prometheus_url: str = "",
+                                          access_key: Optional[str] = None,
+                                          secret_key: Optional[str] = None,
+                                          auth_type: str = "none") -> 'MetricsConfig':
+    """从K8sConfig创建MetricsConfig
+    
+    Args:
+        k8s_config: K8s配置实例
+        prometheus_url: Prometheus服务器URL
+        access_key: 访问密钥（可选）
+        secret_key: 秘密密钥（可选）
+        auth_type: 认证类型
+        
+    Returns:
+        MetricsConfig: 指标配置实例
+    """
+    # 导入MetricsConfig类（避免循环导入）
+    from .core.metrics_aggregator import MetricsConfig
+    
+    return MetricsConfig(
+        prometheus_url=prometheus_url,
+        access_key=access_key,
+        secret_key=secret_key,
+        auth_type=auth_type,
+        memory_alert_threshold=k8s_config.memory_alert_threshold,
+        cpu_alert_threshold=k8s_config.cpu_alert_threshold,
+        alert_cooldown_seconds=k8s_config.alert_cooldown_seconds,
+        enable_resource_alerts=k8s_config.resource_alert_enabled
+    ) 

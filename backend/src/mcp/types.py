@@ -54,7 +54,7 @@ class MCPToolResult(BaseModel):
 
 class MCPClientConfig(BaseModel):
     """MCP客户端配置"""
-    timeout: int = Field(default=30000, description="超时时间(ms)")
+    timeout: int = Field(default=300000, description="超时时间(ms)")
     retry_attempts: int = Field(default=3, description="重试次数")
     retry_delay: int = Field(default=1000, description="重试延迟(ms)")
     max_concurrent_calls: int = Field(default=5, description="最大并发调用数")
@@ -112,7 +112,7 @@ class LLMProviderConfig(BaseModel):
     organization: Optional[str] = Field(None, description="组织ID (适用于OpenAI)")
     api_version: Optional[str] = Field(None, description="API版本 (适用于Azure)")
     deployment_name: Optional[str] = Field(None, description="部署名称 (适用于Azure)")
-    timeout: Optional[int] = Field(default=30, description="请求超时时间(秒)")
+    timeout: Optional[int] = Field(default=300, description="请求超时时间(秒)")
     max_retries: Optional[int] = Field(default=3, description="最大重试次数")
     temperature: float = Field(default=0.7, description="温度参数")
     max_tokens: int = Field(default=2000, description="最大Token数")
@@ -165,7 +165,7 @@ class LegacyLLMConfig(BaseModel):
     organization: Optional[str] = Field(None, description="组织ID (适用于OpenAI)")
     api_version: Optional[str] = Field(None, description="API版本 (适用于Azure)")
     deployment_name: Optional[str] = Field(None, description="部署名称 (适用于Azure)")
-    timeout: Optional[int] = Field(default=30, description="请求超时时间(秒)")
+    timeout: Optional[int] = Field(default=300, description="请求超时时间(秒)")
     max_retries: Optional[int] = Field(default=3, description="最大重试次数")
     temperature: float = Field(default=0.7, description="温度参数")
     max_tokens: int = Field(default=2000, description="最大Token数")
