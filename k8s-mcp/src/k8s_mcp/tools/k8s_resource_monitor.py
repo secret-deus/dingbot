@@ -24,17 +24,24 @@ except ImportError:
     logger.warning("无法导入ResourceAlertService，使用占位符实现")
     ResourceAlertService = None
 
-try:
-    from ..core.metrics_aggregator import get_global_aggregator
-except ImportError:
-    logger.warning("无法导入MetricsAggregator，使用占位符实现")
-    get_global_aggregator = None
+# 动态导入函数 - 避免路径问题
+def get_global_aggregator():
+    """获取全局指标聚合器"""
+    try:
+        from ..core.metrics_aggregator import get_metrics_aggregator
+        return get_metrics_aggregator()
+    except ImportError as e:
+        logger.warning(f"无法导入MetricsAggregator: {e}")
+        return None
 
-try:
-    from ..core.knowledge_graph import get_shared_instance as get_kg_instance
-except ImportError:
-    logger.warning("无法导入KnowledgeGraph，使用占位符实现")
-    get_kg_instance = None
+def get_kg_instance():
+    """获取知识图谱实例"""
+    try:
+        from ..core.k8s_graph import get_shared_knowledge_graph
+        return get_shared_knowledge_graph()
+    except ImportError as e:
+        logger.warning(f"无法导入KnowledgeGraph: {e}")
+        return None
 
 
 class K8sResourceMonitorTool(MCPToolBase):

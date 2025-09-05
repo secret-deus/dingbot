@@ -13,28 +13,43 @@ from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel, Field
 from loguru import logger
 
-# 导入后端服务
-try:
-    from ...llm.processor import get_llm_processor
-    from ...dingtalk.bot import DingTalkBot
-    from ...mcp.types import ChatMessage
-except ImportError as e:
-    logger.warning(f"导入后端服务失败: {e}")
-    # 使用占位符
-    def get_llm_processor():
+# 导入后端服务 - 使用动态导入避免路径问题
+def get_llm_processor():
+    """获取LLM处理器实例"""
+    try:
+        from main import llm_processor
+        return llm_processor
+    except ImportError:
         return None
-    
-    class DingTalkBot:
-        def __init__(self):
-            pass
-        
-        async def send_markdown_message(self, *args, **kwargs):
-            return {"success": True, "message": "模拟发送成功"}
-    
-    class ChatMessage:
-        def __init__(self, role: str, content: str):
-            self.role = role
-            self.content = content
+
+def get_dingtalk_bot():
+    """获取钉钉机器人实例"""
+    try:
+        from main import dingtalk_bot
+        return dingtalk_bot
+    except ImportError:
+        return None
+
+def get_chat_message_class():
+    """获取ChatMessage类"""
+    try:
+        import sys
+        import os
+        # 添加backend/src到路径
+        backend_src = os.path.join(os.path.dirname(__file__), '..', '..')
+        if backend_src not in sys.path:
+            sys.path.insert(0, backend_src)
+        from mcp.types import ChatMessage
+        return ChatMessage
+    except ImportError:
+        # 返回一个简单的占位符类
+        class ChatMessage:
+            def __init__(self, role: str, content: str, tool_call_id: str = None, function_call = None):
+                self.role = role
+                self.content = content
+                self.tool_call_id = tool_call_id
+                self.function_call = function_call
+        return ChatMessage
 
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
@@ -197,34 +212,33 @@ async def _perform_llm_analysis(alert_id: str, alert_data: ResourceAlertData) ->
         analysis_prompt = _build_llm_analysis_prompt(alert_data)
         
         # 创建聊天消息
+        ChatMessage = get_chat_message_class()
         messages = [
             ChatMessage(role="system", content="你是一个专业的K8s运维专家，擅长分析资源问题并提供解决方案。"),
             ChatMessage(role="user", content=analysis_prompt)
         ]
         
         # 调用LLM分析
-        llm_response = await llm_processor.process_messages(
-            messages=messages,
-            max_tokens=1000,
-            temperature=0.3
-        )
+        llm_response = await llm_processor._chat_without_tools(messages)
         
-        if llm_response.get("success"):
+         # ProcessResult对象处理
+        if llm_response and llm_response.content:
             alert_stats["llm_analysis_success"] += 1
             logger.info(f"LLM分析成功: {alert_id}")
             return {
                 "status": "success",
-                "analysis": llm_response.get("content", ""),
+                "analysis": llm_response.content,
                 "timestamp": datetime.now().isoformat(),
-                "model_info": llm_response.get("model_info"),
-                "token_usage": llm_response.get("token_usage")
+                "model_info": None,  # ProcessResult没有model_info字段
+                "token_usage": llm_response.usage
             }
         else:
             alert_stats["llm_analysis_failed"] += 1
-            logger.warning(f"LLM分析失败: {alert_id}, 错误: {llm_response.get('error')}")
+            error_msg = "LLM返回空内容" if llm_response else "LLM响应为空"
+            logger.warning(f"LLM分析失败: {alert_id}, 错误: {error_msg}")
             return {
                 "status": "failed",
-                "error": llm_response.get("error", "未知错误"),
+                "error": error_msg,
                 "timestamp": datetime.now().isoformat()
             }
             
@@ -284,17 +298,96 @@ def _build_llm_analysis_prompt(alert_data: ResourceAlertData) -> str:
         for metric, utilization in alert_data.current_utilization.items():
             prompt += f"- {metric}: {utilization:.1%}\n"
     
+    # 添加异常资源详情
+    if metrics and metrics.get("abnormal_details"):
+        abnormal_details = metrics.get("abnormal_details", [])
+        total_resources = metrics.get("total_resources", 0)
+        abnormal_resources = metrics.get("abnormal_resources", 0)
+        
+        prompt += f"\n**资源概况**:\n"
+        prompt += f"- 总资源数: {total_resources}\n"
+        prompt += f"- 异常资源数: {abnormal_resources}\n"
+        prompt += f"- 异常比例: {(abnormal_resources/total_resources*100):.1f}%\n"
+        
+        prompt += "\n**异常资源详情**:\n"
+        # 使用紧凑格式：名称|CPU%|内存%|问题类型
+        prompt += "```\n"
+        prompt += "资源名称                           |CPU% |内存%     |问题\n"
+        prompt += "-----------------------------------|-----|----------|----\n"
+        
+        for detail in abnormal_details:
+            if isinstance(detail, dict):
+                name = detail.get("name", "未知资源")
+                cpu_util = detail.get("cpu_utilization", 0)
+                memory_util = detail.get("memory_utilization", 0)
+                problem = detail.get("problem", "异常")
+                
+                # 截断长名称，保持格式对齐
+                display_name = name[:35] if len(name) > 35 else name
+                # 简化问题描述
+                problem_short = "内存高" if "内存" in problem else "CPU高" if "CPU" in problem else "异常"
+                
+                # 安全的数值格式化，处理可能的字符串类型
+                try:
+                    cpu_val = float(cpu_util) if cpu_util is not None else 0.0
+                    memory_val = float(memory_util) if memory_util is not None else 0.0
+                    prompt += f"{display_name:<35}|{cpu_val:>4.1f}|{memory_val:>10.0f}|{problem_short}\n"
+                except (ValueError, TypeError):
+                    # 如果转换失败，使用字符串格式
+                    cpu_str = str(cpu_util)[:4] if cpu_util is not None else "0"
+                    memory_str = str(memory_util)[:10] if memory_util is not None else "0"
+                    prompt += f"{display_name:<35}|{cpu_str:>4}|{memory_str:>10}|{problem_short}\n"
+            elif isinstance(detail, str):
+                # 字符串格式的详情，尝试解析或直接显示
+                display_detail = detail[:50] if len(detail) > 50 else detail
+                prompt += f"{display_detail:<35}|  - |    -     |异常\n"
+        
+        prompt += "```\n"
+    
+    # 添加建议信息
+    if metrics and metrics.get("recommendations"):
+        recommendations = metrics.get("recommendations", [])
+        prompt += "\n**系统建议**: "
+        # 使用分号分隔的紧凑格式
+        rec_list = []
+        for rec in recommendations:
+            # 简化建议文本，去掉冗余词汇
+            simplified_rec = rec.replace("建议", "").replace("或检查", "/检查").replace("增加", "↑").replace("减少", "↓")
+            rec_list.append(simplified_rec.strip())
+        prompt += "; ".join(rec_list) + "\n"
+    
     prompt += """
 
 ### 分析要求
-请基于以上信息，提供专业的分析和建议：
+请基于以上详细信息，提供专业的分析和建议，**必须包含以下结构化内容**：
 
-1. **问题分析**: 分析资源利用率异常的可能原因
-2. **影响评估**: 评估对应用和集群的潜在影响
-3. **解决方案**: 提供具体的优化建议和操作步骤
-4. **预防措施**: 建议如何避免类似问题再次发生
+## 1. 问题概述
+- 异常资源总数和类型分布
+- 主要问题类型（CPU/内存/其他）
 
-请使用Markdown格式输出，内容要专业、简洁、可操作。"""
+## 2. 异常资源清单及处理建议
+**请逐一列出每个异常资源，格式如下：**
+
+### 🔴 高优先级异常资源
+- **资源名称**: [具体资源名]
+  - **问题**: CPU [X]%, 内存 [Y]% - [问题描述]
+  - **建议**: [具体操作建议，如kubectl命令]
+  - **紧急度**: [高/中/低]
+
+### 🟡 中优先级异常资源
+- **资源名称**: [具体资源名]
+  - **问题**: [具体问题]
+  - **建议**: [具体操作建议]
+
+## 3. 批量处理方案
+- 针对相同问题类型的资源，提供批量处理命令
+- 自动化脚本建议
+
+## 4. 预防措施
+- 监控优化建议
+- 资源配置最佳实践
+
+请确保每个异常资源都有具体的处理建议，使用实际的kubectl命令和参数。"""
     
     return prompt
 
@@ -318,18 +411,31 @@ async def _send_dingtalk_notification(
         logger.info(f"开始发送钉钉通知: {alert_id}")
         
         # 创建钉钉Bot实例
-        dingtalk_bot = DingTalkBot()
+        dingtalk_bot = get_dingtalk_bot()
         
         # 构建告警消息
         message = _build_dingtalk_message(alert_data, llm_result)
         
         # 发送Markdown消息
+        # 从环境变量获取webhook URL
+        import os
+        webhook_url = os.getenv("DINGTALK_WEBHOOK_URL")
+        
+        if not webhook_url:
+            logger.warning(f"钉钉Webhook URL未配置: {alert_id}")
+            return {
+                "status": "skipped",
+                "error": "钉钉Webhook URL未配置",
+                "timestamp": datetime.now().isoformat()
+            }
+        
         send_result = await dingtalk_bot.send_markdown_message(
+            webhook_url=webhook_url,
             title=f"🔥 K8s资源告警 - {alert_data.resource_id}",
-            text=message
+            markdown_text=message
         )
         
-        if send_result.get("success"):
+        if send_result:
             alert_stats["dingtalk_sent_success"] += 1
             logger.info(f"钉钉通知发送成功: {alert_id}")
             return {
@@ -340,10 +446,10 @@ async def _send_dingtalk_notification(
             }
         else:
             alert_stats["dingtalk_sent_failed"] += 1
-            logger.warning(f"钉钉通知发送失败: {alert_id}, 错误: {send_result.get('error')}")
+            logger.warning(f"钉钉通知发送失败: {alert_id}")
             return {
                 "status": "failed",
-                "error": send_result.get("error", "发送失败"),
+                "error": "发送失败",
                 "timestamp": datetime.now().isoformat()
             }
             
@@ -390,20 +496,28 @@ def _build_dingtalk_message(alert_data: ResourceAlertData, llm_result: Optional[
         for reason in alert_data.alert_reasons:
             message += f"- {reason}\n"
     
-    # 添加LLM分析结果
+    # 添加LLM分析结果或退化摘要
     if llm_result and llm_result.get("status") == "success":
         analysis = llm_result.get("analysis", "")
         if len(analysis) > 1000:  # 限制长度
             analysis = analysis[:1000] + "..."
         message += f"\n\n### 🤖 智能分析\n{analysis}"
-    elif llm_result:
-        message += f"\n\n### 🤖 智能分析\n> LLM分析失败: {llm_result.get('error', '未知错误')}"
+    else:
+        # LLM分析失败时的退化逻辑：使用原始数据摘要
+        fallback_analysis = _generate_fallback_analysis(alert_data)
+        if llm_result:
+            message += f"\n\n### 🤖 智能分析\n> LLM分析失败，使用基础分析:\n\n{fallback_analysis}"
+        else:
+            message += f"\n\n### 🤖 智能分析\n{fallback_analysis}"
     
     # 添加快速处理指南
+    resource_parts = alert_data.resource_id.split('/')
+    namespace = resource_parts[1] if len(resource_parts) > 1 else "default"
+    
     message += f"""
 
 ### 🚀 快速处理
-1. **立即检查**: 使用 `kubectl top pods -n {alert_data.resource_id.split('/')[1]}` 查看实时资源使用
+1. **立即检查**: 使用 `kubectl top pods -n {namespace}` 查看实时资源使用
 2. **扩容应用**: 考虑增加Pod副本数或资源配额
 3. **查看日志**: 检查应用日志是否有异常
 4. **监控趋势**: 观察资源使用趋势，避免再次告警
@@ -412,6 +526,71 @@ def _build_dingtalk_message(alert_data: ResourceAlertData, llm_result: Optional[
 > 告警来源: {alert_data.source} | 处理时间: {datetime.now().strftime('%H:%M:%S')}"""
     
     return message
+
+
+def _generate_fallback_analysis(alert_data: ResourceAlertData) -> str:
+    """生成退化分析摘要
+    
+    当LLM分析失败时，从原始告警数据中提取关键信息
+    
+    Args:
+        alert_data: 告警数据
+        
+    Returns:
+        str: 退化分析摘要
+    """
+    try:
+        analysis_parts = []
+        
+        # 提取基础统计信息
+        metrics = alert_data.metrics
+        if metrics:
+            total_resources = metrics.get("total_resources", 0)
+            abnormal_resources = metrics.get("abnormal_resources", 0)
+            
+            if total_resources > 0:
+                abnormal_ratio = (abnormal_resources / total_resources) * 100
+                analysis_parts.append(f"📊 **资源概况**: 共检测到 {total_resources} 个资源，其中 {abnormal_resources} 个异常 ({abnormal_ratio:.1f}%)")
+            
+            # 提取异常详情
+            abnormal_details = metrics.get("abnormal_details", [])
+            if abnormal_details:
+                analysis_parts.append("🔍 **所有异常资源**:")
+                for i, detail in enumerate(abnormal_details):  # 显示所有异常资源
+                    if isinstance(detail, dict):
+                        name = detail.get("name", "未知资源")
+                        memory_util = detail.get("memory_utilization", 0)
+                        cpu_util = detail.get("cpu_utilization", 0)
+                        analysis_parts.append(f"  {i+1}. **{name}**: CPU {cpu_util}%, 内存 {memory_util}%")
+                    elif isinstance(detail, str):
+                        analysis_parts.append(f"  {i+1}. {detail}")
+            
+            # 提取建议
+            recommendations = metrics.get("recommendations", [])
+            if recommendations:
+                analysis_parts.append("💡 **基础建议**:")
+                for i, rec in enumerate(recommendations[:3]):  # 只显示前3个
+                    analysis_parts.append(f"  {i+1}. {rec}")
+            
+            # 提取阈值信息
+            if alert_data.thresholds:
+                cpu_threshold = alert_data.thresholds.get("cpu_threshold", 0.8) * 100
+                memory_threshold = alert_data.thresholds.get("memory_threshold", 0.7) * 100
+                analysis_parts.append(f"⚙️ **告警阈值**: CPU > {cpu_threshold}%, 内存 > {memory_threshold}%")
+        
+        if not analysis_parts:
+            # 如果没有提取到具体信息，提供通用分析
+            analysis_parts = [
+                "📊 **基础分析**: 检测到集群资源异常",
+                "🔍 **建议操作**: 请检查资源使用情况并考虑扩容或优化",
+                "⚠️ **注意事项**: 建议及时处理异常资源以避免影响服务稳定性"
+            ]
+        
+        return "\n".join(analysis_parts)
+        
+    except Exception as e:
+        logger.warning(f"生成退化分析失败: {e}")
+        return "📊 **基础分析**: 检测到资源异常，建议检查集群状态并及时处理"
 
 
 def _calculate_urgency(alert_data: ResourceAlertData) -> Dict[str, str]:

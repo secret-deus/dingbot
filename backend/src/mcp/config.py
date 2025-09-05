@@ -16,24 +16,16 @@ from .types import MCPClientConfig, MCPTool
 class MCPServerConfig(BaseModel):
     """MCP服务器配置"""
     name: str = Field(..., description="服务器名称")
-    type: str = Field(..., description="服务器类型", pattern="^(websocket|http|sse|stream_http|local|subprocess)$")
+    type: str = Field(..., description="服务器类型", pattern="^(sse|stdio)$")
     enabled: bool = Field(True, description="是否启用")
-    
-    # WebSocket配置
-    host: Optional[str] = Field(None, description="WebSocket主机")
-    port: Optional[int] = Field(None, description="WebSocket端口")
-    path: Optional[str] = Field(None, description="WebSocket路径")
-    
-    # HTTP配置
-    base_url: Optional[str] = Field(None, description="HTTP基础URL")
     
     # SSE配置
     sse_url: Optional[str] = Field(None, description="SSE端点URL")
+    host: Optional[str] = Field(None, description="SSE主机")
+    port: Optional[int] = Field(None, description="SSE端口")
+    path: Optional[str] = Field(None, description="SSE路径")
     
-    # Stream HTTP配置
-    stream_url: Optional[str] = Field(None, description="Stream HTTP端点URL")
-    
-    # 本地/子进程配置
+    # stdio配置 (子进程通信)
     command: Optional[str] = Field(None, description="启动命令")
     args: Optional[List[str]] = Field(None, description="命令参数")
     cwd: Optional[str] = Field(None, description="工作目录")
@@ -56,7 +48,7 @@ class MCPServerConfig(BaseModel):
     @field_validator('type')
     @classmethod
     def validate_type(cls, v):
-        valid_types = ['websocket', 'http', 'sse', 'stream_http', 'local', 'subprocess']
+        valid_types = ['sse', 'stdio']
         if v not in valid_types:
             raise ValueError(f"Invalid server type: {v}. Must be one of {valid_types}")
         return v

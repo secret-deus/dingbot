@@ -12,28 +12,56 @@ from typing import Dict, Any, Optional, List
 from loguru import logger
 
 # 导入类型定义（这些需要在实际环境中根据项目结构调整）
-try:
-    # 尝试导入后端的LLM处理器和钉钉Bot
-    from ....backend.src.llm.processor import EnhancedLLMProcessor
-    from ....backend.src.dingtalk.bot import DingTalkBot
-    from ....backend.src.mcp.types import ChatMessage
-except ImportError:
-    # 如果导入失败，定义占位符类型
-    logger.warning("无法导入后端模块，使用占位符类型")
-    
-    class EnhancedLLMProcessor:
-        """LLM处理器占位符"""
-        pass
-    
-    class DingTalkBot:
-        """钉钉Bot占位符"""
-        pass
-    
-    class ChatMessage:
-        """聊天消息占位符"""
-        def __init__(self, role: str, content: str):
-            self.role = role
-            self.content = content
+# 动态导入函数 - 避免路径问题
+def get_llm_processor():
+    """获取LLM处理器实例"""
+    try:
+        import sys
+        import os
+        # 添加backend/src到路径
+        backend_src = os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'backend', 'src')
+        if backend_src not in sys.path:
+            sys.path.insert(0, backend_src)
+        from llm.processor import get_llm_processor as _get_llm_processor
+        return _get_llm_processor()
+    except ImportError as e:
+        logger.warning(f"导入LLM处理器失败: {e}")
+        return None
+
+def get_dingtalk_bot():
+    """获取钉钉机器人实例"""
+    try:
+        import sys
+        import os
+        # 添加backend/src到路径
+        backend_src = os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'backend', 'src')
+        if backend_src not in sys.path:
+            sys.path.insert(0, backend_src)
+        from dingtalk.bot import DingTalkBot
+        return DingTalkBot()
+    except ImportError as e:
+        logger.warning(f"导入钉钉机器人失败: {e}")
+        return None
+
+def get_chat_message_class():
+    """获取ChatMessage类"""
+    try:
+        import sys
+        import os
+        # 添加backend/src到路径
+        backend_src = os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', 'backend', 'src')
+        if backend_src not in sys.path:
+            sys.path.insert(0, backend_src)
+        from mcp.types import ChatMessage
+        return ChatMessage
+    except ImportError as e:
+        logger.warning(f"导入ChatMessage失败: {e}")
+        # 返回一个简单的占位符类
+        class ChatMessage:
+            def __init__(self, role: str, content: str):
+                self.role = role
+                self.content = content
+        return ChatMessage
 
 
 class ResourceAlertConfig:
@@ -74,8 +102,8 @@ class ResourceAlertService:
     """
     
     def __init__(self, 
-                 llm_processor: Optional[EnhancedLLMProcessor] = None,
-                 dingtalk_bot: Optional[DingTalkBot] = None,
+                 llm_processor: Optional[Any] = None,
+                 dingtalk_bot: Optional[Any] = None,
                  config: Optional[ResourceAlertConfig] = None):
         """初始化资源告警服务
         
@@ -222,6 +250,7 @@ class ResourceAlertService:
 请严格按照系统提示中的格式要求输出分析结果。"""
             
             # 构建消息
+            ChatMessage = get_chat_message_class()
             messages = [
                 ChatMessage(role="system", content=system_prompt),
                 ChatMessage(role="user", content=user_content)

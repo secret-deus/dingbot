@@ -8,27 +8,15 @@ from .k8s_get_pods import K8sGetPodsTool
 from .k8s_get_services import K8sGetServicesTool
 from .k8s_get_deployments import K8sGetDeploymentsTool
 from .k8s_get_nodes import K8sGetNodesTool
-from .k8s_scale_deployment import K8sScaleDeploymentTool
 from .k8s_get_logs import K8sGetLogsTool
 from .k8s_describe_pod import K8sDescribePodTool
 from .k8s_get_events import K8sGetEventsTool
 
-# 新增的Deployment管理工具
-from .k8s_restart_deployment import K8sRestartDeploymentTool
-from .k8s_rollback_deployment import K8sRollbackDeploymentTool
+# Deployment历史查询工具
 from .k8s_get_deployment_history import K8sGetDeploymentHistoryTool
-from .k8s_patch_deployment import K8sPatchDeploymentTool
 
-# 新增的Service网络管理工具
-from .k8s_create_service import K8sCreateServiceTool
-from .k8s_update_service import K8sUpdateServiceTool
+# Service网络查询工具
 from .k8s_get_endpoints import K8sGetEndpointsTool
-from .k8s_patch_service import K8sPatchServiceTool
-
-# 新增的Deployment创建工具
-from .k8s_generate_deployment_yaml import K8sGenerateDeploymentYamlTool
-from .k8s_create_deployment import K8sCreateDeploymentTool
-from .k8s_llm_generate_deployment import K8sLLMGenerateDeploymentTool
 
 # 智能查询工具
 from .k8s_relation_query import K8sRelationQueryTool
@@ -91,19 +79,8 @@ SAFE_QUERY_TOOLS = [
     K8sResourceAnalysisReportTool,
 ]
 
-# 危险的修改工具列表 - 这些工具会修改集群状态，已被禁用
-DANGEROUS_MODIFICATION_TOOLS = [
-    # K8sScaleDeploymentTool,           # 扩缩容 - 危险操作
-    # K8sRestartDeploymentTool,         # 重启 - 危险操作
-    # K8sRollbackDeploymentTool,        # 回滚 - 危险操作
-    # K8sPatchDeploymentTool,           # 修改配置 - 危险操作
-    # K8sCreateServiceTool,             # 创建服务 - 危险操作
-    # K8sUpdateServiceTool,             # 更新服务 - 危险操作
-    # K8sPatchServiceTool,              # 修改服务 - 危险操作
-    # K8sGenerateDeploymentYamlTool,    # 生成配置 - 可能误导
-    # K8sCreateDeploymentTool,          # 创建部署 - 危险操作
-    # K8sLLMGenerateDeploymentTool,     # LLM生成部署 - 危险操作
-]
+# 危险的修改工具列表已被移除 - 这些工具会修改集群状态，已被删除
+# 为了安全起见，只保留查询类工具
 
 # 当前启用的工具列表 - 只包含安全的查询工具
 AVAILABLE_TOOLS = SAFE_QUERY_TOOLS
@@ -115,10 +92,9 @@ def register_all_tools():
     
     success_count = 0
     total_safe_tools = len(SAFE_QUERY_TOOLS)
-    total_dangerous_tools = len(DANGEROUS_MODIFICATION_TOOLS)
     
     logger.info(f"🔒 安全模式启用: 只注册 {total_safe_tools} 个安全查询工具")
-    logger.info(f"🚫 已禁用 {total_dangerous_tools} 个危险修改工具")
+    logger.info(f"🚫 危险修改工具已被完全移除")
     
     for tool_class in AVAILABLE_TOOLS:  # AVAILABLE_TOOLS 现在只包含 SAFE_QUERY_TOOLS
         try:
@@ -158,7 +134,7 @@ __all__ = [
     "K8sResourceMonitorTool", "K8sMetricsCoverageReportTool", "K8sResourceAnalysisReportTool",
     
     # 工具列表
-    "SAFE_QUERY_TOOLS", "DANGEROUS_MODIFICATION_TOOLS", "AVAILABLE_TOOLS",
+    "SAFE_QUERY_TOOLS", "AVAILABLE_TOOLS",
     
     # 函数
     "register_all_tools", "get_available_tools"

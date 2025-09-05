@@ -151,6 +151,32 @@ class HttpApiClient:
             logger.warning(f"后端API健康检查失败: {e}")
             return False
     
+    async def post_alert(self, alert_data: Dict[str, Any]) -> bool:
+        """发送告警数据到后端
+        
+        Args:
+            alert_data: 告警数据
+            
+        Returns:
+            bool: 发送是否成功
+        """
+        try:
+            logger.info(f"发送告警数据到后端: {alert_data.get('alert_type', 'unknown')}")
+            
+            # 发送到告警API端点
+            result = await self.post_with_retry("/api/v2/alerts/resource", alert_data)
+            
+            if result:
+                logger.info("✅ 告警数据发送成功")
+                return True
+            else:
+                logger.error("❌ 告警数据发送失败")
+                return False
+                
+        except Exception as e:
+            logger.error(f"发送告警数据时发生异常: {e}")
+            return False
+    
     def get_statistics(self) -> Dict[str, Any]:
         """获取客户端统计信息
         

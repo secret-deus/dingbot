@@ -188,50 +188,6 @@ class MCPConfigManager:
         """获取内置模板"""
         templates = {}
         
-        # Kubernetes MCP模板 - WebSocket
-        templates["k8s-websocket"] = MCPConfigTemplate(
-            name="Kubernetes WebSocket",
-            description="通过WebSocket连接的Kubernetes MCP服务器",
-            category="kubernetes",
-            icon="⚙️",
-            config={
-                "type": "websocket",
-                "host": "localhost",
-                "port": 8766,
-                "path": "/",
-                "timeout": 30,
-                "enabled_tools": [
-                    "k8s-get-pods",
-                    "k8s-get-services",
-                    "k8s-get-deployments",
-                    "k8s-scale-deployment",
-                    "k8s-get-logs"
-                ]
-            },
-            tags=["kubernetes", "websocket", "container"]
-        )
-        
-        # Kubernetes MCP模板 - HTTP
-        templates["k8s-http"] = MCPConfigTemplate(
-            name="Kubernetes HTTP",
-            description="通过HTTP REST API连接的Kubernetes MCP服务器",
-            category="kubernetes",
-            icon="🌐",
-            config={
-                "type": "http",
-                "base_url": "http://localhost:8766",
-                "timeout": 30,
-                "auth_type": "bearer",
-                "enabled_tools": [
-                    "k8s-get-pods",
-                    "k8s-get-services",
-                    "k8s-get-deployments",
-                    "k8s-scale-deployment",
-                    "k8s-get-logs"
-                ]
-            },
-            tags=["kubernetes", "http", "rest", "container"]
-        )
         
         # Kubernetes MCP模板 - SSE
         templates["k8s-sse"] = MCPConfigTemplate(
@@ -255,85 +211,24 @@ class MCPConfigManager:
             tags=["kubernetes", "sse", "events", "streaming"]
         )
         
-        # SSH MCP模板 - WebSocket
-        templates["ssh-jumpserver"] = MCPConfigTemplate(
-            name="SSH JumpServer",
-            description="通过JumpServer进行SSH连接的MCP服务器",
+        # SSH MCP模板 - stdio
+        templates["ssh-stdio"] = MCPConfigTemplate(
+            name="SSH stdio",
+            description="通过stdio进行SSH连接的MCP服务器",
             category="ssh",
             icon="🔗",
             config={
-                "type": "websocket",
-                "host": "localhost",
-                "port": 8767,
-                "path": "/",
-                "timeout": 30,
-                "enabled_tools": [
-                    "ssh-execute",
-                    "ssh-asset-list",
-                    "ssh-session-manager"
-                ]
-            },
-            tags=["ssh", "jumpserver", "remote"]
-        )
-        
-        # SSH MCP模板 - HTTP
-        templates["ssh-http"] = MCPConfigTemplate(
-            name="SSH HTTP",
-            description="通过HTTP API进行SSH连接的MCP服务器",
-            category="ssh",
-            icon="🌍",
-            config={
-                "type": "http",
-                "base_url": "http://localhost:8767",
-                "timeout": 30,
-                "auth_type": "bearer",
-                "enabled_tools": [
-                    "ssh-execute",
-                    "ssh-asset-list",
-                    "ssh-session-manager"
-                ]
-            },
-            tags=["ssh", "http", "remote"]
-        )
-        
-        # Stream HTTP MCP模板
-        templates["stream-http"] = MCPConfigTemplate(
-            name="Stream HTTP",
-            description="通过Stream HTTP进行流式通信的MCP服务器",
-            category="streaming",
-            icon="🌊",
-            config={
-                "type": "stream_http",
-                "host": "localhost",
-                "port": 8768,
-                "path": "/stream",
-                "timeout": 60,
-                "enabled_tools": [
-                    "stream-chat",
-                    "stream-logs",
-                    "stream-metrics"
-                ]
-            },
-            tags=["streaming", "http", "realtime"]
-        )
-        
-        # 子进程MCP模板
-        templates["subprocess"] = MCPConfigTemplate(
-            name="Subprocess MCP",
-            description="通过子进程启动的本地MCP服务器",
-            category="local",
-            icon="⚡",
-            config={
-                "type": "subprocess",
+                "type": "stdio",
                 "command": "python",
-                "args": ["-m", "mcp_server"],
-                "cwd": "/path/to/mcp/server",
+                "args": ["-m", "ssh_jumpserver_mcp"],
                 "timeout": 30,
-                "env": {
-                    "PYTHONPATH": "/path/to/mcp/server"
-                }
+                "enabled_tools": [
+                    "ssh-execute",
+                    "ssh-asset-list",
+                    "ssh-session-manager"
+                ]
             },
-            tags=["subprocess", "local", "python"]
+            tags=["ssh", "stdio", "remote"]
         )
         
         # 文件系统MCP模板

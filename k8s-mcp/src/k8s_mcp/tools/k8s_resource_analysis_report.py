@@ -239,19 +239,29 @@ class K8sResourceAnalysisReportTool:
                 logger.warning("HTTP客户端未配置，跳过钉钉通知")
                 return
             
-            # 构建告警数据
+            # 构建告警数据 - 符合ResourceAlertData模型
             alert_data = {
-                "alert_type": "resource_analysis",
-                "resource_id": "cluster_wide",
-                "severity": "high" if analysis_result.abnormal_resources > 5 else "medium",
-                "summary": f"发现 {analysis_result.abnormal_resources} 个异常资源需要关注",
-                "details": {
+                "resource_id": "cluster_wide_analysis",
+                "metrics": {
+                    "alert_type": "resource_analysis",
+                    "severity": "high" if analysis_result.abnormal_resources > 5 else "medium", 
+                    "summary": f"发现 {analysis_result.abnormal_resources} 个异常资源需要关注",
                     "total_resources": analysis_result.total_resources,
                     "abnormal_resources": analysis_result.abnormal_resources,
                     "normal_summary": analysis_result.normal_summary,
                     "abnormal_details": analysis_result.abnormal_details[:5],  # 只发送前5个
                     "recommendations": analysis_result.recommendations[:3],  # 只发送前3条建议
                     "analysis_time": analysis_result.analysis_time
+                },
+                "timestamp": analysis_result.analysis_time,
+                "source": "k8s-mcp-server",
+                "alert_reasons": [f"发现 {analysis_result.abnormal_resources} 个异常资源"],
+                "thresholds": {
+                    "cpu_threshold": self.cpu_threshold,
+                    "memory_threshold": self.memory_threshold
+                },
+                "current_utilization": {
+                    "abnormal_ratio": analysis_result.abnormal_resources / analysis_result.total_resources
                 }
             }
             

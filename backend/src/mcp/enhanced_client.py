@@ -55,18 +55,10 @@ class MCPServerConnection:
             self.status = MCPConnectionStatus.CONNECTING
             logger.info(f"正在连接MCP服务器: {self.config.name} ({self.config.type})")
             
-            if self.config.type == "websocket":
-                await self._connect_websocket()
-            elif self.config.type == "http":
-                await self._connect_http()
-            elif self.config.type == "sse":
+            if self.config.type == "sse":
                 await self._connect_sse()
-            elif self.config.type == "stream_http":
-                await self._connect_stream_http()
-            elif self.config.type == "subprocess":
-                await self._connect_subprocess()
-            elif self.config.type == "local":
-                await self._connect_local()
+            elif self.config.type == "stdio":
+                await self._connect_stdio()
             
             # 发现工具
             logger.info(f"开始发现MCP工具: {self.config.name}")
@@ -109,97 +101,6 @@ class MCPServerConnection:
         except Exception as e:
             logger.warning(f"清理连接资源时出错: {e}")
     
-    async def _connect_websocket(self):
-        """连接WebSocket服务器"""
-        uri = f"ws://{self.config.host}:{self.config.port}{self.config.path}"
-        logger.info(f"正在连接WebSocket: {uri}")
-        
-        headers = {}
-        if self.config.auth_headers:
-            headers.update(self.config.auth_headers)
-        if self.config.auth_token:
-            headers["Authorization"] = f"Bearer {self.config.auth_token}"
-        
-        # 设置超时
-        import asyncio
-        try:
-            # 使用websockets.connect的现代API
-            connect_kwargs = {}
-            if headers:
-                logger.debug(f"使用认证头连接WebSocket: {list(headers.keys())}")
-                connect_kwargs["additional_headers"] = headers
-            
-            # 创建连接
-            self.websocket = await asyncio.wait_for(
-                websockets.connect(uri, **connect_kwargs),
-                timeout=self.config.timeout
-            )
-            logger.info(f"WebSocket连接建立成功: {uri}")
-            
-        except (TypeError, AttributeError) as e:
-            # 如果additional_headers不支持，尝试extra_headers
-            logger.debug(f"尝试使用extra_headers: {e}")
-            try:
-                connect_kwargs = {}
-                if headers:
-                    connect_kwargs["extra_headers"] = headers
-                
-                self.websocket = await asyncio.wait_for(
-                    websockets.connect(uri, **connect_kwargs),
-                    timeout=self.config.timeout
-                )
-                logger.info(f"WebSocket连接建立成功(extra_headers): {uri}")
-            except (TypeError, AttributeError):
-                # 最后尝试基础连接
-                logger.warning(f"WebSocket库不支持headers参数，使用基础连接")
-                self.websocket = await asyncio.wait_for(
-                    websockets.connect(uri),
-                    timeout=self.config.timeout
-                )
-                logger.info(f"WebSocket连接建立成功(基础连接): {uri}")
-                
-        except asyncio.TimeoutError:
-            raise MCPException("WEBSOCKET_TIMEOUT", f"WebSocket连接超时: {uri}")
-        except Exception as e:
-            raise MCPException("WEBSOCKET_CONNECTION_FAILED", f"WebSocket连接失败: {uri}, 错误: {e}")
-        
-        # 发送初始化消息
-        init_message = {
-            "jsonrpc": "2.0",
-            "method": "initialize",
-            "params": {
-                "protocol_version": "2024-11-05",
-                "client_info": {
-                    "name": "dingtalk-k8s-bot",
-                    "version": "1.0.0"
-                }
-            },
-            "id": 1
-        }
-        
-        logger.info(f"发送MCP初始化请求: {init_message}")
-        await self.websocket.send(json.dumps(init_message))
-        response = await self.websocket.recv()
-        logger.info(f"收到MCP初始化响应: {response}")
-        
-        # 验证初始化响应
-        response_data = json.loads(response)
-        if "error" in response_data:
-            raise MCPException("INIT_FAILED", f"MCP初始化失败: {response_data['error']}")
-        
-        logger.info("MCP协议初始化成功")
-    
-    async def _connect_http(self):
-        """连接HTTP服务器"""
-        self.session = aiohttp.ClientSession(
-            base_url=self.config.base_url,
-            timeout=aiohttp.ClientTimeout(total=self.config.timeout)
-        )
-        
-        # 测试连接
-        async with self.session.get("/health") as response:
-            if response.status != 200:
-                raise MCPException("HTTP_CONNECTION_FAILED", f"HTTP连接失败: {response.status}")
     
     async def _connect_sse(self):
         """连接SSE服务器"""
@@ -589,30 +490,8 @@ class MCPServerConnection:
                     if line.strip():
                         yield line.decode('utf-8')
     
-    async def _connect_stream_http(self):
-        """连接Stream HTTP服务器"""
-        uri = f"http://{self.config.host}:{self.config.port}{self.config.path}"
-        self.stream_task = asyncio.create_task(self._stream_http_event_source(uri))
-    
-    async def _stream_http_event_source(self, uri: str) -> AsyncGenerator[str, None]:
-        """Stream HTTP事件源消费者"""
-        headers = {}
-        if self.config.auth_headers:
-            headers.update(self.config.auth_headers)
-        if self.config.auth_token:
-            headers["Authorization"] = f"Bearer {self.config.auth_token}"
-        
-        async with aiohttp.ClientSession() as session:
-            async with session.get(uri, headers=headers, timeout=self.config.timeout) as response:
-                if response.status != 200:
-                    raise MCPException("STREAM_HTTP_CONNECTION_FAILED", f"Stream HTTP连接失败: {response.status}")
-                
-                async for line in response.content:
-                    if line.strip():
-                        yield line.decode('utf-8')
-    
-    async def _connect_subprocess(self):
-        """启动子进程服务器"""
+    async def _connect_stdio(self):
+        """启动stdio子进程服务器"""
         cmd = [self.config.command]
         if self.config.args:
             cmd.extend(self.config.args)
@@ -636,26 +515,17 @@ class MCPServerConnection:
         await asyncio.sleep(1)
         
         if self.process.returncode is not None:
-            raise MCPException("SUBPROCESS_FAILED", f"子进程启动失败: {self.process.returncode}")
-    
-    async def _connect_local(self):
-        """连接本地服务器"""
-        # 本地连接逻辑（可以是导入模块等）
-        pass
+            raise MCPException("STDIO_FAILED", f"stdio子进程启动失败: {self.process.returncode}")
+        
+        logger.info(f"stdio MCP服务器启动成功: {cmd[0]}")
     
     async def _discover_tools(self):
         """发现工具"""
         try:
-            if self.config.type == "websocket":
-                await self._discover_tools_websocket()
-            elif self.config.type == "http":
-                await self._discover_tools_http()
-            elif self.config.type == "sse":
+            if self.config.type == "sse":
                 await self._discover_tools_sse()
-            elif self.config.type == "stream_http":
-                await self._discover_tools_stream_http()
-            elif self.config.type in ["subprocess", "local"]:
-                await self._discover_tools_rpc()
+            elif self.config.type == "stdio":
+                await self._discover_tools_stdio()
             
             # 过滤工具
             self._filter_tools()
@@ -665,18 +535,29 @@ class MCPServerConnection:
         except Exception as e:
             logger.error(f"发现工具失败 {self.config.name}: {e}")
     
-    async def _discover_tools_websocket(self):
-        """通过WebSocket发现工具"""
-        message = {
+    async def _discover_tools_stdio(self):
+        """通过stdio发现工具"""
+        if not self.process:
+            raise MCPException("STDIO_NOT_CONNECTED", "stdio进程未连接")
+        
+        # 发送工具列表请求
+        list_tools_message = {
             "jsonrpc": "2.0",
             "method": "tools/list",
             "params": {},
-            "id": 2
+            "id": 1
         }
         
-        await self.websocket.send(json.dumps(message))
-        response = await self.websocket.recv()
-        response_data = json.loads(response)
+        message_json = json.dumps(list_tools_message) + "\n"
+        self.process.stdin.write(message_json.encode())
+        await self.process.stdin.drain()
+        
+        # 读取响应
+        response_line = await self.process.stdout.readline()
+        if not response_line:
+            raise MCPException("STDIO_NO_RESPONSE", "stdio进程无响应")
+        
+        response_data = json.loads(response_line.decode().strip())
         
         if "error" in response_data:
             raise MCPException("TOOL_DISCOVERY_FAILED", f"工具发现失败: {response_data['error']}")
@@ -692,24 +573,8 @@ class MCPServerConnection:
                 provider=self.config.name
             )
             self.tools[tool.name] = tool
-    
-    async def _discover_tools_http(self):
-        """通过HTTP发现工具"""
-        async with self.session.get("/tools") as response:
-            if response.status != 200:
-                raise MCPException("TOOL_DISCOVERY_FAILED", f"HTTP工具发现失败: {response.status}")
-            
-            tools_data = await response.json()
-            for tool_data in tools_data:
-                tool = MCPTool(
-                    name=tool_data["name"],
-                    description=tool_data.get("description", ""),
-                    input_schema=tool_data.get("inputSchema", {}),
-                    category=tool_data.get("category"),
-                    version=tool_data.get("version"),
-                    provider=self.config.name
-                )
-                self.tools[tool.name] = tool
+        
+        logger.info(f"stdio发现 {len(self.tools)} 个工具")
     
     async def _discover_tools_sse(self):
         """通过SSE发现工具"""
@@ -733,38 +598,6 @@ class MCPServerConnection:
         # 如果等待超时，记录警告但不抛出异常（SSE可能稍后发送工具列表）
         logger.warning(f"⚠️ SSE工具发现超时，未在 {max_wait_time} 秒内收到工具列表，将继续等待SSE事件")
     
-    async def _discover_tools_stream_http(self):
-        """通过Stream HTTP发现工具"""
-        # Stream HTTP通常用于流式响应，工具发现可能需要通过HTTP API
-        if not self.session:
-            self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.config.timeout))
-        
-        headers = {}
-        if self.config.auth_headers:
-            headers.update(self.config.auth_headers)
-        if self.config.auth_token:
-            headers["Authorization"] = f"Bearer {self.config.auth_token}"
-        
-        async with self.session.get(f"http://{self.config.host}:{self.config.port}/tools", headers=headers) as response:
-            if response.status != 200:
-                raise MCPException("TOOL_DISCOVERY_FAILED", f"Stream HTTP工具发现失败: {response.status}")
-            
-            tools_data = await response.json()
-            for tool_data in tools_data:
-                tool = MCPTool(
-                    name=tool_data["name"],
-                    description=tool_data.get("description", ""),
-                    input_schema=tool_data.get("inputSchema", {}),
-                    category=tool_data.get("category"),
-                    version=tool_data.get("version"),
-                    provider=self.config.name
-                )
-                self.tools[tool.name] = tool
-    
-    async def _discover_tools_rpc(self):
-        """通过RPC发现工具"""
-        # 子进程或本地RPC工具发现
-        pass
     
     def _filter_tools(self):
         """过滤工具"""
