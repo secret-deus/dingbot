@@ -121,6 +121,7 @@ class ResourceUpdateRequest(BaseModel):
     days: Optional[int] = 14
     max_concurrent: Optional[int] = 5
     force_update: Optional[bool] = False
+    time_period: Optional[str] = "14d"  # 新增时间周期参数：14d 或 1d
 
 
 class ResourceUpdateResponse(BaseModel):
@@ -164,12 +165,16 @@ async def update_resource_metrics(
     
     # 全局异常捕获
     try:
+        # 根据时间周期选择不同的处理方式
+        is_day_mode = request.time_period == "1d"
+        
         # 调用MCP工具进行批量更新
         tool_params = {
             "namespace_filter": request.namespace_filter,
             "app_name_filter": request.app_name_filter,
             "days": request.days,
-            "max_concurrent": request.max_concurrent
+            "max_concurrent": request.max_concurrent,
+            "time_period": request.time_period  # 传递时间周期参数
         }
         
         # 调用知识图谱指标更新工具（MCP客户端内部已设置10分钟超时）

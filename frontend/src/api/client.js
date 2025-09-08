@@ -177,7 +177,8 @@ export const api = {
       app_name_filter: params.appNameFilter || '',
       days: params.days || 14,
       max_concurrent: params.maxConcurrent || 5,
-      force_update: params.forceUpdate || false
+      force_update: params.forceUpdate || false,
+      time_period: params.timePeriod || '14d'  // 新增时间周期参数
     }),
     
     // 获取指标覆盖情况

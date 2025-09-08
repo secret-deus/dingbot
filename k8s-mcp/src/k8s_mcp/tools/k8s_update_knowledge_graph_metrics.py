@@ -56,6 +56,12 @@ class K8sUpdateKnowledgeGraphMetricsTool(MCPToolBase):
                     "default": 5,
                     "minimum": 1,
                     "maximum": 20
+                },
+                "time_period": {
+                    "type": "string",
+                    "description": "时间周期模式：14d(14天平均) 或 1d(1天近期)",
+                    "default": "14d",
+                    "enum": ["14d", "1d"]
                 }
             },
             "required": []
@@ -79,8 +85,14 @@ class K8sUpdateKnowledgeGraphMetricsTool(MCPToolBase):
             app_name_filter = arguments.get("app_name_filter", "")
             days = arguments.get("days", 14)
             max_concurrent = arguments.get("max_concurrent", 5)
+            time_period = arguments.get("time_period", "14d")
             
-            logger.info(f"开始批量更新知识图谱指标: namespace={namespace_filter or 'all'}, app={app_name_filter or 'all'}, days={days}")
+            # 根据时间周期调整参数
+            is_day_mode = time_period == "1d"
+            if is_day_mode and days > 1:
+                days = 1  # 1天模式确保只查询1天数据
+            
+            logger.info(f"开始批量更新知识图谱指标: namespace={namespace_filter or 'all'}, app={app_name_filter or 'all'}, days={days}, mode={time_period}")
             
             # 获取需要更新的应用列表
             apps_to_update = await self._get_apps_from_knowledge_graph(namespace_filter, app_name_filter)
@@ -94,7 +106,7 @@ class K8sUpdateKnowledgeGraphMetricsTool(MCPToolBase):
             logger.info(f"找到 {len(apps_to_update)} 个应用需要更新指标")
             
             # 批量获取指标并更新
-            results = await self._batch_update_metrics(apps_to_update, days, max_concurrent)
+            results = await self._batch_update_metrics(apps_to_update, days, max_concurrent, time_period)
             
             # 生成报告
             report = self._generate_update_report(results)
@@ -150,14 +162,14 @@ class K8sUpdateKnowledgeGraphMetricsTool(MCPToolBase):
         
         return apps
     
-    async def _batch_update_metrics(self, apps: List[Dict], days: int, max_concurrent: int) -> List[Dict]:
+    async def _batch_update_metrics(self, apps: List[Dict], days: int, max_concurrent: int, time_period: str = "14d") -> List[Dict]:
         """批量更新指标"""
         semaphore = asyncio.Semaphore(max_concurrent)
         results = []
         
         async def update_single_app(app: Dict) -> Dict:
             async with semaphore:
-                return await self._update_single_app_metrics(app, days)
+                return await self._update_single_app_metrics(app, days, time_period)
         
         # 并发执行更新
         tasks = [update_single_app(app) for app in apps]
@@ -178,20 +190,26 @@ class K8sUpdateKnowledgeGraphMetricsTool(MCPToolBase):
         
         return processed_results
     
-    async def _update_single_app_metrics(self, app: Dict, days: int) -> Dict:
+    async def _update_single_app_metrics(self, app: Dict, days: int, time_period: str = "14d") -> Dict:
         """更新单个应用的指标"""
         try:
             namespace = app['namespace']
             name = app['name']
             resource_id = app['resource_id']
             
-            logger.debug(f"正在更新应用指标: {namespace}/{name}")
+            logger.debug(f"正在更新应用指标: {namespace}/{name} (模式: {time_period})")
+            
+            # 根据时间周期设置不同的查询参数
+            is_day_mode = time_period == "1d"
+            step = "10m" if is_day_mode else "1h"  # 1天模式使用10分钟步长，14天模式使用1小时步长
             
             # 使用Prometheus工具获取指标
             prometheus_result = await self.prometheus_tool.execute({
                 'app_name': name,
                 'namespace': namespace,
-                'days': days
+                'days': days,
+                'step': step,
+                'time_period': time_period  # 传递时间周期参数
             })
             
             if prometheus_result.is_error:

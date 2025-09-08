@@ -296,7 +296,7 @@ const loadConfig = async () => {
         "name": "MCP配置",
         "description": "MCP服务器和工具配置",
         "global_config": {
-          "timeout": 30000,
+          "timeout": 600000, // 10分钟超时，支持长时间运行的工具调用
           "retry_attempts": 3,
           "retry_delay": 1000,
           "max_concurrent_calls": 5,

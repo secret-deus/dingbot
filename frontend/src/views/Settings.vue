@@ -191,7 +191,7 @@
           <div class="config-form">
             <el-form :model="mcpConfig" label-width="120px">
               <el-form-item label="超时时间:">
-                <el-input-number v-model="mcpConfig.timeout" :min="1000" :max="60000" />
+                <el-input-number v-model="mcpConfig.timeout" :min="1000" :max="600000" />
                 <span class="unit">毫秒</span>
               </el-form-item>
               <el-form-item label="重试次数:">
@@ -275,7 +275,7 @@ const llmConfig = ref({
 })
 
 const mcpConfig = ref({
-  timeout: 30000,
+  timeout: 600000, // 10分钟超时，支持长时间运行的工具调用
   retry_attempts: 3,
   max_concurrent_calls: 5,
   enable_cache: true

@@ -75,6 +75,12 @@ class K8sPrometheusAppMetricsTool(MCPToolBase):
                         "type": "string",
                         "description": "查询步长，默认'1h'",
                         "default": "1h"
+                    },
+                    "time_period": {
+                        "type": "string",
+                        "description": "时间周期模式：14d(14天平均) 或 1d(1天近期)",
+                        "default": "14d",
+                        "enum": ["14d", "1d"]
                     }
                 },
                 "required": ["app_name"]
@@ -92,15 +98,21 @@ class K8sPrometheusAppMetricsTool(MCPToolBase):
             namespace = arguments.get("namespace", "default")
             days = arguments.get("days", 14)
             step = arguments.get("step", "1h")
+            time_period = arguments.get("time_period", "14d")
+            
+            # 根据时间周期调整参数
+            is_day_mode = time_period == "1d"
+            if is_day_mode and step == "1h":
+                step = "10m"  # 1天模式使用更细粒度的步长
             
             # 确保step参数不为None或空字符串
             if not step or step == "None":
-                step = "1h"
+                step = "10m" if is_day_mode else "1h"
             
             if not self.prometheus_url:
                 return MCPCallToolResult.error("未配置Prometheus URL，请设置PROMETHEUS_URL环境变量")
             
-            logger.info(f"开始查询应用 {namespace}/{app_name} 的资源指标，查询{days}天数据")
+            logger.info(f"开始查询应用 {namespace}/{app_name} 的资源指标，查询{days}天数据 (模式: {time_period}, 步长: {step})")
             
             # 执行查询
             result = await self._query_app_metrics(app_name, namespace, days, step)

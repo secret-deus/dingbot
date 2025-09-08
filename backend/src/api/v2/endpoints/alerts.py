@@ -222,7 +222,7 @@ async def _perform_llm_analysis(alert_id: str, alert_data: ResourceAlertData) ->
         llm_response = await llm_processor._chat_without_tools(messages)
         
          # ProcessResult对象处理
-        if llm_response and llm_response.content:
+        if llm_response and llm_response.content and not llm_response.content.startswith("调用LLM服务失败"):
             alert_stats["llm_analysis_success"] += 1
             logger.info(f"LLM分析成功: {alert_id}")
             return {
@@ -234,7 +234,11 @@ async def _perform_llm_analysis(alert_id: str, alert_data: ResourceAlertData) ->
             }
         else:
             alert_stats["llm_analysis_failed"] += 1
-            error_msg = "LLM返回空内容" if llm_response else "LLM响应为空"
+            # 检查是否是LLM服务调用失败
+            if llm_response and llm_response.content and llm_response.content.startswith("调用LLM服务失败"):
+                error_msg = llm_response.content
+            else:
+                error_msg = "LLM返回空内容" if llm_response else "LLM响应为空"
             logger.warning(f"LLM分析失败: {alert_id}, 错误: {error_msg}")
             return {
                 "status": "failed",
@@ -356,38 +360,43 @@ def _build_llm_analysis_prompt(alert_data: ResourceAlertData) -> str:
             rec_list.append(simplified_rec.strip())
         prompt += "; ".join(rec_list) + "\n"
     
-    prompt += """
+    
+    # 添加集群上下文信息
+    prompt += f"""
+
+### 集群上下文
+- **分析时间**: {alert_data.timestamp}
+- **分析范围**: {namespace} 命名空间
+- **资源类型**: {resource_type}
+- **监控周期**: {metrics.get('days_analyzed', 'N/A')} 天
+- **数据完整性**: {metrics.get('total_data_points', 'N/A')} 个数据点
 
 ### 分析要求
-请基于以上详细信息，提供专业的分析和建议，**必须包含以下结构化内容**：
+作为资深的Kubernetes运维专家，请基于以上信息提供**极简**的分析。
 
-## 1. 问题概述
-- 异常资源总数和类型分布
-- 主要问题类型（CPU/内存/其他）
+**输出格式要求（必须严格遵守）**：
 
-## 2. 异常资源清单及处理建议
-**请逐一列出每个异常资源，格式如下：**
+### 🔴 异常资源清单
 
-### 🔴 高优先级异常资源
-- **资源名称**: [具体资源名]
-  - **问题**: CPU [X]%, 内存 [Y]% - [问题描述]
-  - **建议**: [具体操作建议，如kubectl命令]
-  - **紧急度**: [高/中/低]
+| 资源名称 | CPU利用率 | 内存利用率 |
+|---------|----------|-----------|
+| [资源名1] | [X]% | [Y]% |
+| [资源名2] | [X]% | [Y]% |
 
-### 🟡 中优先级异常资源
-- **资源名称**: [具体资源名]
-  - **问题**: [具体问题]
-  - **建议**: [具体操作建议]
+（必须列出上表中的每一个异常资源，使用表格格式，不能遗漏）
 
-## 3. 批量处理方案
-- 针对相同问题类型的资源，提供批量处理命令
-- 自动化脚本建议
+### 🚀 处理建议
 
-## 4. 预防措施
-- 监控优化建议
-- 资源配置最佳实践
+**扩容**: 增加Pod副本数或资源配额
 
-请确保每个异常资源都有具体的处理建议，使用实际的kubectl命令和参数。"""
+**缩容**: 减少资源请求或优化应用性能
+
+**重要要求**：
+1. 只输出异常资源清单和处理建议，不要其他内容
+2. 必须列出所有异常资源，不能省略任何一个
+3. 必须使用Markdown表格格式，确保在钉钉中正确显示
+4. 每个资源只显示名称和CPU/内存利用率
+5. 处理建议固定为扩容/缩容两种"""
     
     return prompt
 
@@ -478,66 +487,34 @@ def _build_dingtalk_message(alert_data: ResourceAlertData, llm_result: Optional[
     # 计算紧急度
     urgency = _calculate_urgency(alert_data)
     
-    message = f"""## 🔥 K8s资源告警 {urgency['emoji']}
-
-### 📋 资源信息
-- **资源ID**: `{alert_data.resource_id}`
-- **告警时间**: {alert_data.timestamp}
-- **紧急度**: {urgency['level']} ({urgency['description']})
-
-### 📊 资源利用率
-- **CPU**: {metrics.get('avg_cpu_utilization', 'N/A')}%
-- **内存**: {metrics.get('avg_memory_utilization', 'N/A')}%
-- **分析周期**: {metrics.get('days_analyzed', 'N/A')}天"""
+    # 获取异常资源数量用于标题
+    abnormal_count = metrics.get('abnormal_resources', 0)
     
-    # 添加告警原因
-    if alert_data.alert_reasons:
-        message += "\n\n### ⚠️ 告警原因\n"
-        for reason in alert_data.alert_reasons:
-            message += f"- {reason}\n"
+    message = f"""## 🔥 K8s资源告警 - 发现 {abnormal_count} 个异常资源"""
     
     # 添加LLM分析结果或退化摘要
     if llm_result and llm_result.get("status") == "success":
         analysis = llm_result.get("analysis", "")
-        if len(analysis) > 1000:  # 限制长度
-            analysis = analysis[:1000] + "..."
-        message += f"\n\n### 🤖 智能分析\n{analysis}"
+        if len(analysis) > 2000:  # LLM分析有长度限制
+            analysis = analysis[:2000] + "..."
+        message += f"\n\n{analysis}"
     else:
         # LLM分析失败时的退化逻辑：使用原始数据摘要
         fallback_analysis = _generate_fallback_analysis(alert_data)
-        if llm_result:
-            message += f"\n\n### 🤖 智能分析\n> LLM分析失败，使用基础分析:\n\n{fallback_analysis}"
-        else:
-            message += f"\n\n### 🤖 智能分析\n{fallback_analysis}"
-    
-    # 添加快速处理指南
-    resource_parts = alert_data.resource_id.split('/')
-    namespace = resource_parts[1] if len(resource_parts) > 1 else "default"
-    
-    message += f"""
-
-### 🚀 快速处理
-1. **立即检查**: 使用 `kubectl top pods -n {namespace}` 查看实时资源使用
-2. **扩容应用**: 考虑增加Pod副本数或资源配额
-3. **查看日志**: 检查应用日志是否有异常
-4. **监控趋势**: 观察资源使用趋势，避免再次告警
-
----
-> 告警来源: {alert_data.source} | 处理时间: {datetime.now().strftime('%H:%M:%S')}"""
+        # 退化分析不截断，确保显示完整的异常资源清单
+        message += f"\n\n{fallback_analysis}"
     
     return message
 
 
 def _generate_fallback_analysis(alert_data: ResourceAlertData) -> str:
-    """生成退化分析摘要
-    
-    当LLM分析失败时，从原始告警数据中提取关键信息
+    """生成极简的退化分析摘要 - 只包含异常资源清单和扩容/缩容建议
     
     Args:
         alert_data: 告警数据
         
     Returns:
-        str: 退化分析摘要
+        str: 极简的退化分析摘要
     """
     try:
         analysis_parts = []
@@ -545,52 +522,56 @@ def _generate_fallback_analysis(alert_data: ResourceAlertData) -> str:
         # 提取基础统计信息
         metrics = alert_data.metrics
         if metrics:
-            total_resources = metrics.get("total_resources", 0)
-            abnormal_resources = metrics.get("abnormal_resources", 0)
-            
-            if total_resources > 0:
-                abnormal_ratio = (abnormal_resources / total_resources) * 100
-                analysis_parts.append(f"📊 **资源概况**: 共检测到 {total_resources} 个资源，其中 {abnormal_resources} 个异常 ({abnormal_ratio:.1f}%)")
-            
-            # 提取异常详情
             abnormal_details = metrics.get("abnormal_details", [])
+            
             if abnormal_details:
-                analysis_parts.append("🔍 **所有异常资源**:")
-                for i, detail in enumerate(abnormal_details):  # 显示所有异常资源
+                analysis_parts.append("### 🔴 异常资源清单")
+                analysis_parts.append("")
+                
+                # 使用表格格式显示所有异常资源
+                analysis_parts.append("| 资源名称 | CPU利用率 | 内存利用率 |")
+                analysis_parts.append("|---------|----------|-----------|")
+                
+                for detail in abnormal_details:
                     if isinstance(detail, dict):
                         name = detail.get("name", "未知资源")
-                        memory_util = detail.get("memory_utilization", 0)
-                        cpu_util = detail.get("cpu_utilization", 0)
-                        analysis_parts.append(f"  {i+1}. **{name}**: CPU {cpu_util}%, 内存 {memory_util}%")
-                    elif isinstance(detail, str):
-                        analysis_parts.append(f"  {i+1}. {detail}")
-            
-            # 提取建议
-            recommendations = metrics.get("recommendations", [])
-            if recommendations:
-                analysis_parts.append("💡 **基础建议**:")
-                for i, rec in enumerate(recommendations[:3]):  # 只显示前3个
-                    analysis_parts.append(f"  {i+1}. {rec}")
-            
-            # 提取阈值信息
-            if alert_data.thresholds:
-                cpu_threshold = alert_data.thresholds.get("cpu_threshold", 0.8) * 100
-                memory_threshold = alert_data.thresholds.get("memory_threshold", 0.7) * 100
-                analysis_parts.append(f"⚙️ **告警阈值**: CPU > {cpu_threshold}%, 内存 > {memory_threshold}%")
+                        memory_util = detail.get("memory_utilization", "N/A")
+                        cpu_util = detail.get("cpu_utilization", "N/A") 
+                        
+                        # 表格格式：每个资源占一行
+                        analysis_parts.append(f"| {name} | {cpu_util} | {memory_util} |")
+                
+                # 添加资源总数提示
+                total_count = len(abnormal_details)
+                analysis_parts.append("")
+                analysis_parts.append(f"*共 {total_count} 个异常资源*")
+                
+                analysis_parts.append("")
+                analysis_parts.append("### 🚀 处理建议")
+                analysis_parts.append("")
+                analysis_parts.append("**扩容**: 增加Pod副本数或资源配额")
+                analysis_parts.append("")
+                analysis_parts.append("**缩容**: 减少资源请求或优化应用性能")
         
         if not analysis_parts:
             # 如果没有提取到具体信息，提供通用分析
             analysis_parts = [
-                "📊 **基础分析**: 检测到集群资源异常",
-                "🔍 **建议操作**: 请检查资源使用情况并考虑扩容或优化",
-                "⚠️ **注意事项**: 建议及时处理异常资源以避免影响服务稳定性"
+                "### 📊 基础分析",
+                "",
+                "检测到K8s集群资源异常",
+                "",
+                "### 🚀 处理建议",
+                "",
+                "**扩容**: 增加Pod副本数或资源配额",
+                "",
+                "**缩容**: 减少资源请求或优化应用性能"
             ]
         
         return "\n".join(analysis_parts)
         
     except Exception as e:
         logger.warning(f"生成退化分析失败: {e}")
-        return "📊 **基础分析**: 检测到资源异常，建议检查集群状态并及时处理"
+        return "### 📊 基础分析\n检测到资源异常\n\n### 🚀 处理建议\n**扩容**: 增加资源配额\n**缩容**: 优化配置"
 
 
 def _calculate_urgency(alert_data: ResourceAlertData) -> Dict[str, str]:

@@ -10,10 +10,16 @@
         <el-button type="success" @click="onRunInspection" :loading="inspectionLoading">
           一键巡检
         </el-button>
-        <el-button type="warning" @click="onUpdateResourceMetrics" :loading="resourceUpdateLoading">
-          <el-icon><DataAnalysis /></el-icon>
-          更新资源指标
-        </el-button>
+        <div class="resource-metrics-group">
+          <el-select v-model="selectedTimePeriod" placeholder="计算周期" style="width: 120px; margin-right: 8px;">
+            <el-option label="14天" value="14d" />
+            <el-option label="1天" value="1d" />
+          </el-select>
+          <el-button type="warning" @click="onUpdateResourceMetrics" :loading="resourceUpdateLoading">
+            <el-icon><DataAnalysis /></el-icon>
+            更新资源指标
+          </el-button>
+        </div>
       </div>
     </div>
 
@@ -198,6 +204,7 @@ const inspectionMarkdown = ref('')
 
 // 资源更新数据
 const resourceUpdateLoading = ref(false)
+const selectedTimePeriod = ref('14d')  // 默认选择14天
 
 // 方法
 const refreshData = async () => {
@@ -239,13 +246,18 @@ const onRunInspection = async () => {
 const onUpdateResourceMetrics = async () => {
   resourceUpdateLoading.value = true
   try {
-    addLog('info', '开始更新资源指标...')
-    
-    const res = await api.resources.updateMetrics({
-      days: 14,
+    // 根据选择的时间周期确定参数
+    const isDayMode = selectedTimePeriod.value === '1d'
+    const params = {
+      timePeriod: selectedTimePeriod.value,
+      days: isDayMode ? 1 : 14,  // 1天模式查询1天数据，14天模式查询14天数据
       maxConcurrent: 5,
       forceUpdate: false
-    })
+    }
+    
+    addLog('info', `开始更新资源指标 (${selectedTimePeriod.value === '14d' ? '14天平均' : '1天近期'})...`)
+    
+    const res = await api.resources.updateMetrics(params)
     
     const data = res.data
     if (data.success) {
@@ -628,5 +640,10 @@ onUnmounted(() => {
 .log-message {
   color: var(--text-primary);
   flex: 1;
+}
+
+.resource-metrics-group {
+  display: flex;
+  align-items: center;
 }
 </style> 
