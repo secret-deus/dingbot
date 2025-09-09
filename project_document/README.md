@@ -64,44 +64,21 @@
 - ✅ **LLM多提供商支持** - OpenAI、Azure、智谱等
 - ✅ **MCP协议集成** - K8s和SSH工具集成
 
-### 🔄 历史参考文档
-以下文档包含历史信息，主要用于参考：
-- `secret.md` - 保密信息和配置
-- `ops-inspection-feature.md` - 运维巡检功能详情
+### 📚 历史文档归档
+历史技术文档已移动到归档目录，包含详细的技术实现方案：
+- **[历史文档归档](./archive/README.md)** - 查看归档的技术文档和实现细节
 
 ---
 
 ## 🚀 快速开始
 
-### 1. 环境准备
-```bash
-# 安装依赖
-poetry install
-cd frontend && npm install
-```
+详细的环境搭建和启动指南请查看：**[主项目README](../README.md#快速开始)**
 
-### 2. 配置文件
-```bash
-# 复制配置模板
-cp backend/config.env.example backend/config.env
-```
-
-### 3. 启动服务
-```bash
-# 启动后端
-poetry run python backend/main.py
-
-# 启动前端 (新终端)
-cd frontend && npm run dev
-
-# 启动MCP服务器 (新终端)
-poetry run python k8s-mcp/start_k8s_mcp_http_server.py
-```
-
-### 4. 访问应用
-- **前端界面**: http://localhost:5173
-- **后端API**: http://localhost:8000
-- **API文档**: http://localhost:8000/docs
+### 核心启动步骤
+1. **环境准备**: `poetry install` 安装依赖
+2. **配置文件**: 复制并编辑 `backend/config.env`
+3. **启动服务**: 后端 → 前端 → MCP服务器
+4. **访问应用**: http://localhost:5173 (前端) | http://localhost:8000 (后端)
 
 ---
 

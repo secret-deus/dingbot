@@ -1,5 +1,7 @@
 # K8s MCP 智能服务器
 
+> **注意**: 这是钉钉K8s运维机器人项目的MCP服务器组件。完整项目信息请查看：**[主项目README](../README.md)**
+
 一个功能强大的Kubernetes MCP服务器，提供智能化的集群管理和自然语言交互能力。
 
 ## 🌟 主要特性
@@ -34,26 +36,32 @@
 - **配置灵活**: 支持多种配置方式和智能功能开关
 - **Poetry管理**: 使用Poetry进行依赖管理和环境隔离
 
-## 🔧 支持的工具
+## 🔧 支持的工具 (25+个)
 
-### 基础K8s工具
-- `k8s-get-pods` - 获取Pod列表
+### 基础K8s工具 (8个)
+- `k8s-get-pods` - 获取Pod列表和状态
 - `k8s-get-services` - 获取Service列表
 - `k8s-get-deployments` - 获取Deployment列表
-- `k8s-get-nodes` - 获取Node列表
+- `k8s-get-nodes` - 获取Node列表和状态
 - `k8s-scale-deployment` - 扩缩容Deployment
 - `k8s-get-logs` - 获取Pod日志
 - `k8s-describe-pod` - 获取Pod详细信息
 - `k8s-get-events` - 获取集群事件
 
-### 智能工具 🧠
+### 智能分析工具 🧠 (5个)
 - `k8s-relation-query` - 资源关联查询和依赖分析
 - `k8s-cluster-summary` - 智能集群状态摘要生成
+- `k8s-create-deployment` - 智能部署创建
+- `k8s-resource-analysis` - 资源使用分析
+- `k8s-troubleshoot` - 智能故障诊断
 
-### 监控告警工具 🔔
-- `k8s-resource-monitor` - 手动触发资源监控和告警测试
-- `k8s-prometheus-app-metrics` - 获取应用的Prometheus指标数据
-- `k8s-update-knowledge-graph-metrics` - 更新知识图谱中的指标数据
+### Prometheus监控工具 🔔 (12+个)
+- `k8s-resource-monitor` - 资源监控和告警测试
+- `k8s-prometheus-app-metrics` - 获取应用Prometheus指标
+- `k8s-update-knowledge-graph-metrics` - 更新知识图谱指标
+- `k8s-prometheus-resource-analysis` - Prometheus资源分析 ⭐ **NEW**
+- `k8s-arms-prometheus-query` - 阿里云ARMS Prometheus查询
+- 以及更多监控和分析工具...
 
 ## 🚀 快速开始
 
