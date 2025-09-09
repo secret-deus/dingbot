@@ -1,30 +1,5 @@
 <template>
   <div class="stream-chat">
-    <!-- 添加供应商选择区域 -->
-    <div class="provider-selector">
-      <div class="provider-header">
-        <el-icon><Setting /></el-icon>
-        <span>AI 供应商</span>
-      </div>
-      <div class="provider-list">
-        <div 
-          v-for="(provider, id) in availableProviders" 
-          :key="id"
-          :class="['provider-item', { 'active': currentProvider === id, 'unavailable': !provider.available }]"
-          @click="switchProvider(id)"
-        >
-          <div class="provider-icon">{{ provider.icon || '🤖' }}</div>
-          <div class="provider-info">
-            <div class="provider-name">{{ provider.name }}</div>
-            <div class="provider-model">{{ provider.model }}</div>
-          </div>
-          <div class="provider-status">
-            <el-icon v-if="provider.available" class="status-available"><CircleCheckFilled /></el-icon>
-            <el-icon v-else class="status-unavailable"><CircleCloseFilled /></el-icon>
-          </div>
-        </div>
-      </div>
-    </div>
     <!-- 消息列表区域 -->
     <div class="chat-messages" ref="messagesContainer">
       <div class="messages-wrapper">
@@ -237,7 +212,7 @@ import {
   VideoPause, VideoPlay, InfoFilled, Setting, CircleCheckFilled, CircleCloseFilled 
 } from '@element-plus/icons-vue'
 import { useChatStore } from '@/stores/chat'
-import { api, llmProvidersApi } from '@/api/client'
+import { api } from '@/api/client'
 import { formatMessageContent } from '@/utils/markdown'
 import { loadKatex } from '@/utils/katex'
 
@@ -257,10 +232,6 @@ const props = defineProps({
 const chatStore = useChatStore()
 const inputMessage = ref('')
 
-// 供应商相关数据
-const availableProviders = ref({})
-const currentProvider = ref('')
-const isLoadingProviders = ref(false)
 const messagesContainer = ref(null)
 const showTypingCursor = ref(true)
 const reconnecting = ref(false)
@@ -333,55 +304,6 @@ const formatTime = (timestamp) => {
   })
 }
 
-// 供应商管理方法
-const loadAvailableProviders = async () => {
-  try {
-    isLoadingProviders.value = true
-    const response = await llmProvidersApi.getAvailableProviders()
-    if (response.success) {
-      availableProviders.value = response.data.providers
-      currentProvider.value = response.data.current_provider
-    }
-  } catch (error) {
-    console.error('加载供应商列表失败:', error)
-    ElMessage.error('加载供应商列表失败')
-  } finally {
-    isLoadingProviders.value = false
-  }
-}
-
-const switchProvider = async (providerId) => {
-  if (!availableProviders.value[providerId]?.available) {
-    ElMessage.warning('该供应商不可用，请检查配置')
-    return
-  }
-
-  if (providerId === currentProvider.value) {
-    return // 已经是当前供应商
-  }
-
-  try {
-    const response = await llmProvidersApi.switchProvider(providerId)
-    if (response.success) {
-      currentProvider.value = providerId
-      ElMessage.success(response.message)
-      
-      // 添加系统消息提示切换
-      chatStore.addMessage({
-        type: 'system',
-        content: `已切换到 ${availableProviders.value[providerId].name}`,
-        timestamp: Date.now()
-      })
-      
-      await scrollToBottom()
-    } else {
-      ElMessage.error(response.message || '切换供应商失败')
-    }
-  } catch (error) {
-    console.error('切换供应商失败:', error)
-    ElMessage.error('切换供应商失败')
-  }
-}
 
 // 消息发送
 const sendMessage = async () => {
@@ -859,8 +781,6 @@ const startTypingCursor = () => {
 onMounted(() => {
   startTypingCursor()
   
-  // 加载可用的供应商列表
-  loadAvailableProviders()
   
   if (props.autoConnect) {
     // 初始化连接状态检查
@@ -1559,106 +1479,6 @@ watch(() => chatStore.currentStreamMessage?.content, () => {
   }
 }
 
-/* 供应商选择器样式 */
-.provider-selector {
-  background: white;
-  border-bottom: 1px solid #e4e7ed;
-  padding: 16px 20px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.04);
-}
-
-.provider-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-  font-weight: 600;
-  color: var(--text-primary);
-  font-size: 14px;
-}
-
-.provider-list {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.provider-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border: 1px solid #e4e7ed;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  background: white;
-  min-width: 120px;
-}
-
-.provider-item:hover {
-  border-color: #409EFF;
-  box-shadow: 0 2px 8px rgba(64, 158, 255, 0.1);
-}
-
-.provider-item.active {
-  border-color: #409EFF;
-  background: #ecf5ff;
-  box-shadow: 0 2px 8px rgba(64, 158, 255, 0.15);
-}
-
-.provider-item.unavailable {
-  opacity: 0.5;
-  cursor: not-allowed;
-  background: #f5f7fa;
-}
-
-.provider-item.unavailable:hover {
-  border-color: #e4e7ed;
-  box-shadow: none;
-}
-
-.provider-icon {
-  font-size: 18px;
-  line-height: 1;
-}
-
-.provider-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.provider-name {
-  font-weight: 500;
-  color: var(--text-primary);
-  font-size: 13px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.provider-model {
-  color: var(--text-secondary);
-  font-size: 11px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.provider-status {
-  display: flex;
-  align-items: center;
-}
-
-.status-available {
-  color: #67c23a;
-  font-size: 14px;
-}
-
-.status-unavailable {
-  color: #f56c6c;
-  font-size: 14px;
-}
 
 /* 系统消息样式 */
 .system-message {

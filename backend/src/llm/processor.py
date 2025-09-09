@@ -54,6 +54,7 @@ class EnhancedLLMProcessor:
         self._initialize_client()
         
         logger.info(f"✅ 简化LLM处理器初始化完成: {self.config.get('provider', 'unknown')}")
+        logger.info(f"🔧 调试：处理器配置详情: {self.config}")
     
     def _initialize_client(self):
         """初始化LLM客户端"""
@@ -970,10 +971,12 @@ Kubernetes 节点信息:
             ]
             
             # 构建请求参数
+            stream_enabled = self.config.get("stream", True)
+            logger.info(f"配置中的stream设置: {stream_enabled}, 完整配置: {self.config}")
             request_params = {
                 "model": self._get_model_name(),
                 "messages": messages,
-                "stream": True
+                "stream": stream_enabled
             }
             
             # 添加可选参数
@@ -990,17 +993,11 @@ Kubernetes 节点信息:
                 yield "❌ LLM客户端未初始化，无法生成响应"
                 return
             
-            # 流式调用LLM生成最终回复
+            # 根据配置选择流式或非流式调用
             try:
                 logger.info(f"准备调用LLM，请求参数: {json.dumps(request_params, ensure_ascii=False, indent=2)}")
-                stream = await self.client.chat.completions.create(**request_params)
-                logger.info("LLM流式调用已启动")
                 
-                response_generated = False
-                chunk_count = 0
-                full_response = ""  # 收集完整响应用于最终恢复
-                
-                # 在流式输出中添加恢复处理
+                # 获取会话ID用于数据恢复
                 session_id = getattr(self, 'current_session_id', None)
                 if not session_id:
                     logger.error(f"⚠️ 严重警告：恢复阶段未找到会话ID！")
@@ -1008,29 +1005,76 @@ Kubernetes 节点信息:
                 else:
                     logger.error(f"🆔 恢复阶段使用会话ID: {session_id}")
                 
-                async for chunk in stream:
-                    chunk_count += 1
-                    logger.debug(f"收到流式块 #{chunk_count}: {chunk}")
-                    if chunk.choices and len(chunk.choices) > 0:
-                        delta = chunk.choices[0].delta
-                        if delta.content:
-                            # 收集完整响应（LLM原始输出）
-                            full_response += delta.content
-                            response_generated = True
-                            
-                            # 🚀 阶段1: 实时流式输出（保持用户体验，可能有部分脱敏值未恢复）
-                            restored_content = self.data_masker.restore_llm_response(
-                                delta.content, session_id
-                            )
-                            
-                            logger.debug(f"流式块 #{chunk_count}: '{delta.content}' → '{restored_content}'")
-                            yield restored_content
-                        else:
-                            logger.debug(f"块 #{chunk_count} 无内容: {delta}")
-                    else:
-                        logger.debug(f"块 #{chunk_count} 无choices")
+                # 初始化通用变量
+                response_generated = False
+                chunk_count = 0
+                full_response = ""  # 收集完整响应用于最终恢复
                 
-                logger.info(f"LLM流式调用完成，共生成 {chunk_count} 个块，有效响应: {response_generated}")
+                if stream_enabled:
+                    # LLM流式调用
+                    stream = await self.client.chat.completions.create(**request_params)
+                    logger.info("LLM流式调用已启动")
+                    
+                    async for chunk in stream:
+                        chunk_count += 1
+                        logger.debug(f"收到流式块 #{chunk_count}: {chunk}")
+                        if chunk.choices and len(chunk.choices) > 0:
+                            delta = chunk.choices[0].delta
+                            if delta.content:
+                                # 收集完整响应（LLM原始输出）
+                                full_response += delta.content
+                                response_generated = True
+                                
+                                # 🚀 阶段1: 实时流式输出（保持用户体验，可能有部分脱敏值未恢复）
+                                restored_content = self.data_masker.restore_llm_response(
+                                    delta.content, session_id
+                                )
+                                
+                                logger.debug(f"流式块 #{chunk_count}: '{delta.content}' → '{restored_content}'")
+                                yield restored_content
+                            else:
+                                logger.debug(f"块 #{chunk_count} 无内容: {delta}")
+                else:
+                    # LLM非流式调用，但后端模拟流式输出
+                    logger.info("LLM非流式调用已启动")
+                    response = await self.client.chat.completions.create(**request_params)
+                    logger.info("LLM非流式调用完成")
+                    
+                    if response and response.choices and len(response.choices) > 0:
+                        full_response = response.choices[0].message.content or ""
+                        response_generated = True
+                        
+                        # 恢复脱敏数据
+                        restored_content = self.data_masker.restore_llm_response(
+                            full_response, session_id
+                        )
+                        
+                        logger.info(f"非流式响应长度: {len(full_response)} 字符")
+                        
+                        # 模拟流式输出：将完整响应分块输出
+                        import re
+                        # 按句子分割，保持自然的输出节奏
+                        sentences = re.split(r'([。！？\n])', restored_content)
+                        current_chunk = ""
+                        
+                        for i, part in enumerate(sentences):
+                            current_chunk += part
+                            # 每个句子或换行符后输出一次
+                            if part in ['。', '！', '？', '\n'] or i == len(sentences) - 1:
+                                if current_chunk.strip():
+                                    yield current_chunk
+                                    current_chunk = ""
+                                    # 添加小延迟模拟真实流式体验
+                                    import asyncio
+                                    await asyncio.sleep(0.01)
+                    else:
+                        logger.error("非流式调用返回空响应")
+                        response_generated = False
+                
+                if stream_enabled:
+                    logger.info(f"LLM流式调用完成，共生成 {chunk_count} 个块，有效响应: {response_generated}")
+                else:
+                    logger.info(f"LLM非流式调用完成，有效响应: {response_generated}")
                 
                 # 🔧 阶段2: 完整内容恢复（修复因chunk分割导致的恢复失败）
                 if response_generated and full_response and session_id:
@@ -1086,10 +1130,12 @@ Kubernetes 节点信息:
         """流式输出LLM响应（无工具调用）"""
         try:
             # 构建请求参数
+            stream_enabled = self.config.get("stream", True)
+            logger.info(f"_stream_llm_response配置中的stream设置: {stream_enabled}")
             request_params = {
                 "model": self._get_model_name(),
                 "messages": conversation_history,
-                "stream": True
+                "stream": stream_enabled
             }
             
             # 添加可选参数
@@ -1098,19 +1144,40 @@ Kubernetes 节点信息:
             if self.config.get("max_tokens") is not None:
                 request_params["max_tokens"] = self.config["max_tokens"]
             
-            logger.info("流式输出普通LLM响应")
+            logger.info("输出普通LLM响应")
             
-            # 流式调用LLM
-            stream = await self.client.chat.completions.create(**request_params)
-            
-            async for chunk in stream:
-                if chunk.choices and len(chunk.choices) > 0:
-                    delta = chunk.choices[0].delta
-                    if delta.content:
-                        yield delta.content
+            if stream_enabled:
+                # LLM流式调用
+                stream = await self.client.chat.completions.create(**request_params)
+                
+                async for chunk in stream:
+                    if chunk.choices and len(chunk.choices) > 0:
+                        delta = chunk.choices[0].delta
+                        if delta.content:
+                            yield delta.content
+            else:
+                # LLM非流式调用，后端模拟流式输出
+                response = await self.client.chat.completions.create(**request_params)
+                
+                if response and response.choices and len(response.choices) > 0:
+                    content = response.choices[0].message.content or ""
+                    if content:
+                        # 模拟流式输出：按句子分割
+                        import re
+                        sentences = re.split(r'([。！？\n])', content)
+                        current_chunk = ""
+                        
+                        for i, part in enumerate(sentences):
+                            current_chunk += part
+                            if part in ['。', '！', '？', '\n'] or i == len(sentences) - 1:
+                                if current_chunk.strip():
+                                    yield current_chunk
+                                    current_chunk = ""
+                                    import asyncio
+                                    await asyncio.sleep(0.01)
                         
         except Exception as e:
-            logger.error(f"流式响应失败: {e}")
+            logger.error(f"LLM响应失败: {e}")
             yield f"❌ 响应生成失败: {str(e)}"
 
     def _get_tool_response_system_prompt(self) -> str:

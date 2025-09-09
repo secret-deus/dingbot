@@ -1,7 +1,9 @@
 <template>
   <div id="app" class="app-container">
-    <!-- 导航栏 -->
-    <el-container class="layout-container">
+    <!-- 只有登录后才显示主布局 -->
+    <div v-if="showMainLayout">
+      <!-- 导航栏 -->
+      <el-container class="layout-container">
       <!-- 侧边栏 -->
       <el-aside :width="isCollapse ? '64px' : '200px'" class="sidebar">
         <div class="logo-container">
@@ -15,9 +17,9 @@
           :unique-opened="true"
           router
           class="sidebar-menu"
-          background-color="#304156"
-          text-color="#bfcbd9"
-          active-text-color="#409EFF"
+          background-color="#1E293B"
+          text-color="rgba(255, 255, 255, 0.8)"
+          active-text-color="#FFFFFF"
         >
           <el-menu-item index="/dashboard">
             <el-icon><Odometer /></el-icon>
@@ -27,11 +29,6 @@
           <el-menu-item index="/chat">
             <el-icon><ChatDotSquare /></el-icon>
             <template #title>智能对话</template>
-          </el-menu-item>
-          
-          <el-menu-item index="/settings">
-            <el-icon><Setting /></el-icon>
-            <template #title>配置管理</template>
           </el-menu-item>
           
           <el-menu-item index="/mcp-config">
@@ -93,12 +90,20 @@
         </el-main>
       </el-container>
     </el-container>
+    </div>
+    
+    <!-- 未登录时显示路由视图（登录页） -->
+    <div v-else>
+      <router-view />
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, computed, watch, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { useAuthStore } from '@/stores/auth'
 import {
   Odometer,
   ChatDotSquare,
@@ -114,15 +119,20 @@ import {
 // 响应式数据
 const isCollapse = ref(false)
 const route = useRoute()
+const router = useRouter()
+const authStore = useAuthStore()
 
 // 计算属性
 const activeMenu = computed(() => route.path)
+
+const showMainLayout = computed(() => {
+  return authStore.isAuthenticated && route.path !== '/login'
+})
 
 const breadcrumbTitle = computed(() => {
   const titles = {
     '/dashboard': '仪表板',
     '/chat': '智能对话',
-    '/settings': '配置管理',
     '/mcp-config': 'MCP配置',
     '/scheduler': '定时任务'
   }
@@ -134,13 +144,32 @@ const toggleSidebar = () => {
   isCollapse.value = !isCollapse.value
 }
 
-const handleUserCommand = (command) => {
+const handleUserCommand = async (command) => {
   switch (command) {
     case 'profile':
-      console.log('打开个人设置')
+      ElMessage.info('个人设置功能开发中...')
       break
     case 'logout':
-      console.log('退出登录')
+      try {
+        await ElMessageBox.confirm(
+          '确定要退出登录吗？',
+          '退出确认',
+          {
+            confirmButtonText: '确定',
+            cancelButtonText: '取消',
+            type: 'warning',
+          }
+        )
+        
+        // 执行退出登录
+        authStore.logout()
+        ElMessage.success('已退出登录')
+        
+        // 跳转到登录页
+        router.push('/login')
+      } catch {
+        // 用户取消退出
+      }
       break
   }
 }
@@ -148,6 +177,11 @@ const handleUserCommand = (command) => {
 // 监听路由变化
 watch(route, (newRoute) => {
   console.log('路由变化:', newRoute.path)
+})
+
+// 组件挂载时初始化认证状态
+onMounted(() => {
+  authStore.initAuth()
 })
 </script>
 
@@ -162,18 +196,21 @@ watch(route, (newRoute) => {
 }
 
 .sidebar {
-  background-color: #304156;
-  color: #bfcbd9;
+  background-color: #1E293B;
+  color: rgba(255, 255, 255, 0.8);
   transition: width 0.3s ease;
+  border-right: none;
+  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
 }
 
 .logo-container {
-  height: 50px;
+  height: 64px;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0 20px;
-  background-color: #2b3442;
+  background-color: #0F172A;
+  border-bottom: 1px solid #334155;
 }
 
 .logo {
@@ -186,8 +223,9 @@ watch(route, (newRoute) => {
 
 .logo-text {
   font-size: 16px;
-  font-weight: bold;
-  color: #fff;
+  font-weight: 600;
+  color: #FFFFFF;
+  font-family: 'Microsoft YaHei', 'PingFang SC', 'Hiragino Sans GB', sans-serif;
 }
 
 .sidebar-menu {
@@ -195,13 +233,14 @@ watch(route, (newRoute) => {
 }
 
 .header {
-  background-color: #fff;
-  border-bottom: 1px solid #e4e7ed;
+  background: linear-gradient(135deg, #FFFFFF 0%, #F8FAFC 100%);
+  border-bottom: 1px solid #E2E8F0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 20px;
-  box-shadow: 0 1px 4px rgba(0,21,41,.08);
+  padding: 0 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  backdrop-filter: blur(10px);
 }
 
 .header-left {
@@ -227,13 +266,16 @@ watch(route, (newRoute) => {
   display: flex;
   align-items: center;
   cursor: pointer;
-  padding: 8px;
-  border-radius: 4px;
-  transition: background-color 0.3s;
+  padding: 8px 12px;
+  border-radius: 8px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid transparent;
 }
 
 .user-dropdown:hover {
-  background-color: #f5f7fa;
+  background-color: rgba(64, 158, 255, 0.08);
+  border-color: rgba(64, 158, 255, 0.2);
+  transform: translateY(-1px);
 }
 
 .user-avatar {
@@ -252,9 +294,23 @@ watch(route, (newRoute) => {
 }
 
 .main-content {
-  background-color: #f0f2f5;
-  padding: 20px;
+  background: linear-gradient(135deg, #F8FAFC 0%, #F1F5F9 100%);
+  padding: 24px;
   overflow-y: auto;
+  position: relative;
+}
+
+.main-content::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: 
+    radial-gradient(circle at 25% 25%, rgba(64, 158, 255, 0.03) 0%, transparent 50%),
+    radial-gradient(circle at 75% 75%, rgba(103, 194, 58, 0.03) 0%, transparent 50%);
+  pointer-events: none;
 }
 
 /* 路由动画 */

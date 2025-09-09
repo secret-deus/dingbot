@@ -166,7 +166,9 @@ export const api = {
     testConfig: (type, config) => apiClient.post('/v2/config/test', {
       config_type: type,
       config_data: config
-    })
+    }),
+    // 获取支持的提供商列表
+    getProviders: () => apiClient.get('/v2/config/providers')
   },
 
   // K8s资源管理API
@@ -546,56 +548,6 @@ export const schedulerApiUtils = {
   }
 }
 
-// 多供应商LLM配置API
-export const llmProvidersApi = {
-  // 获取多供应商配置
-  async getProvidersConfig() {
-    const response = await fetch(`${API_BASE}/config/llm/providers`);
-    return await response.json();
-  },
-
-  // 保存多供应商配置
-  async saveProvidersConfig(config) {
-    const response = await fetch(`${API_BASE}/config/llm/providers`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(config)
-    });
-    return await response.json();
-  },
-
-  // 获取供应商模板
-  async getProviderTemplates() {
-    const response = await fetch(`${API_BASE}/config/llm/providers/templates`);
-    return await response.json();
-  },
-
-  // 获取可用供应商列表
-  async getAvailableProviders() {
-    const response = await fetch(`${API_BASE}/llm/providers/available`);
-    return await response.json();
-  },
-
-  // 切换供应商
-  async switchProvider(providerId) {
-    const response = await fetch(`${API_BASE}/llm/providers/switch`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ provider_id: providerId })
-    });
-    return await response.json();
-  },
-
-  // 获取供应商统计
-  async getProviderStats() {
-    const response = await fetch(`${API_BASE}/llm/providers/stats`);
-    return await response.json();
-  }
-};
 
 // 任务管理高级API类
 export class SchedulerAPI {
