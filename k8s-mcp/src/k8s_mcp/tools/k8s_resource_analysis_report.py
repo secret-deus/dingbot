@@ -170,6 +170,8 @@ class K8sResourceAnalysisReportTool:
             # 注意：从知识图谱获取的数据已经是比例值（如41.5427表示4154.27%），不需要再除以100
             cpu_util = deployment['cpu_utilization'] if deployment['cpu_utilization'] is not None else 0
             memory_util = deployment['memory_utilization'] if deployment['memory_utilization'] is not None else 0
+            # 在使用前获取监控数据可用性，避免未绑定局部变量错误
+            has_prometheus_data = bool(deployment.get('has_prometheus_data', False))
             
             # 多层次异常检测
             issues = []
@@ -204,7 +206,6 @@ class K8sResourceAnalysisReportTool:
             is_memory_extreme = memory_std > 0 and abs(memory_util - memory_avg) > 3 * memory_std
             
             # 3. 数据质量检测
-            has_prometheus_data = deployment.get('has_prometheus_data', False)
             is_data_suspicious = False
             
             # 检测可能的数据异常（但不过滤，只标记）

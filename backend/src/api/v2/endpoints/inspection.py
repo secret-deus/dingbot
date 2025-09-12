@@ -118,10 +118,15 @@ async def perform_inspection(
     system_prompt = (
         "你是资深SRE，请基于下列 Kubernetes 集群巡检原始数据，"
         "生成面向运维群的 Markdown 报告：\n"
+        "- 主标题请以 '🔥 ' 开头，例如：'# 🔥 Kubernetes 集群巡检报告 - YYYY-MM-DD'\n"
         "- 必含结构：现状总览 -> 资源监控 -> 异常清单（含严重度）-> 根因猜测 -> 影响范围 -> 建议措施 -> 待跟进事项\n"
         "- 资源监控部分重点关注：CPU使用率、内存使用率、节点健康状态、资源压力等级\n"
         "- 如果数据中包含resource_monitoring或resource_summary，请详细分析资源使用情况\n"
-        "- 控制长度并提供可执行建议；如信息不足，列出需要补充的数据。"
+        "- 控制长度并提供可执行建议；如信息不足，列出需要补充的数据。\n"
+        "- Markdown 输出规范（重要）：仅在确为代码/命令/配置时使用三反引号代码块；正文、段落、列表、表格、标题、引用等一律不要放入代码块。\n"
+        "- 代码块语言请使用标准、紧随三反引号的语言标记，例如 '```bash'、'```yaml'、'```json'；不要写成 '``` yaml'、'```yaml1'、'``bash' 等非标准形式，反引号数量必须为3。\n"
+        "- 若需绘制流程/架构图，仅在确有图形内容时使用 '```mermaid'；不要将普通文本放入 mermaid 代码块。\n"
+        "- 严禁将整篇报告包裹在单个代码块中，报告主体必须是正常的 Markdown 文本。"
     )
 
     try:
@@ -164,7 +169,7 @@ async def perform_inspection(
                 # 优先使用Markdown分片发送，减少长度与关键字限制问题
                 sent_ok = await dingtalk_bot.send_markdown_message(
                     dingtalk_bot.webhook_url,
-                    title="K8s 巡检报告",
+                    title="🔥 K8s 巡检报告",
                     markdown_text=analysis_text
                 )
                 ding_result = {"sent": bool(sent_ok)}
@@ -222,7 +227,7 @@ def _build_fallback_markdown(summary: Any) -> str:
             return "\n".join(lines)
         # 非字典结果
         text = summary if isinstance(summary, str) else json.dumps(summary, ensure_ascii=False)[:5000]
-        return f"# 巡检结果(回退)\n\n```json\n{text}\n```\n"
+        return f"# 🔥 巡检结果(回退)\n\n```json\n{text}\n```\n"
     except Exception as e:
         logger.error(f"构建回退Markdown失败: {e}")
         return "# 巡检结果(回退)\n\n- 无法解析工具结果。"

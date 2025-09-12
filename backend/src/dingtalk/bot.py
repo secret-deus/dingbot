@@ -14,6 +14,7 @@ from datetime import datetime
 from loguru import logger
 import httpx
 from pydantic import BaseModel
+import re
 
 from ..llm.processor import EnhancedLLMProcessor
 from ..mcp.types import ChatMessage, MCPException
@@ -425,7 +426,8 @@ class DingTalkBot:
 
             # 分片
             chunks: List[str] = []
-            text = markdown_text or ""
+            # 规范化Markdown，去除整段被 ```markdown / ``` 包裹的外层围栏，避免钉钉整体按代码块渲染
+            text = self._normalize_markdown_for_dingtalk(markdown_text or "")
             for i in range(0, len(text), chunk_size):
                 chunks.append(text[i:i + chunk_size])
 
@@ -491,3 +493,35 @@ class DingTalkBot:
                 "available_shortcuts": ["/help"],
                 "stats": {}
             } 
+
+    # ----------------------------------
+    # Markdown 渲染兼容性处理
+    # ----------------------------------
+    def _normalize_markdown_for_dingtalk(self, text: str) -> str:
+        """去除整段包裹的代码围栏，兼容钉钉Markdown渲染。
+
+        背景：有些上游生成器会把整份报告用 ```markdown / ```json / ``` 包住，
+        钉钉会把其整体当作代码块显示，导致标题、列表、表格样式失效。
+
+        处理策略：
+        - 若全文以三反引号开头并以三反引号结尾，去掉首尾围栏，仅保留内部文本。
+        - 兼容诸如 ```markdown、```md、```json、```text 等语言标记。
+        - 去除首尾空白行，保持正文换行。
+        - 避免破坏正文内合法的局部代码块：仅当围栏包裹了“整篇文档”时才移除。
+        """
+        if not text:
+            return text
+
+        stripped = text.strip()
+        # 正则：匹配开头 ```、```markdown、```md、```json 等，直到第一行结束
+        opening_fence = re.match(r"^```[a-zA-Z0-9_-]*\s*\n", stripped)
+        closing_fence = stripped.endswith("```")
+
+        if opening_fence and closing_fence:
+            # 去掉首行围栏和末尾三反引号
+            start = opening_fence.end()
+            inner = stripped[start:]
+            inner = inner[:-3]  # 移除末尾 ```
+            return inner.strip("\n")
+
+        return text

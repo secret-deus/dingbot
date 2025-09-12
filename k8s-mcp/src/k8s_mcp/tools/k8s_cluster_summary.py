@@ -496,6 +496,7 @@ class K8sClusterSummaryTool(MCPToolBase):
             
             # 提取命名空间相关信息
             namespace_data = cluster_summary.get("namespace_breakdown", {}).get(namespace, {})
+            namespace_health = cluster_summary.get("namespace_health", {}).get(namespace, {})
             
             summary = {
                 "scope": "namespace",
@@ -508,13 +509,11 @@ class K8sClusterSummaryTool(MCPToolBase):
                     if res.get("namespace") == namespace
                 ],
                 "key_metrics": {
-                    "pod_count": namespace_data.get("pod_count", 0),
+                    "pod_count": namespace_health.get("total_pods", namespace_data.get("pod_count", 0)),
                     "service_count": namespace_data.get("service_count", 0),
                     "deployment_count": namespace_data.get("deployment_count", 0),
-                    "failed_pods": len([
-                        res for res in cluster_summary.get("abnormal_resources", [])
-                        if res.get("namespace") == namespace and res.get("kind") == "Pod"
-                    ])
+                    "failed_pods": namespace_health.get("abnormal_pods", 0),
+                    "abnormal_pod_ratio": namespace_health.get("abnormal_ratio", 0.0)
                 }
             }
             

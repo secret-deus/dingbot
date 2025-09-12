@@ -222,7 +222,10 @@ class K8sPrometheusAppMetricsTool(MCPToolBase):
             "cpu_usage": cpu_usage_query,
             "memory_usage": memory_usage_query,
             "cpu_requests": cpu_requests_query,
-            "memory_requests": memory_requests_query
+            "memory_requests": memory_requests_query,
+            # 新增：limits 查询
+            "cpu_limits": f'kube_pod_container_resource_limits{{namespace="{namespace}",pod=~"^{app_name}-[^-]+-.*",resource="cpu"}}',
+            "memory_limits": f'kube_pod_container_resource_limits{{namespace="{namespace}",pod=~"^{app_name}-[^-]+-.*",resource="memory"}}'
         }
 
     async def _process_results(self, results: Dict[str, List], app_name: str, namespace: str, days: int) -> Dict[str, Any]:
@@ -238,7 +241,10 @@ class K8sPrometheusAppMetricsTool(MCPToolBase):
                 "cpu_utilization_avg": 0.0,
                 "memory_utilization_avg": 0.0,
                 "cpu_requests_avg": 0.0,
-                "memory_requests_avg": 0.0
+                "memory_requests_avg": 0.0,
+                # 新增：limits 聚合
+                "cpu_limits_avg": 0.0,
+                "memory_limits_avg": 0.0
             },
             "pod_details": [],
             "summary": {
@@ -306,6 +312,7 @@ class K8sPrometheusAppMetricsTool(MCPToolBase):
         # 处理CPU请求量数据（统计每个值的出现次数，取最常见的值）
         from collections import Counter
         cpu_request_counter = Counter()
+        cpu_limit_counter = Counter()
         for result in results.get("cpu_requests", []):
             values = result.get('values', [])
             if values:  # 只取第一个时间点的值
@@ -316,6 +323,17 @@ class K8sPrometheusAppMetricsTool(MCPToolBase):
                         cpu_request_counter[cpu_req] += 1
                 except (ValueError, TypeError):
                     continue
+        # CPU limits
+        for result in results.get("cpu_limits", []):
+            values = result.get('values', [])
+            if values:
+                timestamp, value = values[0]
+                try:
+                    cpu_lim = float(value)
+                    if cpu_lim > 0:
+                        cpu_limit_counter[cpu_lim] += 1
+                except (ValueError, TypeError):
+                    continue
         
         # 取出现次数最多的CPU请求值
         if cpu_request_counter:
@@ -324,9 +342,15 @@ class K8sPrometheusAppMetricsTool(MCPToolBase):
         else:
             cpu_requests_values = []
         # logger.info(f"🔍 CPU请求统计: {dict(cpu_request_counter)}, 选择: {cpu_requests_values}")
+        if cpu_limit_counter:
+            most_common_cpu_lim = cpu_limit_counter.most_common(1)[0][0]
+            cpu_limits_values = [most_common_cpu_lim]
+        else:
+            cpu_limits_values = []
         
         # 处理内存请求量数据（统计每个值的出现次数，取最常见的值，原始字节转换为GB）
         memory_request_counter = Counter()
+        memory_limit_counter = Counter()
         for result in results.get("memory_requests", []):
             values = result.get('values', [])
             if values:  # 只取第一个时间点的值
@@ -338,6 +362,17 @@ class K8sPrometheusAppMetricsTool(MCPToolBase):
                         memory_request_counter[memory_req_gb] += 1
                 except (ValueError, TypeError):
                     continue
+        for result in results.get("memory_limits", []):
+            values = result.get('values', [])
+            if values:
+                timestamp, value = values[0]
+                try:
+                    memory_lim_bytes = float(value)
+                    memory_lim_gb = memory_lim_bytes / (1024**3)
+                    if memory_lim_gb > 0:
+                        memory_limit_counter[memory_lim_gb] += 1
+                except (ValueError, TypeError):
+                    continue
         
         # 取出现次数最多的内存请求值
         if memory_request_counter:
@@ -346,6 +381,11 @@ class K8sPrometheusAppMetricsTool(MCPToolBase):
         else:
             memory_requests_values = []
         # logger.info(f"🔍 内存请求统计: {dict(memory_request_counter)}, 选择: {memory_requests_values}")
+        if memory_limit_counter:
+            most_common_memory_lim = memory_limit_counter.most_common(1)[0][0]
+            memory_limits_values = [most_common_memory_lim]
+        else:
+            memory_limits_values = []
         
 
         
@@ -358,6 +398,12 @@ class K8sPrometheusAppMetricsTool(MCPToolBase):
             memory_req_avg = sum(memory_requests_values) / len(memory_requests_values)
             processed_result["metrics"]["memory_requests_avg"] = round(memory_req_avg, 3)
             # logger.info(f"💡 内存请求量计算: {len(memory_requests_values)}个数据点，平均值={memory_req_avg:.4f}GB")
+        if cpu_limits_values:
+            cpu_lim_avg = sum(cpu_limits_values) / len(cpu_limits_values)
+            processed_result["metrics"]["cpu_limits_avg"] = round(cpu_lim_avg, 6)
+        if memory_limits_values:
+            mem_lim_avg = sum(memory_limits_values) / len(memory_limits_values)
+            processed_result["metrics"]["memory_limits_avg"] = round(mem_lim_avg, 3)
         
         # 计算利用率比例（使用量/请求量）
         if cpu_usage_values and cpu_requests_values:
@@ -367,6 +413,11 @@ class K8sPrometheusAppMetricsTool(MCPToolBase):
             processed_result["metrics"]["cpu_utilization_avg"] = round(cpu_utilization_ratio, 6)
             processed_result["metrics"]["cpu_utilization_percent"] = f"{cpu_utilization_ratio:.2%}"
             # logger.info(f"💡 CPU利用率: {cpu_usage_avg:.6f}核 / {cpu_req_avg:.2f}核 = {cpu_utilization_ratio:.2%}")
+            # 若存在limits，计算使用/limits比例
+            if cpu_limits_values:
+                cpu_lim_avg = sum(cpu_limits_values) / len(cpu_limits_values)
+                cpu_usage_limit_ratio = cpu_usage_avg / cpu_lim_avg if cpu_lim_avg > 0 else 0
+                processed_result["metrics"]["cpu_utilization_vs_limit"] = round(cpu_usage_limit_ratio, 6)
         
         if memory_usage_values and memory_requests_values:
             memory_usage_avg = sum(memory_usage_values) / len(memory_usage_values) 
@@ -375,6 +426,10 @@ class K8sPrometheusAppMetricsTool(MCPToolBase):
             processed_result["metrics"]["memory_utilization_avg"] = round(memory_utilization_ratio, 6)
             processed_result["metrics"]["memory_utilization_percent"] = f"{memory_utilization_ratio:.2%}"
             # logger.info(f"💡 内存利用率: {memory_usage_avg:.3f}GB / {memory_req_avg:.2f}GB = {memory_utilization_ratio:.2%}")
+            if memory_limits_values:
+                mem_lim_avg = sum(memory_limits_values) / len(memory_limits_values)
+                mem_usage_limit_ratio = memory_usage_avg / mem_lim_avg if mem_lim_avg > 0 else 0
+                processed_result["metrics"]["memory_utilization_vs_limit"] = round(mem_usage_limit_ratio, 6)
         
         # 生成Pod详细信息
         all_pods = set(list(pod_cpu_data.keys()) + list(pod_memory_data.keys()))

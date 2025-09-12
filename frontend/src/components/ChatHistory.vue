@@ -136,7 +136,8 @@
         @click="switchToSession(session.id)"
       >
         <div class="session-main">
-          <div class="session-title-container">
+          <div class="session-title-container list-item">
+            <el-icon class="item-icon"><ChatDotRound /></el-icon>
             <div 
               v-if="editingSessionId === session.id"
               class="title-edit"
@@ -288,7 +289,7 @@ import { ref, computed, nextTick, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Plus, MoreFilled, Search, Filter, Download, Upload, Delete,
-  Edit, CopyDocument, PriceTag
+  Edit, CopyDocument, PriceTag, ChatDotRound
 } from '@element-plus/icons-vue'
 import { useChatStore } from '@/stores/chat'
 

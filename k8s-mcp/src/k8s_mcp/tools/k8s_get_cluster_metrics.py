@@ -167,6 +167,10 @@ class K8sGetClusterMetricsTool(MCPToolBase):
             if pod_phase == "Running":
                 running_pods += 1
 
+            # 资源统计排除已失败的Pod（Failed阶段的Pod不再申请资源）
+            if str(pod_phase).lower() == "failed":
+                continue
+
             # 解析Pod的资源请求
             containers = pod.get("containers", [])
             pod_cpu_requests = 0

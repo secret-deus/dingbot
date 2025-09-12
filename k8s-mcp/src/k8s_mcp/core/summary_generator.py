@@ -103,6 +103,8 @@ class SummaryGenerator:
             
             # 收集命名空间统计
             namespace_stats = self._collect_namespace_statistics(focus_namespace)
+            # 命名空间Pod健康统计（含异常占比，供上层直接使用，避免LLM误算）
+            namespace_health = self._collect_namespace_pod_health()
             
             # 生成资源健康状态
             health_status = self._generate_health_status()
@@ -114,6 +116,7 @@ class SummaryGenerator:
                 "health_status": health_status,
                 "key_metrics": key_metrics,
                 "namespace_breakdown": namespace_stats,
+                "namespace_health": namespace_health,
                 "abnormal_resources": abnormal_resources[:10],  # 最多10个异常资源
                 "graph_info": {
                     "total_nodes": len(self.kg.graph.nodes),
@@ -684,6 +687,37 @@ class SummaryGenerator:
                 "all_namespaces": result
             }
         
+        return result
+
+    def _collect_namespace_pod_health(self) -> Dict[str, Any]:
+        """统计各命名空间Pod健康概览。
+        规则：
+        - 仅统计 kind == 'pod' 的节点
+        - total_count = Running + Pending + Succeeded + Failed + Unknown
+        - abnormal_count = 处于 ['Failed', 'Pending', 'CrashLoopBackOff', 'ImagePullBackOff', 'Error'] 的Pod数量
+        - abnormal_ratio = abnormal_count / max(total_count, 1)
+        注意：Succeeded 不计为异常；Failed 视为异常；Unknown 计入分母但不视为异常。
+        """
+        ns_totals = defaultdict(lambda: {"total": 0, "abnormal": 0})
+        for _, data in self.kg.graph.nodes(data=True):
+            if data.get("kind") != "pod":
+                continue
+            namespace = data.get("namespace", "default") or "default"
+            phase = (data.get("metadata", {}).get("phase") or "Unknown").strip()
+            ns_totals[namespace]["total"] += 1
+            if phase in self.abnormal_conditions.get("pod", []):
+                ns_totals[namespace]["abnormal"] += 1
+        # 组装结果
+        result = {}
+        for ns, v in ns_totals.items():
+            total = v["total"]
+            abnormal = v["abnormal"]
+            ratio = abnormal / total if total > 0 else 0.0
+            result[ns] = {
+                "total_pods": total,
+                "abnormal_pods": abnormal,
+                "abnormal_ratio": round(ratio, 4)
+            }
         return result
     
     def _generate_health_status(self) -> Dict[str, str]:

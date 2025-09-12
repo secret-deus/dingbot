@@ -1084,6 +1084,17 @@ Kubernetes 节点信息:
                     final_restored_response = self.data_masker.restore_llm_response(
                         full_response, session_id
                     )
+
+                    # 新增：DEBUG 记录 LLM 最终原始回复（未恢复与已恢复），用于定位包裹/围栏问题
+                    try:
+                        logger.debug("LLM原始完整回复(未恢复)开始↓↓↓↓↓↓↓↓↓↓")
+                        logger.debug(full_response)
+                        logger.debug("LLM原始完整回复(未恢复)结束↑↑↑↑↑↑↑↑↑↑")
+                        logger.debug("LLM完整回复(恢复后)开始↓↓↓↓↓↓↓↓↓↓")
+                        logger.debug(final_restored_response)
+                        logger.debug("LLM完整回复(恢复后)结束↑↑↑↑↑↑↑↑↑↑")
+                    except Exception as _log_err:
+                        logger.warning(f"打印LLM最终回复失败: {_log_err}")
                     
                     # 检查是否有新的恢复内容
                     if final_restored_response != full_response:

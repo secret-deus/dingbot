@@ -90,7 +90,7 @@
               </div>
               
               <!-- 消息内容（带打字机效果） -->
-              <div class="message-content">
+              <div class="message-content" @click="handleMarkdownClicks">
                 <div 
                   v-if="message.status === 'streaming'" 
                   class="typing-text markdown-content"
@@ -286,6 +286,31 @@ const getToolStatusText = (status) => {
 
 // formatMessageContent 已从 @/utils/markdown 导入
 
+// 处理Markdown点击事件（目录锚点、复制按钮）
+const handleMarkdownClicks = (e) => {
+  const target = e.target
+  if (!target) return
+  // 复制按钮
+  if (target.classList && target.classList.contains('copy-btn')) {
+    const codeEl = target.closest('.code-block')?.querySelector('pre code')
+    if (codeEl) {
+      const text = codeEl.innerText || ''
+      navigator.clipboard.writeText(text).then(() => {
+        ElMessage.success('已复制到剪贴板')
+      })
+    }
+  }
+  // 目录锚点平滑滚动
+  if (target.tagName === 'A' && target.getAttribute('href')?.startsWith('#')) {
+    const id = target.getAttribute('href').slice(1)
+    const el = document.getElementById(id)
+    if (el) {
+      e.preventDefault()
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }
+}
+
 const formatTime = (timestamp) => {
   const now = new Date()
   const time = new Date(timestamp)
@@ -386,9 +411,9 @@ const startStreamChat = async (message) => {
         buffer = messages.pop() || ''
         
         for (const message of messages) {
-          // 🔧 修复：不再跳过空消息，因为可能包含换行符信息
-            console.log('处理SSE消息:', message)
-            await processSSEMessage(message)
+          if (!message) continue
+          console.log('处理SSE消息:', message)
+          await processSSEMessage(message)
         }
       }
       
@@ -427,7 +452,7 @@ const processSSEMessage = async (message) => {
 // 处理SSE行数据
 const processSSELine = async (line) => {
   if (line.startsWith('data: ')) {
-    const dataContent = line.slice(6)  // 不要trim()，保留空白字符
+    const dataContent = line.slice(6)  // 保留原始空白，后续自行判断
     
     // 检查结束标识
     if (dataContent.trim() === '[DONE]') {
@@ -450,16 +475,28 @@ const processSSELine = async (line) => {
       await handleStructuredEvent(jsonData)
     } catch (jsonError) {
       // 不是JSON，当作普通文本处理
-      console.log('处理文本内容:', dataContent)
-      
-      // 处理内容：如果是空内容，代表换行符；否则直接添加内容
-      if (dataContent === '') {
-        // 空的data:行代表换行符
-        chatStore.appendStreamContent('\n')
-      } else {
-        chatStore.appendStreamContent(dataContent)
+      let chunk = dataContent
+      // 对于纯空白片段：保留一个换行，但不累积多行
+      if (!chunk || chunk.trim() === '') {
+        const prevNL = (chatStore.currentStreamMessage?.content || '').endsWith('\n')
+        if (!prevNL) {
+          chatStore.appendStreamContent('\n')
+        }
+        return
       }
-      
+      // 防抖：若当前已以换行结束且新片段以换行开始，则合并为一个
+      const prev = chatStore.currentStreamMessage?.content || ''
+      if ((prev.endsWith('\n') || prev.endsWith('\r\n')) && /^\n+/.test(chunk)) {
+        chunk = chunk.replace(/^\n+/, '\n')
+      }
+      // 追加并折叠连续3个以上的换行
+      const combined = prev + chunk
+      const collapsed = combined.replace(/\n{3,}/g, '\n\n')
+      if (collapsed !== combined && chatStore.replaceStreamContent) {
+        chatStore.replaceStreamContent(collapsed)
+      } else {
+        chatStore.appendStreamContent(chunk)
+      }
       // 延迟滚动以确保DOM已更新
       setTimeout(() => {
         scrollToBottom()
@@ -1040,11 +1077,11 @@ watch(() => chatStore.currentStreamMessage?.content, () => {
 
 /* 代码样式 */
 .message-content :deep(pre) {
-  background: #f5f7fa;
-  padding: 12px;
+  background: #f7f9fc;
+  padding: 10px;
   border-radius: 6px;
   overflow-x: auto;
-  margin: 8px 0;
+  margin: 6px 0;
 }
 
 .message-content :deep(code) {
@@ -1203,12 +1240,12 @@ watch(() => chatStore.currentStreamMessage?.content, () => {
 }
 
 .markdown-content pre {
-  background: #2d3748;
-  color: #e2e8f0;
-  padding: 12px;
+  background: #1f2937;
+  color: #e5e7eb;
+  padding: 10px;
   border-radius: 6px;
   overflow-x: auto;
-  margin: 6px 0;
+  margin: 8px 0 10px 0; /* 上下间距更紧凑 */
 }
 
 .markdown-content pre code {
@@ -1279,29 +1316,28 @@ watch(() => chatStore.currentStreamMessage?.content, () => {
   background: #fff;
   border-radius: 8px;
   overflow: hidden;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   font-size: 14px;
-  border: 2px solid #409EFF !important;
+  border: 1px solid #e4e7ed !important;
   min-width: 600px; /* 设置最小宽度防止过度压缩 */
 }
 
 .markdown-content th,
 .markdown-content td {
-  border-right: 1px solid #e4e7ed !important;
-  border-bottom: 1px solid #e4e7ed !important;
-  padding: 12px 15px;
+  border-right: 1px solid #e9edf3 !important;
+  border-bottom: 1px solid #e9edf3 !important;
+  padding: 10px 12px;
   text-align: center;
   vertical-align: middle;
 }
 
 .markdown-content th {
-  background: linear-gradient(135deg, #409EFF, #36a3f7);
-  color: white;
+  background: #f7f9fc;
+  color: var(--text-primary);
   font-weight: 600;
   font-size: 13px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  border-bottom: 2px solid #409EFF !important;
+  letter-spacing: 0.3px;
+  border-bottom: 1px solid #e9edf3 !important;
   text-align: center;
 }
 
@@ -1313,11 +1349,11 @@ watch(() => chatStore.currentStreamMessage?.content, () => {
 
 .markdown-content td {
   background: #fff;
-  transition: background-color 0.2s ease;
+  transition: background-color 0.15s ease;
 }
 
 .markdown-content tr:hover td {
-  background: #f8fafe;
+  background: #f8fbff;
 }
 
 .markdown-content tr:nth-child(even) td {
