@@ -224,18 +224,40 @@ class K8sUpdateKnowledgeGraphMetricsTool(MCPToolBase):
             import json
             prometheus_data = json.loads(prometheus_result.content[0]['text'])
             metrics = prometheus_data.get('metrics', {})
+
+            # 统一将利用率转换为百分比数值（0-100）
+            def _to_percent(v: Any) -> float:
+                try:
+                    if v is None:
+                        return 0.0
+                    # 字符串百分比形式，如 "106.85%"
+                    if isinstance(v, str) and v.endswith('%'):
+                        return round(float(v.rstrip('%')), 2)
+                    # 数值：<=1 视为比例，乘以100；>1 视为百分比
+                    if isinstance(v, (int, float)):
+                        return round((float(v) * 100.0) if float(v) <= 1.0 else float(v), 2)
+                    return 0.0
+                except Exception:
+                    return 0.0
+
+            cpu_util_percent = _to_percent(metrics.get('cpu_utilization_avg', 0.0))
+            mem_util_percent = _to_percent(metrics.get('memory_utilization_avg', 0.0))
             
             # 构建知识图谱指标数据
             kg_metrics = {
-                "cpu_utilization_avg_14d": metrics.get('cpu_utilization_avg', 0.0),
-                "memory_utilization_avg_14d": metrics.get('memory_utilization_avg', 0.0),
+                "cpu_utilization_avg_14d": cpu_util_percent,
+                "memory_utilization_avg_14d": mem_util_percent,
                 "cpu_requests": metrics.get('cpu_requests_avg', 0.0),
                 "memory_requests": metrics.get('memory_requests_avg', 0.0),
                 "metrics_last_updated": datetime.now().isoformat(),
                 "needs_optimization": {
-                    "cpu": metrics.get('cpu_utilization_avg', 0.0) < 60.0,
-                    "memory": metrics.get('memory_utilization_avg', 0.0) < 60.0
+                    # 阈值使用百分比
+                    "cpu": cpu_util_percent < 60.0,
+                    "memory": mem_util_percent < 60.0
                 },
+                # 标记数据来源与可用性，便于资源分析工具识别为“有监控数据”
+                "data_source": "prometheus",
+                "has_prometheus_data": True,
                 "data_quality": prometheus_data.get('data_quality', {}),
                 "query_time_range": prometheus_data.get('query_time_range', {})
             }

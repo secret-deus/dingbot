@@ -39,9 +39,25 @@ class K8sResourceAnalysisReportTool:
         backend_url = getattr(config, 'backend_api_url', 'http://localhost:8000')
         self.http_client = HttpApiClient(backend_url) if getattr(config, 'enable_backend_notifications', False) else None
         
-        # 阈值配置
-        self.cpu_threshold = getattr(config, 'cpu_alert_threshold', 0.8)  # 80%
-        self.memory_threshold = getattr(config, 'memory_alert_threshold', 0.7)  # 70%
+        # 阈值配置（统一为百分比数值）
+        raw_cpu_thr = getattr(config, 'cpu_alert_threshold', 0.8)
+        raw_mem_thr = getattr(config, 'memory_alert_threshold', 0.7)
+
+        def _to_percent_threshold(v: Any) -> float:
+            try:
+                if isinstance(v, (int, float)):
+                    return float(v) * 100.0 if float(v) <= 1.0 else float(v)
+                if isinstance(v, str) and v.endswith('%'):
+                    return float(v.rstrip('%'))
+                return 0.0
+            except Exception:
+                return 0.0
+
+        self.cpu_threshold_percent = _to_percent_threshold(raw_cpu_thr)
+        self.memory_threshold_percent = _to_percent_threshold(raw_mem_thr)
+        # 为兼容旧字段引用，保留同名属性（使用百分比值）
+        self.cpu_threshold = self.cpu_threshold_percent
+        self.memory_threshold = self.memory_threshold_percent
         
     async def execute(self, 
                      namespace_filter: str = "",
@@ -152,9 +168,21 @@ class K8sResourceAnalysisReportTool:
         
         # 计算全局统计信息用于智能阈值调整
         if deployments:
-            # 注意：数据已经是比例值，不需要除以100
-            cpu_values = [d['cpu_utilization'] for d in deployments if d['cpu_utilization'] is not None]
-            memory_values = [d['memory_utilization'] for d in deployments if d['memory_utilization'] is not None]
+            # 统一将百分数或比例值标准化为百分比（0-100 范围）
+            def _to_percent(v: Any) -> float:
+                try:
+                    if v is None:
+                        return 0.0
+                    if isinstance(v, str) and v.endswith('%'):
+                        return max(float(v.rstrip('%')), 0.0)
+                    if isinstance(v, (int, float)):
+                        return (float(v) * 100.0) if float(v) <= 1.0 else max(float(v), 0.0)
+                    return 0.0
+                except Exception:
+                    return 0.0
+
+            cpu_values = [_to_percent(d['cpu_utilization']) for d in deployments if d['cpu_utilization'] is not None]
+            memory_values = [_to_percent(d['memory_utilization']) for d in deployments if d['memory_utilization'] is not None]
             
             cpu_avg = sum(cpu_values) / len(cpu_values) if cpu_values else 0
             memory_avg = sum(memory_values) / len(memory_values) if memory_values else 0
@@ -167,9 +195,21 @@ class K8sResourceAnalysisReportTool:
         
         # 统计正常和异常资源
         for deployment in deployments:
-            # 注意：从知识图谱获取的数据已经是比例值（如41.5427表示4154.27%），不需要再除以100
-            cpu_util = deployment['cpu_utilization'] if deployment['cpu_utilization'] is not None else 0
-            memory_util = deployment['memory_utilization'] if deployment['memory_utilization'] is not None else 0
+            # 标准化单个资源的利用率为百分比
+            def _norm_percent(v: Any) -> float:
+                try:
+                    if v is None:
+                        return 0.0
+                    if isinstance(v, str) and v.endswith('%'):
+                        return max(float(v.rstrip('%')), 0.0)
+                    if isinstance(v, (int, float)):
+                        return (float(v) * 100.0) if float(v) <= 1.0 else max(float(v), 0.0)
+                    return 0.0
+                except Exception:
+                    return 0.0
+
+            cpu_util = _norm_percent(deployment['cpu_utilization'])
+            memory_util = _norm_percent(deployment['memory_utilization'])
             # 在使用前获取监控数据可用性，避免未绑定局部变量错误
             has_prometheus_data = bool(deployment.get('has_prometheus_data', False))
             
@@ -177,21 +217,21 @@ class K8sResourceAnalysisReportTool:
             issues = []
             severity_score = 0
             
-            # 1. 基础阈值检测
-            # 设置最小有效利用率阈值，避免将正常的低利用率误判为异常
-            min_valid_utilization = 0.05  # 5%，低于此值认为是正常的低利用率
-            low_memory_threshold = 0.30  # 30%，内存利用率低于此值认为是资源浪费
+            # 1. 基础阈值检测（百分比）
+            # 设置最小有效利用率阈值（百分比），避免将正常的低利用率误判为异常
+            min_valid_utilization = 5.0   # 5%
+            low_memory_threshold = 30.0   # 30%
             
             # 高利用率异常检测
             is_cpu_abnormal = (
-                cpu_util > self.cpu_threshold and 
+                cpu_util > self.cpu_threshold_percent and 
                 cpu_util > min_valid_utilization and 
-                has_prometheus_data  # 必须有有效的监控数据
+                has_prometheus_data
             )
             is_memory_abnormal = (
-                memory_util > self.memory_threshold and 
+                memory_util > self.memory_threshold_percent and 
                 memory_util > min_valid_utilization and 
-                has_prometheus_data  # 必须有有效的监控数据
+                has_prometheus_data
             )
             
             # 低利用率异常检测（资源浪费）
@@ -201,7 +241,7 @@ class K8sResourceAnalysisReportTool:
                 has_prometheus_data  # 必须有有效的监控数据
             )
             
-            # 2. 极端值检测（超过3倍标准差）
+            # 2. 极端值检测（超过3倍标准差，均以百分比为单位）
             is_cpu_extreme = cpu_std > 0 and abs(cpu_util - cpu_avg) > 3 * cpu_std
             is_memory_extreme = memory_std > 0 and abs(memory_util - memory_avg) > 3 * memory_std
             
@@ -209,7 +249,7 @@ class K8sResourceAnalysisReportTool:
             is_data_suspicious = False
             
             # 检测可能的数据异常（但不过滤，只标记）
-            if cpu_util > 10 or memory_util > 10:  # 超过1000%的明显异常数据
+            if cpu_util > 1000 or memory_util > 1000:  # 超过1000%的明显异常数据
                 is_data_suspicious = True
                 issues.append(f"数据异常: 利用率数值异常高 (可能是配置问题或指标采集异常)")
                 severity_score += 3
@@ -217,23 +257,23 @@ class K8sResourceAnalysisReportTool:
             # 构建问题描述 - 移除 not is_data_suspicious 条件，让异常数据也能显示
             if is_cpu_abnormal:
                 if is_cpu_extreme:
-                    issues.append(f"CPU利用率极端异常: {cpu_util:.1%} (远超平均值 {cpu_avg:.1%})")
+                    issues.append(f"CPU利用率极端异常: {cpu_util:.1f}% (远超平均值 {cpu_avg:.1f}%)")
                     severity_score += 3
                 else:
-                    issues.append(f"CPU利用率过高: {cpu_util:.1%} > {self.cpu_threshold:.1%}")
+                    issues.append(f"CPU利用率过高: {cpu_util:.1f}% > {self.cpu_threshold_percent:.1f}%")
                     severity_score += 2
             
             if is_memory_abnormal:
                 if is_memory_extreme:
-                    issues.append(f"内存利用率极端异常: {memory_util:.1%} (远超平均值 {memory_avg:.1%})")
+                    issues.append(f"内存利用率极端异常: {memory_util:.1f}% (远超平均值 {memory_avg:.1f}%)")
                     severity_score += 3
                 else:
-                    issues.append(f"内存利用率过高: {memory_util:.1%} > {self.memory_threshold:.1%}")
+                    issues.append(f"内存利用率过高: {memory_util:.1f}% > {self.memory_threshold_percent:.1f}%")
                     severity_score += 2
             
             # 低利用率检测（资源浪费）- 移除过滤条件
             if is_memory_underutilized:
-                issues.append(f"内存利用率过低: {memory_util:.1%} < {low_memory_threshold:.1%} (资源浪费)")
+                issues.append(f"内存利用率过低: {memory_util:.1f}% < {low_memory_threshold:.1f}% (资源浪费)")
                 severity_score += 1  # 低利用率的严重程度较低
             
             # 4. 资源配置合理性检测（只在有明显使用且缺少配置时报告）
@@ -241,7 +281,7 @@ class K8sResourceAnalysisReportTool:
             memory_requests = deployment.get('memory_requests', 0)
             
             # 提高配置问题的检测阈值，避免误报
-            config_check_threshold = 0.2  # 20%，只有利用率较高时才检查配置问题
+            config_check_threshold = 20.0  # 百分比，只有利用率较高时才检查配置问题
             
             if (cpu_requests == 0 and 
                 cpu_util > config_check_threshold):  # 没有设置CPU请求但使用率较高
@@ -281,8 +321,8 @@ class K8sResourceAnalysisReportTool:
                     'name': deployment['name'],
                     'namespace': deployment['namespace'],
                     'resource_id': deployment['resource_id'],
-                    'cpu_utilization': f"{cpu_util:.1%}",
-                    'memory_utilization': f"{memory_util:.1%}",
+                    'cpu_utilization': f"{cpu_util:.1f}%",
+                    'memory_utilization': f"{memory_util:.1f}%",
                     'cpu_requests': deployment['cpu_requests'],
                     'memory_requests': deployment['memory_requests'],
                     'issues': all_issues,
@@ -298,15 +338,15 @@ class K8sResourceAnalysisReportTool:
         
         # 生成正常资源摘要
         if normal_resources > 0:
-            # 计算正常资源的平均利用率（数据已经是比例值）
-            normal_cpu_values = [d['cpu_utilization'] for d in deployments if d['cpu_utilization'] <= self.cpu_threshold]
-            normal_memory_values = [d['memory_utilization'] for d in deployments if d['memory_utilization'] <= self.memory_threshold]
+            # 计算正常资源的平均利用率（百分比）
+            normal_cpu_values = [d['cpu_utilization'] for d in deployments if d['cpu_utilization'] <= self.cpu_threshold_percent]
+            normal_memory_values = [d['memory_utilization'] for d in deployments if d['memory_utilization'] <= self.memory_threshold_percent]
             
             avg_cpu = sum(normal_cpu_values) / len(normal_cpu_values) if normal_cpu_values else 0
             avg_memory = sum(normal_memory_values) / len(normal_memory_values) if normal_memory_values else 0
             
-            # 转换为百分比显示
-            normal_summary = f"正常资源 {normal_resources} 个，平均CPU利用率 {avg_cpu:.1%}，平均内存利用率 {avg_memory:.1%}"
+            # 展示为百分比
+            normal_summary = f"正常资源 {normal_resources} 个，平均CPU利用率 {avg_cpu:.1f}% ，平均内存利用率 {avg_memory:.1f}%"
         else:
             normal_summary = "无正常资源"
         

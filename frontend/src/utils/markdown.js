@@ -108,6 +108,37 @@ function preprocessText(text) {
     return left + '\n```'
   })
 
+  // -2.5) 若处于代码围栏内部，修复行尾仅含 1 或 2 个反引号的“误关围栏”
+  // 现象：LLM/分片有时输出如 “466天``” 或 “...`” 试图结束代码块，导致后续整体被包裹
+  // 策略：在围栏内遇到行尾 ` 或 `` 时，将其改为“本行结尾去掉这些反引号，下一行补上独立的 ``` 作为正确闭合”
+  try {
+    const lines = text.split(/\r?\n/)
+    let inFence = false
+    const fixed = []
+    for (let i = 0; i < lines.length; i++) {
+      let line = lines[i]
+      // 开/关 围栏识别（独立或带语言标记的开头）
+      if (/^\s*```/.test(line)) {
+        // 判断是开还是关：简单切换状态
+        inFence = !inFence
+        fixed.push(line)
+        continue
+      }
+      if (inFence && /`{1,2}\s*$/.test(line) && !/`{3,}\s*$/.test(line)) {
+        // 去掉尾部 1/2 个反引号，下一行补标准闭合围栏
+        line = line.replace(/`{1,2}\s*$/, '')
+        fixed.push(line)
+        fixed.push('```')
+        inFence = false
+        continue
+      }
+      fixed.push(line)
+    }
+    text = fixed.join('\n')
+  } catch (e) {
+    // 忽略守护性修复中的异常
+  }
+
   // -1) 若整篇以 ```text/plain/txt 围栏包裹，直接整体解包
   text = text.replace(/^\s*```(?:text|plain|txt)?[^\n]*\r?\n([\s\S]*?)\r?\n?```\s*$/,
     (_m, body) => String(body).replace(/^\s*\r?\n+/, '').replace(/\r?\n+\s*$/, '\n')
@@ -231,10 +262,20 @@ export function renderStreamingMarkdown(text) {
     // 对于流式内容，先尝试修复不完整的代码块
     let processedText = text
     
-    // 修复不完整的代码块
-    const codeBlockMatches = text.match(/```[^`]*$/m)
-    if (codeBlockMatches) {
-      processedText = text + '\n```'
+    // 更稳健：逐行检测围栏是否未闭合，仅在未闭合时补齐
+    try {
+      const lines = text.split(/\r?\n/)
+      let inFence = false
+      for (const line of lines) {
+        if (/^\s*```/.test(line)) {
+          inFence = !inFence
+        }
+      }
+      if (inFence) {
+        processedText = text + '\n```'
+      }
+    } catch (e) {
+      // 忽略守护性修复中的异常
     }
     
     let html = collapseEmptyLines(marked.parse(processedText))

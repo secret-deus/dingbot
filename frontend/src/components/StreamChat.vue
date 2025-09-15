@@ -1185,8 +1185,10 @@ watch(() => chatStore.currentStreamMessage?.content, () => {
 
 /* Markdown 内容样式 */
 .markdown-content {
-  line-height: 1.5;
-  white-space: pre-wrap;
+  line-height: 1.65;
+  white-space: normal; /* 避免把模板中的换行当作可见空行 */
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 /* 整体紧凑模式 */
@@ -1204,7 +1206,7 @@ watch(() => chatStore.currentStreamMessage?.content, () => {
 .markdown-content h4,
 .markdown-content h5,
 .markdown-content h6 {
-  margin: 8px 0 2px 0;
+  margin: 12px 0 6px 0;
   font-weight: 600;
   color: var(--text-primary);
 }
@@ -1214,12 +1216,12 @@ watch(() => chatStore.currentStreamMessage?.content, () => {
 .markdown-content h3 { font-size: 1.15em; }
 
 .markdown-content p {
-  margin: 1px 0;
+  margin: 10px 0;
 }
 
 /* 紧凑段落间距 */
 .markdown-content p + p {
-  margin-top: 4px;
+  margin-top: 16px;
 }
 
 .markdown-content h1:first-child,
@@ -1245,7 +1247,7 @@ watch(() => chatStore.currentStreamMessage?.content, () => {
   padding: 10px;
   border-radius: 6px;
   overflow-x: auto;
-  margin: 8px 0 10px 0; /* 上下间距更紧凑 */
+  margin: 12px 0 14px 0; /* 稍微放宽上下间距 */
 }
 
 .markdown-content pre code {
@@ -1256,15 +1258,15 @@ watch(() => chatStore.currentStreamMessage?.content, () => {
 
 .markdown-content ul,
 .markdown-content ol {
-  margin: 2px 0;
+  margin: 6px 0;
   padding-left: 24px;
   list-style-position: outside;
 }
 
 .markdown-content li {
   margin: 0;
-  line-height: 1.4;
-  margin-bottom: 1px;
+  line-height: 1.55;
+  margin-bottom: 3px;
 }
 
 .markdown-content li p {
@@ -1274,13 +1276,13 @@ watch(() => chatStore.currentStreamMessage?.content, () => {
 /* 嵌套列表间距 */
 .markdown-content li > ul,
 .markdown-content li > ol {
-  margin-top: 1px;
-  margin-bottom: 1px;
+  margin-top: 4px;
+  margin-bottom: 4px;
 }
 
 /* 列表项之间更紧凑 */
 .markdown-content li + li {
-  margin-top: 1px;
+  margin-top: 3px;
 }
 
 .text-content ul,
@@ -1513,6 +1515,46 @@ watch(() => chatStore.currentStreamMessage?.content, () => {
     padding: 6px 8px;
     white-space: nowrap; /* 防止文本换行 */
   }
+}
+
+
+/* 让通过 v-html 注入的 markdown 内容也应用到间距（使用 :deep 穿透 scoped） */
+.message-content :deep(.markdown-content) {
+  line-height: 1.65;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.message-content :deep(.markdown-content h1),
+.message-content :deep(.markdown-content h2),
+.message-content :deep(.markdown-content h3),
+.message-content :deep(.markdown-content h4),
+.message-content :deep(.markdown-content h5),
+.message-content :deep(.markdown-content h6) {
+  margin: 12px 0 6px 0;
+}
+
+.message-content :deep(.markdown-content p) {
+  margin: 10px 0;
+}
+
+.message-content :deep(.markdown-content p + p) {
+  margin-top: 16px;
+}
+
+.message-content :deep(.markdown-content pre) {
+  margin: 12px 0 14px 0;
+}
+
+.message-content :deep(.markdown-content ul),
+.message-content :deep(.markdown-content ol) {
+  margin: 6px 0;
+}
+
+.message-content :deep(.markdown-content li) {
+  line-height: 1.55;
+  margin-bottom: 3px;
 }
 
 
