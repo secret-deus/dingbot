@@ -100,6 +100,12 @@ function collapseEmptyLines(html) {
 function preprocessText(text) {
   if (!text || typeof text !== 'string') return ''
   
+  // -2.8) 规范化所有代码围栏，使 ``` 始终独立成行，避免“``` 不换行”导致的大段误包裹
+  // 2.8.a) 若同一行在内容中间出现 ```（开/关围栏），在其前插入换行
+  text = text.replace(/([^\n])```/g, '$1\n```')
+  // 2.8.b) 若围栏开头后紧跟语言标识或其它内容（如 ```yaml something 或 ```---），在语言标识后强制换行
+  text = text.replace(/(^|\n)([ \t]*```[ \t]*[a-zA-Z0-9_-]*)(\S)/g, '$1$2\n$3')
+
   // -2) 将本行行尾的 ``` 归并到下一行，规范为“独立一行的围栏关闭”
   // 例如：pods: "213"```  ->  pods: "213"\n```
   // 支持 >=3 个反引号的收尾归并

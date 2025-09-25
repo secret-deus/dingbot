@@ -1,7 +1,8 @@
 """
 ECS 监控查询工具：ecs-describe-instance-monitor-data
 
-基于阿里云 DescribeInstanceMonitorData，实现时间窗/Period自动选择、点数<=400、必要时分片聚合、结果截断与统计。
+基于阿里云 DescribeInstanceMonitorData，实现时间窗/Period自动选择、点数<=400、必要时分片聚合、下采样与统计。
+（已按 aliyun-api.md 优化：地域自动解析、指标别名归一化、Statistics、百分比限幅、meta.units 与字符串字段）
 """
 
 from __future__ import annotations
@@ -75,7 +76,7 @@ class EcsDescribeInstanceMonitorDataTool(MCPToolBase):
     def __init__(self):
         super().__init__(
             name="ecs-describe-instance-monitor-data",
-            description="查询ECS实例监控数据，自动Period/分片聚合，返回summary与采样数据"
+            description="查询ECS实例监控数据，自动Period/分片聚合，返回summary与采样数据",
         )
         self.config = get_config()
 
@@ -93,10 +94,10 @@ class EcsDescribeInstanceMonitorDataTool(MCPToolBase):
                     "relative_range": {"type": "string", "description": "相对范围: 1h/6h/24h/7d/30d，与end_time组合"},
                     "period": {"type": "integer", "enum": [60, 600, 3600], "description": "不填自动选择"},
                     "metrics": {"type": "array", "items": {"type": "string"}, "description": "需要字段过滤"},
-                    "max_points": {"type": "integer", "default": 400, "description": "最大返回点数，超出进行下采样"}
+                    "max_points": {"type": "integer", "default": 400, "description": "最大返回点数，超出进行下采样"},
                 },
-                "required": ["instance_id"]
-            }
+                "required": ["instance_id"],
+            },
         )
 
     async def execute(self, arguments: Dict[str, Any]) -> MCPCallToolResult:
@@ -130,203 +131,260 @@ class EcsDescribeInstanceMonitorDataTool(MCPToolBase):
             chosen_period = period or _choose_period(total_seconds)
             windows = _split_windows(start_utc, end_utc, chosen_period)
 
-            # 强制使用RPC（避免SDK凭证链兼容问题）
             if not self.config.access_key_id or not self.config.access_key_secret:
                 return MCPCallToolResult.error("未配置阿里云AK/SK，请设置 ALIBABA_CLOUD_ACCESS_KEY_ID/SECRET")
-            use_mock = False
-            use_rpc = True
 
             points: List[Dict[str, Any]] = []
-            override_region = (arguments.get("region_id") or self.config.region_id)
-            for ws, we in windows:
-                start_iso = ws.isoformat().replace("+00:00", "Z")
-                end_iso = we.isoformat().replace("+00:00", "Z")
-                if use_mock:
-                    simulated = await self._simulate_fetch(instance_id, ws, we, chosen_period)
-                    points.extend(simulated)
-                else:
-                    # 仅使用 CMS（CloudMonitor）：优先区域域名，其次公共域名；优先 DescribeMetricList，其次 QueryMetricList
-                    start_cms = _format_cms_time(ws)
-                    end_cms = _format_cms_time(we)
-                    cms_endpoints = [
-                        f"https://metrics.{override_region}.aliyuncs.com",
-                        "https://metrics.aliyuncs.com",
-                    ]
-                    cms_actions = ["DescribeMetricList", "QueryMetricList"]
 
-                    cpu_points: List[Dict[str, Any]] = []
-                    # CPU 优先尝试 acs_ecs，其次 acs_ecs_dashboard；Period 60 无数据时回退 300
-                    cpu_namespaces = ["acs_ecs", "acs_ecs_dashboard"]
+            # 地域自动解析
+            async def _instance_exists_in_region(target_region: str) -> bool:
+                try:
+                    params = {
+                        "Action": "DescribeInstances",
+                        "RegionId": target_region,
+                        "PageNumber": 1,
+                        "PageSize": 1,
+                        "InstanceIds": "[\"%s\"]" % instance_id,
+                    }
+                    body = await ecs_rpc_get(
+                        params,
+                        access_key_id=self.config.access_key_id,
+                        access_key_secret=self.config.access_key_secret,
+                        endpoint="https://ecs.aliyuncs.com",
+                    )
+                    insts = body.get("Instances", {}).get("Instance", []) if isinstance(body, dict) else []
+                    return bool(insts)
+                except Exception:
+                    return False
+
+            def _region_candidates() -> List[str]:
+                import os as _os
+                env_cands = _os.getenv("ALIBABA_CLOUD_REGION_CANDIDATES", "")
+                parts = [p.strip() for p in env_cands.split(",") if p.strip()]
+                defaults = [
+                    "cn-hangzhou",
+                    "cn-beijing",
+                    "cn-shanghai",
+                    "cn-shenzhen",
+                    "cn-hongkong",
+                    "cn-zhangjiakou",
+                    "cn-huhehaote",
+                    "cn-chengdu",
+                    "cn-qingdao",
+                    "cn-guangzhou",
+                ]
+                res: List[str] = []
+                start_region = (arguments.get("region_id") or self.config.region_id)
+                if start_region:
+                    res.append(start_region)
+                for r in parts:
+                    if r not in res:
+                        res.append(r)
+                for r in defaults:
+                    if r not in res:
+                        res.append(r)
+                return res
+
+            resolved_region: Optional[str] = None
+            initial_region = (arguments.get("region_id") or self.config.region_id)
+            if initial_region and await _instance_exists_in_region(initial_region):
+                resolved_region = initial_region
+            else:
+                for rid_try in _region_candidates():
+                    if await _instance_exists_in_region(rid_try):
+                        resolved_region = rid_try
+                        break
+            rid = resolved_region or initial_region
+
+            for ws, we in windows:
+                start_cms = _format_cms_time(ws)
+                end_cms = _format_cms_time(we)
+                cms_endpoints = [
+                    f"https://metrics.{rid}.aliyuncs.com",
+                    "https://metrics.aliyuncs.com",
+                ]
+                cms_actions = ["DescribeMetricList", "QueryMetricList"]
+
+                cpu_points: List[Dict[str, Any]] = []
+                cpu_namespaces = ["acs_ecs", "acs_ecs_dashboard"]
+                for ep in cms_endpoints:
+                    for action in cms_actions:
+                        for ns in cpu_namespaces:
+                            for p_try in ([chosen_period] + ([300] if chosen_period == 60 else [])):
+                                try:
+                                    params = {
+                                        "Action": action,
+                                        "Namespace": ns,
+                                        "MetricName": "CPUUtilization",
+                                        "Period": p_try,
+                                        "Statistics": "Average,Maximum,Minimum",
+                                        "StartTime": start_cms,
+                                        "EndTime": end_cms,
+                                        "Dimensions": f"{'{'}\"instanceId\":\"{instance_id}\"{'}'}",
+                                        "RegionId": rid,
+                                    }
+                                    resp = await cms_rpc_get(
+                                        params,
+                                        access_key_id=self.config.access_key_id,
+                                        access_key_secret=self.config.access_key_secret,
+                                        endpoint=ep,
+                                    )
+                                    datapoints = resp.get("Datapoints")
+                                    if isinstance(datapoints, str):
+                                        import json as _json
+                                        cpu_points = _json.loads(datapoints)
+                                    elif isinstance(datapoints, list):
+                                        cpu_points = datapoints
+                                    else:
+                                        cpu_points = []
+                                    if cpu_points:
+                                        break
+                                except Exception:
+                                    cpu_points = []
+                            if cpu_points:
+                                break
+                        if cpu_points:
+                            break
+                    if cpu_points:
+                        break
+
+                window_map: Dict[str, Dict[str, Any]] = {}
+
+                def _ts_to_iso(ts_val: Any) -> Optional[str]:
+                    if isinstance(ts_val, (int, float)):
+                        return datetime.utcfromtimestamp(ts_val / 1000).strftime("%Y-%m-%dT%H:%M:%SZ")
+                    return None
+
+                for p in cpu_points:
+                    ts = p.get("timestamp")
+                    ts_iso = _ts_to_iso(ts)
+                    if not ts_iso:
+                        continue
+                    cpu = p.get("Average") or p.get("Maximum") or p.get("Minimum") or p.get("Value")
+                    try:
+                        if isinstance(cpu, (int, float)):
+                            if cpu < 0:
+                                cpu = 0
+                            elif cpu > 100:
+                                cpu = 100
+                    except Exception:
+                        pass
+                    window_map.setdefault(ts_iso, {"TimeStamp": ts_iso})["CPU"] = cpu
+
+                # 指标别名归一化
+                request_metrics_raw = arguments.get("metrics")
+                alias_map = {
+                    "networkin": "InternetInRate",
+                    "networkout": "InternetOutRate",
+                    "network_in": "InternetInRate",
+                    "network_out": "InternetOutRate",
+                    "internetinrate": "InternetInRate",
+                    "internetoutrate": "InternetOutRate",
+                    "intranetinrate": "IntranetInRate",
+                    "intranetoutrate": "IntranetOutRate",
+                    "diskreadiops": "DiskReadIOPS",
+                    "diskwriteiops": "DiskWriteIOPS",
+                    "vm.memoryutilization": "MemoryUtilization",
+                    "diskusage_utilization": "DiskUsageUtilization",
+                }
+                request_metrics: Optional[List[str]] = None
+                if request_metrics_raw:
+                    nm: List[str] = []
+                    for m in request_metrics_raw:
+                        key = str(m).replace(" ", "").replace("-", "_").lower()
+                        nm.append(alias_map.get(key, m))
+                    request_metrics = nm
+
+                async def _cms_try_fetch(metric_names: List[str], namespaces: List[str]) -> List[Dict[str, Any]]:
+                    if request_metrics:
+                        allowed = set([m.lower() for m in request_metrics])
+                    else:
+                        allowed = None
                     for ep in cms_endpoints:
                         for action in cms_actions:
-                            for ns in cpu_namespaces:
-                                # 两次Period尝试：先 chosen_period，再 300（当 chosen_period=60 时）
-                                for p_try in ([chosen_period] + ([300] if chosen_period == 60 else [])):
+                            for ns in namespaces:
+                                for mn in metric_names:
+                                    # 过滤时也按别名映射比对
+                                    if allowed is not None:
+                                        chk = alias_map.get(mn.lower(), mn.lower())
+                                        if chk not in allowed and mn.lower() not in allowed:
+                                            continue
                                     try:
                                         params = {
                                             "Action": action,
                                             "Namespace": ns,
-                                            "MetricName": "CPUUtilization",
-                                            "Period": p_try,
+                                            "MetricName": mn,
+                                            "Period": chosen_period,
+                                            "Statistics": "Average,Maximum,Minimum",
                                             "StartTime": start_cms,
                                             "EndTime": end_cms,
                                             "Dimensions": f"{'{'}\"instanceId\":\"{instance_id}\"{'}'}",
-                                            "RegionId": override_region,
                                         }
-                                        resp = await cms_rpc_get(
+                                        params["RegionId"] = rid
+                                        r = await cms_rpc_get(
                                             params,
                                             access_key_id=self.config.access_key_id,
                                             access_key_secret=self.config.access_key_secret,
                                             endpoint=ep,
                                         )
-                                        datapoints = resp.get("Datapoints")
-                                        if isinstance(datapoints, str):
+                                        dps = r.get("Datapoints")
+                                        if isinstance(dps, str):
                                             import json as _json
-                                            cpu_points = _json.loads(datapoints)
-                                        elif isinstance(datapoints, list):
-                                            cpu_points = datapoints
-                                        else:
-                                            cpu_points = []
-                                        if cpu_points:
-                                            # 如果 period 回退生效，可在 warnings 中提示
-                                            if p_try != chosen_period:
-                                                pass
-                                            break
+                                            dps = _json.loads(dps)
+                                        if isinstance(dps, list) and dps:
+                                            return dps
                                     except Exception:
-                                        cpu_points = []
-                                if cpu_points:
-                                    break
-                            if cpu_points:
-                                break
-                        if cpu_points:
-                            break
+                                        continue
+                    return []
 
-                    # 以当前窗口为单位做时间戳对齐合并
-                    window_map: Dict[str, Dict[str, Any]] = {}
-
-                    def _ts_to_iso(ts_val: Any) -> Optional[str]:
-                        if isinstance(ts_val, (int, float)):
-                            return datetime.utcfromtimestamp(ts_val / 1000).strftime("%Y-%m-%dT%H:%M:%SZ")
-                        return None
-
-                    # 1) 基线：CPUUtilization
-                    for p in cpu_points:
-                        ts = p.get("timestamp")
-                        ts_iso = _ts_to_iso(ts)
-                        if not ts_iso:
-                            continue
-                        cpu = p.get("Average") or p.get("Maximum") or p.get("Minimum") or p.get("Value")
-                        window_map.setdefault(ts_iso, {"TimeStamp": ts_iso})["CPU"] = cpu
-
-                    # 公共查询器：遍历 endpoints/actions/namespaces/metric_names 直到拿到数据
-                    request_metrics = arguments.get("metrics")  # 可选过滤指标
-                    async def _cms_try_fetch(metric_names: List[str], namespaces: List[str]) -> List[Dict[str, Any]]:
-                        # 若传入 metrics 过滤，则仅当目标在过滤列表中时请求
-                        if request_metrics:
-                            allowed = set([m.lower() for m in request_metrics])
-                            # 若所有候选metric都不在过滤内，则直接跳过
-                            if not any((mn.lower() in allowed) for mn in metric_names):
-                                return []
-                        for ep in cms_endpoints:
-                            for action in cms_actions:
-                                for ns in namespaces:
-                                    for mn in metric_names:
-                                        if request_metrics and mn.lower() not in allowed:
-                                            continue
-                                        try:
-                                            params = {
-                                                "Action": action,
-                                                "Namespace": ns,
-                                                "MetricName": mn,
-                                                "Period": chosen_period,
-                                                "StartTime": start_cms,
-                                                "EndTime": end_cms,
-                                                "Dimensions": f"{'{'}\"instanceId\":\"{instance_id}\"{'}'}",
-                                            }
-                                            params["RegionId"] = override_region
-                                            r = await cms_rpc_get(
-                                                params,
-                                                access_key_id=self.config.access_key_id,
-                                                access_key_secret=self.config.access_key_secret,
-                                                endpoint=ep,
-                                            )
-                                            dps = r.get("Datapoints")
-                                            if isinstance(dps, str):
-                                                import json as _json
-                                                dps = _json.loads(dps)
-                                            if isinstance(dps, list) and dps:
-                                                return dps
-                                        except Exception:
-                                            continue
-                        return []
-
-                    # 2) 外网带宽（带宽/网络）
-                    net_out = await _cms_try_fetch(["InternetOutRate", "internet_out_rate"], ["acs_ecs", "acs_ecs_dashboard"])
-                    net_in = await _cms_try_fetch(["InternetInRate", "internet_in_rate"], ["acs_ecs", "acs_ecs_dashboard"])
-                    for arr, key in [(net_in, "InternetRX"), (net_out, "InternetTX")]:
-                        for p in arr:
-                            ts_iso = _ts_to_iso(p.get("timestamp"))
-                            if not ts_iso:
-                                continue
-                            val = p.get("Average") or p.get("Maximum") or p.get("Minimum") or p.get("Value")
-                            window_map.setdefault(ts_iso, {"TimeStamp": ts_iso})[key] = val
-
-                    # 3) 内网带宽
-                    intranet_out = await _cms_try_fetch(["IntranetOutRate", "intranet_out_rate"], ["acs_ecs", "acs_ecs_dashboard"])
-                    intranet_in = await _cms_try_fetch(["IntranetInRate", "intranet_in_rate"], ["acs_ecs", "acs_ecs_dashboard"])
-                    for arr, key in [(intranet_in, "IntranetInRate"), (intranet_out, "IntranetOutRate")]:
-                        for p in arr:
-                            ts_iso = _ts_to_iso(p.get("timestamp"))
-                            if not ts_iso:
-                                continue
-                            val = p.get("Average") or p.get("Maximum") or p.get("Minimum") or p.get("Value")
-                            window_map.setdefault(ts_iso, {"TimeStamp": ts_iso})[key] = val
-
-                    # 4) IOPS
-                    iops_read = await _cms_try_fetch(["DiskReadIOPS", "disk_read_iops"], ["acs_ecs", "acs_ecs_dashboard"])
-                    iops_write = await _cms_try_fetch(["DiskWriteIOPS", "disk_write_iops"], ["acs_ecs", "acs_ecs_dashboard"])
-                    for arr, key in [(iops_read, "IOPSRead"), (iops_write, "IOPSWrite")]:
-                        for p in arr:
-                            ts_iso = _ts_to_iso(p.get("timestamp"))
-                            if not ts_iso:
-                                continue
-                            val = p.get("Average") or p.get("Maximum") or p.get("Minimum") or p.get("Value")
-                            window_map.setdefault(ts_iso, {"TimeStamp": ts_iso})[key] = val
-
-                    # 5) 内存利用率（需云监控Agent）
-                    mem = await _cms_try_fetch(
-                        ["MemoryUtilization", "memory_usedutilization", "mem_usedutilization", "MemoryUsedUtilization"],
-                        ["acs_ecs", "acs_ecs_dashboard"],
-                    )
-                    for p in mem:
+                # 2) 外网带宽
+                net_out = await _cms_try_fetch(["InternetOutRate", "internet_out_rate"], ["acs_ecs", "acs_ecs_dashboard"])
+                net_in = await _cms_try_fetch(["InternetInRate", "internet_in_rate"], ["acs_ecs", "acs_ecs_dashboard"])
+                for arr, key in [(net_in, "InternetRX"), (net_out, "InternetTX")]:
+                    for p in arr:
                         ts_iso = _ts_to_iso(p.get("timestamp"))
                         if not ts_iso:
                             continue
                         val = p.get("Average") or p.get("Maximum") or p.get("Minimum") or p.get("Value")
-                        window_map.setdefault(ts_iso, {"TimeStamp": ts_iso})["MemoryUtilization"] = val
+                        window_map.setdefault(ts_iso, {"TimeStamp": ts_iso})[key] = val
 
-                    # 6) 磁盘使用率（需云监控Agent）
-                    disk = await _cms_try_fetch(
-                        ["DiskUsageUtilization", "diskusage_utilization", "DiskUtilization"],
-                        ["acs_ecs", "acs_ecs_dashboard"],
-                    )
-                    for p in disk:
+                # 3) 内网带宽
+                intranet_out = await _cms_try_fetch(["IntranetOutRate", "intranet_out_rate"], ["acs_ecs", "acs_ecs_dashboard"])
+                intranet_in = await _cms_try_fetch(["IntranetInRate", "intranet_in_rate"], ["acs_ecs", "acs_ecs_dashboard"])
+                for arr, key in [(intranet_in, "IntranetInRate"), (intranet_out, "IntranetOutRate")]:
+                    for p in arr:
                         ts_iso = _ts_to_iso(p.get("timestamp"))
                         if not ts_iso:
                             continue
                         val = p.get("Average") or p.get("Maximum") or p.get("Minimum") or p.get("Value")
-                        window_map.setdefault(ts_iso, {"TimeStamp": ts_iso})["DiskUsageUtilization"] = val
+                        window_map.setdefault(ts_iso, {"TimeStamp": ts_iso})[key] = val
 
-                    # 将当前窗口合并后的点，按时间排序追加
-                    try:
-                        # 提取原始毫秒时间进行排序，若无法解析则按键排序兜底
-                        def _iso_to_epoch_ms(s: str) -> float:
-                            return datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ").timestamp() * 1000
+                # 5) 内存利用率（按要求使用 vm.MemoryUtilization，命名空间 acs_ecs_dashboard）
+                mem = await _cms_try_fetch(["vm.MemoryUtilization"], ["acs_ecs_dashboard"])
+                for p in mem:
+                    ts_iso = _ts_to_iso(p.get("timestamp"))
+                    if not ts_iso:
+                        continue
+                    val = p.get("Average") or p.get("Maximum") or p.get("Minimum") or p.get("Value")
+                    window_map.setdefault(ts_iso, {"TimeStamp": ts_iso})["MemoryUtilization"] = val
 
-                        sorted_points = sorted(window_map.values(), key=lambda d: _iso_to_epoch_ms(d["TimeStamp"]))
-                    except Exception:
-                        sorted_points = [window_map[k] for k in sorted(window_map.keys())]
-                    points.extend(sorted_points)
+                # 6) 磁盘使用率（按要求使用 diskusage_utilization，命名空间 acs_ecs_dashboard）
+                disk = await _cms_try_fetch(["diskusage_utilization"], ["acs_ecs_dashboard"])
+                for p in disk:
+                    ts_iso = _ts_to_iso(p.get("timestamp"))
+                    if not ts_iso:
+                        continue
+                    val = p.get("Average") or p.get("Maximum") or p.get("Minimum") or p.get("Value")
+                    window_map.setdefault(ts_iso, {"TimeStamp": ts_iso})["DiskUsageUtilization"] = val
+
+                try:
+                    def _iso_to_epoch_ms(s: str) -> float:
+                        return datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ").timestamp() * 1000
+
+                    sorted_points = sorted(window_map.values(), key=lambda d: _iso_to_epoch_ms(d["TimeStamp"]))
+                except Exception:
+                    sorted_points = [window_map[k] for k in sorted(window_map.keys())]
+                points.extend(sorted_points)
 
             stats = self._calc_stats(points)
             sampled = self._downsample(points, max_points)
@@ -344,10 +402,27 @@ class EcsDescribeInstanceMonitorDataTool(MCPToolBase):
                     "cpu_avg": stats.cpu_avg,
                     "cpu_p95": stats.cpu_p95,
                     "cpu_max": stats.cpu_max,
+                    "cpu_avg_str": (f"{stats.cpu_avg:.2f}%" if isinstance(stats.cpu_avg, (int, float)) else None),
+                    "cpu_p95_str": (f"{stats.cpu_p95:.2f}%" if isinstance(stats.cpu_p95, (int, float)) else None),
+                    "cpu_max_str": (f"{stats.cpu_max:.2f}%" if isinstance(stats.cpu_max, (int, float)) else None),
                     "credit_min": stats.credit_min,
                     "points_truncated": len(sampled) < len(points),
                 },
                 "data_sample": sampled[:50],  # 控制体量
+                "meta": {
+                    "resolved_region": rid,
+                    "units": {
+                        "CPU": "%",
+                        "InternetRX": "bps",
+                        "InternetTX": "bps",
+                        "IntranetInRate": "bps",
+                        "IntranetOutRate": "bps",
+                        "IOPSRead": "ops/s",
+                        "IOPSWrite": "ops/s",
+                        "MemoryUtilization": "%",
+                        "DiskUsageUtilization": "%",
+                    },
+                },
                 "warnings": [],
             }
 
@@ -361,20 +436,21 @@ class EcsDescribeInstanceMonitorDataTool(MCPToolBase):
             return MCPCallToolResult.error(f"查询失败: {str(e)}")
 
     async def _simulate_fetch(self, instance_id: str, start: datetime, end: datetime, period: int) -> List[Dict[str, Any]]:
-        # 生成简单的模拟点，便于先行联调
-        await asyncio.sleep(0)  # 让出事件循环
+        await asyncio.sleep(0)
         pts = []
         cur = start
         while cur < end:
-            pts.append({
-                "TimeStamp": cur.isoformat().replace("+00:00", "Z"),
-                "CPU": 20 + (hash((instance_id, cur.minute)) % 50),
-                "CPUCreditBalance": max(0, 100 - (cur.minute % 20) * 2),
-                "InternetRX": (cur.minute * 3) % 500,
-                "InternetTX": (cur.minute * 5) % 800,
-                "IOPSRead": (cur.minute * 7) % 1000,
-                "IOPSWrite": (cur.minute * 11) % 1200,
-            })
+            pts.append(
+                {
+                    "TimeStamp": cur.isoformat().replace("+00:00", "Z"),
+                    "CPU": 20 + (hash((instance_id, cur.minute)) % 50),
+                    "CPUCreditBalance": max(0, 100 - (cur.minute % 20) * 2),
+                    "InternetRX": (cur.minute * 3) % 500,
+                    "InternetTX": (cur.minute * 5) % 800,
+                    "IOPSRead": (cur.minute * 7) % 1000,
+                    "IOPSWrite": (cur.minute * 11) % 1200,
+                }
+            )
             cur += timedelta(seconds=period)
         return pts
 

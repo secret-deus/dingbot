@@ -59,7 +59,8 @@ isort = "^5.12.0"
 mypy = "^1.5.0"
 
 [tool.poetry.scripts]
-k8s-mcp-server = "k8s_mcp.server:main"
+k8s-mcp-server = "k8s_mcp.server:run"
+serve = "k8s_mcp.server:run"
 
 # Black配置
 [tool.black]

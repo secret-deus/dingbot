@@ -54,7 +54,8 @@ isort = "^5.12.0"
 mypy = "^1.5.0"
 
 [tool.poetry.scripts]
-ecs-mcp-server = "ecs_mcp.server:main"
+ecs-mcp-server = "ecs_mcp.server:run"
+serve = "ecs_mcp.server:run"
 
 [tool.black]
 line-length = 88

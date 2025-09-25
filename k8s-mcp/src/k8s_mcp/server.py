@@ -979,14 +979,10 @@ K8sSSEMCPServer = K8sMCPServer
 
 
 async def main():
-    """主函数"""
+    """主函数 (async)"""
     try:
-        # 创建服务器实例
         server = K8sMCPServer()
-        
-        # 启动服务器
         await server.start()
-        
     except KeyboardInterrupt:
         logger.info("接收到中断信号，正在停止服务器...")
         if 'server' in locals():
@@ -994,6 +990,10 @@ async def main():
     except Exception as e:
         logger.error(f"服务器运行错误: {e}")
         sys.exit(1)
+
+def run():
+    """同步入口，供 poetry run serve 使用"""
+    asyncio.run(main())
 
 
 if __name__ == "__main__":
