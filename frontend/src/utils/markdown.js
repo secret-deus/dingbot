@@ -231,20 +231,11 @@ export function containsMarkdown(text) {
 // 渲染完整markdown
 export function renderMarkdown(text) {
   if (!text || typeof text !== 'string') return ''
-  
   try {
-    // 预处理文本
-    text = preprocessText(text)
-    
-    // 将双反斜杠的分隔符还原为单反斜杠，避免 \( ... \) 无法识别
-    text = text
-      .replace(/\\\\\(/g, '\\(')
-      .replace(/\\\\\)/g, '\\)')
-      .replace(/\\\\\[/g, '\\[')
-      .replace(/\\\\\]/g, '\\]')
-    let html = collapseEmptyLines(marked.parse(text))
+    // 原样渲染：不进行任何预处理与修复，仅做代码块与表格样式增强
+    let html = marked.parse(text)
     html = enhanceCodeBlocks(html)
-    html = injectToc(html)
+    html = enhanceClusterStatsHTML(html)
     return `<div class="markdown-content">${html}</div>`
   } catch (error) {
     console.error('Markdown render error:', error)
@@ -255,38 +246,11 @@ export function renderMarkdown(text) {
 // 流式markdown渲染（处理不完整的markdown）
 export function renderStreamingMarkdown(text) {
   if (!text || typeof text !== 'string') return ''
-  
   try {
-    // 预处理文本（流式渲染时稍微保守一些）
-    text = preprocessText(text)
-    
-    text = text
-      .replace(/\\\\\(/g, '\\(')
-      .replace(/\\\\\)/g, '\\)')
-      .replace(/\\\\\[/g, '\\[')
-      .replace(/\\\\\]/g, '\\]')
-    // 对于流式内容，先尝试修复不完整的代码块
-    let processedText = text
-    
-    // 更稳健：逐行检测围栏是否未闭合，仅在未闭合时补齐
-    try {
-      const lines = text.split(/\r?\n/)
-      let inFence = false
-      for (const line of lines) {
-        if (/^\s*```/.test(line)) {
-          inFence = !inFence
-        }
-      }
-      if (inFence) {
-        processedText = text + '\n```'
-      }
-    } catch (e) {
-      // 忽略守护性修复中的异常
-    }
-    
-    let html = collapseEmptyLines(marked.parse(processedText))
+    // 原样渲染（流式）：不做补齐/不改行，仅做代码块与表格样式增强
+    let html = marked.parse(text)
     html = enhanceCodeBlocks(html)
-    html = injectToc(html)
+    html = enhanceClusterStatsHTML(html)
     return `<div class="markdown-content">${html}</div>`
   } catch (error) {
     console.error('Streaming markdown render error:', error)
@@ -373,31 +337,6 @@ function enhanceClusterStatsHTML(html) {
 // 格式化消息内容
 export function formatMessageContent(content, isStreaming = false) {
   if (!content || typeof content !== 'string') return ''
-  
-  // 调试：打印内容和检测结果
-  const hasMarkdown = containsMarkdown(content)
-  console.log('格式化内容:', { 
-    length: content.length, 
-    hasMarkdown, 
-    preview: content.substring(0, 100) + (content.length > 100 ? '...' : ''),
-    newlineCount: (content.match(/\n/g) || []).length
-  })
-  
-  // 检测是否包含markdown语法
-  if (hasMarkdown) {
-    let result = isStreaming ? renderStreamingMarkdown(content) : renderMarkdown(content)
-    
-    // 如果内容看起来是集群统计数据，应用增强样式
-    if (content.includes('总资源数量') || content.includes('命名空间分布') || content.includes('Pod状态')) {
-      result = enhanceClusterStatsHTML(result)
-    }
-    
-    console.log('Markdown渲染结果预览:', result.substring(0, 200) + '...')
-    return result
-  }
-  
-  // 普通文本处理 - 保留换行符和格式
-  const result = `<div class="text-content">${escapeHtml(content).replace(/\n/g, '<br>')}</div>`
-  console.log('普通文本渲染结果预览:', result.substring(0, 200) + '...')
-  return result
+  // 统一按Markdown直接渲染（不做任何预处理），仅保留表格与代码块样式增强
+  return isStreaming ? renderStreamingMarkdown(content) : renderMarkdown(content)
 } 

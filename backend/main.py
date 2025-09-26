@@ -6,6 +6,7 @@ FastAPI 主应用入口 - 集成前后端服务
 # 导入必要的模块
 import asyncio
 import os
+import sys
 from pathlib import Path
 from contextlib import asynccontextmanager
 
@@ -27,6 +28,23 @@ from src.mcp.enhanced_client import EnhancedMCPClient
 from src.config.manager import config_manager
 from src.llm.processor import EnhancedLLMProcessor
 from src.dingtalk.bot import DingTalkBot
+
+# 日志设置（在任何日志输出前执行）
+def setup_logging():
+    level = os.getenv("LOG_LEVEL", "INFO").upper()
+    fmt_console = "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <7}</level> | {message}"
+    fmt_file = "{time:YYYY-MM-DD HH:mm:ss} | {level: <7} | {message}"
+    try:
+        logger.remove()
+    except Exception:
+        pass
+    logger.add(sys.stdout, level=level, format=fmt_console, colorize=True, enqueue=True)
+    # 文件日志
+    log_dir = Path("logs")
+    log_dir.mkdir(parents=True, exist_ok=True)
+    logger.add(str(log_dir / "app.log"), level=level, rotation="1 week", retention="4 weeks", encoding="utf-8", enqueue=True, format=fmt_file)
+
+setup_logging()
 
 # 加载环境变量文件
 config_file = "config.env"
