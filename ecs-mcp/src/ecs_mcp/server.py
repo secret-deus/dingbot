@@ -206,7 +206,13 @@ class ECSMCPServer:
             yield self._format_sse_event("connected", {"client_id": client_id, "timestamp": time.time(), "server": "ECS MCP Server"})
             tools = tool_registry.list_tools("ecs", enabled_only=True)
             yield self._format_sse_event("tools_list", {"tools": [
-                {"name": t.name, "description": t.description, "category": getattr(t, "category", "ecs"), "input_schema": t.get_schema().input_schema if hasattr(t, "get_schema") else {}}
+                {
+                    "name": t.name, 
+                    "description": t.description, 
+                    "category": getattr(t, "category", "ecs"), 
+                    "timeout": getattr(t, "timeout", None),
+                    "input_schema": t.get_schema().input_schema if hasattr(t, "get_schema") else {}
+                }
                 for t in tools
             ]})
             while True:

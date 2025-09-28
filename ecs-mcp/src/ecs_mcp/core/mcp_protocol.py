@@ -26,6 +26,8 @@ class MCPToolSchema(BaseModel):
     name: str = Field(...)
     description: str = Field(...)
     input_schema: Dict[str, Any] = Field(...)
+    timeout: Optional[int] = Field(None, description="工具执行超时时间（秒）")
+    category: Optional[str] = Field(None, description="工具分类")
 
 
 class MCPCallToolResult(BaseModel):

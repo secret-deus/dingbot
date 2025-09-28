@@ -104,7 +104,12 @@ class MCPServerConnection:
     
     async def _connect_sse(self):
         """连接SSE服务器"""
-        uri = f"http://{self.config.host}:{self.config.port}{self.config.path}"
+        # 构建SSE URI，处理None值
+        host = self.config.host or "localhost"
+        port = self.config.port or 8766
+        path = self.config.path or "/events"
+        
+        uri = f"http://{host}:{port}{path}"
         logger.info(f"正在连接SSE服务器: {uri}")
         
         # 创建HTTP会话
@@ -235,6 +240,7 @@ class MCPServerConnection:
                     name=tool_name,
                     description=tool_data.get("description", ""),
                     input_schema=tool_data.get("input_schema", {}),
+                    timeout=tool_data.get("timeout"),
                     category=tool_data.get("category"),
                     version=tool_data.get("version"),
                     provider=self.config.name
@@ -358,32 +364,15 @@ class MCPServerConnection:
             import os
             
             if hasattr(self.config_manager, 'config_file'):
-                config_path = Path(self.config_manager.config_file)  # 确保转换为Path对象
+                config_path = Path(self.config_manager.config_file)  # 使用配置管理器的文件路径
+                logger.info(f"🔍 使用配置管理器指定的路径: {config_path.absolute()}")
             else:
-                # 回退到默认路径，使用绝对路径查找
+                # 回退到标准路径
+                config_path = Path("config/mcp_config.json")
+                logger.info(f"🔍 使用默认配置路径: {config_path.absolute()}")
                 
-                # 尝试多个可能的路径
-                possible_paths = [
-                    "backend/config/mcp_config.json",
-                    "config/mcp_config.json", 
-                    "../backend/config/mcp_config.json",
-                    os.path.join(os.getcwd(), "backend", "config", "mcp_config.json")
-                ]
-                
-                config_path = None
-                for path in possible_paths:
-                    if Path(path).exists():
-                        config_path = Path(path)
-                        logger.info(f"🔍 找到配置文件: {config_path.absolute()}")
-                        break
-                
-                if not config_path:
-                    # 如果都没找到，使用当前工作目录的相对路径
-                    config_path = Path("backend/config/mcp_config.json")
-                    logger.warning(f"⚠️ 配置文件不存在，将尝试创建: {config_path.absolute()}")
-                    
-                    # 确保目录存在
-                    config_path.parent.mkdir(parents=True, exist_ok=True)
+                # 确保目录存在
+                config_path.parent.mkdir(parents=True, exist_ok=True)
             
             # 读取现有配置
             if config_path.exists():
@@ -449,11 +438,20 @@ class MCPServerConnection:
                     logger.info(f"🔧 更新服务器 {server['name']} 工具列表: {old_count} → {len(tool_names)}")
                     break
             
-            # 替换所有K8s工具配置
-            non_k8s_tools = [tool for tool in config.get("tools", []) if not tool["name"].startswith("k8s-")]
-            config["tools"] = non_k8s_tools + tool_configs
+            # 替换当前服务器的工具配置
+            server_name = self.config.name
+            existing_tools = config.get("tools", [])
             
-            logger.info(f"🔧 更新工具配置: {len(tool_configs)} 个K8s工具")
+            # 保留其他服务器的工具，移除当前服务器的工具
+            other_server_tools = [
+                tool for tool in existing_tools 
+                if tool.get("server_name") != server_name
+            ]
+            
+            # 添加当前服务器的新工具配置
+            config["tools"] = other_server_tools + tool_configs
+            
+            logger.info(f"🔧 更新服务器 {server_name} 的工具配置: {len(tool_configs)} 个工具")
             
             # 写回配置文件
             with open(config_path, 'w', encoding='utf-8') as f:
@@ -568,6 +566,7 @@ class MCPServerConnection:
                 name=tool_data["name"],
                 description=tool_data.get("description", ""),
                 input_schema=tool_data.get("inputSchema", {}),
+                timeout=tool_data.get("timeout"),
                 category=tool_data.get("category"),
                 version=tool_data.get("version"),
                 provider=self.config.name
@@ -660,12 +659,24 @@ class MCPServerConnection:
     
     async def _call_tool_http(self, name: str, parameters: Dict[str, Any]) -> Any:
         """通过HTTP调用工具"""
+        # 生成唯一的请求ID
+        import uuid
+        request_id = str(uuid.uuid4())
+        
+        # 构造符合服务器期望的请求体
+        request_data = {
+            "id": request_id,
+            "name": name,
+            "arguments": parameters
+        }
+        
         async with self.session.post(
-            f"/tools/{name}/call",
-            json={"arguments": parameters}
+            "/tools/call",  # 修正URL路径
+            json=request_data  # 发送完整的请求对象
         ) as response:
             if response.status != 200:
-                raise MCPException("TOOL_CALL_FAILED", f"HTTP工具调用失败: {response.status}")
+                error_text = await response.text()
+                raise MCPException("TOOL_CALL_FAILED", f"HTTP工具调用失败: {response.status}, {error_text}")
             
             return await response.json()
     
@@ -676,7 +687,10 @@ class MCPServerConnection:
         # 确保SSE连接是活跃的
         if not self.sse_task or self.sse_task.done():
             logger.warning("⚠️ SSE连接未建立或已断开，尝试重新连接...")
-            uri = f"http://{self.config.host}:{self.config.port}{self.config.path}"
+            host = self.config.host or "localhost"
+            port = self.config.port or 8766
+            path = self.config.path or "/events"
+            uri = f"http://{host}:{port}{path}"
             self.sse_task = asyncio.create_task(self._sse_event_listener(uri))
             # 等待连接建立
             await asyncio.sleep(2)
@@ -712,10 +726,12 @@ class MCPServerConnection:
         }
         
         try:
-            logger.info(f"🔄 开始POST请求到: http://{self.config.host}:{self.config.port}/tools/call")
+            host = self.config.host or "localhost"
+            port = self.config.port or 8766
+            logger.info(f"🔄 开始POST请求到: http://{host}:{port}/tools/call")
             # POST请求现在会立即返回，不需要特殊超时设置
             async with self.session.post(
-                f"http://{self.config.host}:{self.config.port}/tools/call",
+                f"http://{host}:{port}/tools/call",
                 json=request_data,
                 headers=headers
             ) as response:
@@ -745,7 +761,9 @@ class MCPServerConnection:
         """等待工具执行结果"""
         logger.info(f"等待工具执行结果: {request_id}, 超时设置: {timeout}秒")
         logger.info(f"🔍 调试信息 - 配置超时: {self.config.timeout}秒, 传入超时: {timeout}秒")
-        logger.info(f"🔍 配置对象详情 - 类型: {self.config.type}, 主机: {self.config.host}:{self.config.port}")
+        host = self.config.host or "localhost"
+        port = self.config.port or 8766
+        logger.info(f"🔍 配置对象详情 - 类型: {self.config.type}, 主机: {host}:{port}")
         
         start_time = asyncio.get_event_loop().time()
         
@@ -809,6 +827,21 @@ class MCPServerConnection:
         if not self.session:
             self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.config.timeout))
         
+        # 生成唯一的请求ID
+        import uuid
+        request_id = str(uuid.uuid4())
+        
+        # 构建URL，处理None值
+        host = self.config.host or "localhost"
+        port = self.config.port or 8766
+        
+        # 构造符合服务器期望的请求体
+        request_data = {
+            "id": request_id,
+            "name": name,
+            "arguments": parameters
+        }
+        
         headers = {"Content-Type": "application/json", "Accept": "text/event-stream"}
         if self.config.auth_headers:
             headers.update(self.config.auth_headers)
@@ -816,8 +849,8 @@ class MCPServerConnection:
             headers["Authorization"] = f"Bearer {self.config.auth_token}"
         
         async with self.session.post(
-            f"http://{self.config.host}:{self.config.port}/tools/{name}/call",
-            json={"arguments": parameters},
+            f"http://{host}:{port}/tools/call",  # 修正URL路径
+            json=request_data,  # 发送完整的请求对象
             headers=headers
         ) as response:
             if response.status != 200:
@@ -1020,15 +1053,19 @@ class EnhancedMCPClient:
         tool_config = self.config_manager.get_tool_by_name(name)
         tool_timeout = 600.0  # 默认超时时间
 
-        # 先应用配置文件中的超时设置
-        if tool_config:
+        # 优先使用服务端提供的超时时间
+        tool_info = self.tools.get(name)
+        if tool_info and hasattr(tool_info, 'timeout') and tool_info.timeout:
+            tool_timeout = float(tool_info.timeout)
+            logger.info(f"使用服务端工具 {name} 的超时时间: {tool_timeout}秒")
+        elif tool_config:
             # 合并默认参数
             if tool_config.default_parameters:
                 merged_params = tool_config.default_parameters.copy()
                 merged_params.update(parameters)
                 parameters = merged_params
 
-            # 设置超时
+            # 设置超时（作为后备）
             if hasattr(tool_config, 'timeout') and tool_config.timeout:
                 tool_timeout = float(tool_config.timeout)
                 logger.info(f"使用工具 {name} 的配置超时时间: {tool_timeout}秒")

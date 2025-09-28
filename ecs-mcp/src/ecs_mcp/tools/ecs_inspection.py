@@ -29,7 +29,9 @@ class EcsInspectionTool(MCPToolBase):
     def __init__(self):
         super().__init__(
             name="ecs-inspect",
-            description="批量巡检ECS实例（按条件筛选），生成风险摘要与报告（Markdown）"
+            description="批量巡检ECS实例（按条件筛选），生成风险摘要与报告（Markdown）",
+            timeout=120,  # 巡检工具需要更长时间，设置2分钟超时
+            category="ecs"
         )
         self.config = get_config()
 
@@ -37,6 +39,8 @@ class EcsInspectionTool(MCPToolBase):
         return MCPToolSchema(
             name=self.name,
             description=self.description,
+            timeout=self.timeout,
+            category=self.category,
             input_schema={
                 "type": "object",
                 "properties": {

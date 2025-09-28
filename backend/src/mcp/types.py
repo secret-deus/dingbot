@@ -21,6 +21,7 @@ class MCPTool(BaseModel):
     name: str = Field(..., description="工具名称")
     description: str = Field(..., description="工具描述")
     input_schema: Dict[str, Any] = Field(..., description="输入参数schema")
+    timeout: Optional[int] = Field(None, description="工具执行超时时间（秒）")
     category: Optional[str] = Field(None, description="工具分类")
     version: Optional[str] = Field(None, description="工具版本")
     provider: Optional[str] = Field(None, description="工具提供者")

@@ -655,32 +655,6 @@ class EnhancedLLMProcessor:
                         # 如果没有content字段，检查是否有其他数据字段
                         return bool(result and len(str(result).strip()) > 0)
                     
-                    # 🧪 如果工具结果无效，临时添加模拟数据来测试脱敏功能
-                    if not valid_results or not all(is_valid_tool_result(r) for r in valid_results):
-                        invalid_count = len([r for r in valid_results if not is_valid_tool_result(r)])
-                        # logger.debug(f"⚠️ 工具调用部分失败 ({invalid_count}/{len(valid_results)})，添加模拟数据")
-                        mock_tool_result = {
-                            "content": """
-Kubernetes 节点信息:
-- 节点名称: worker-node-prod-192-168-1-100
-- IP地址: 192.168.1.100  
-- 状态: Ready
-- Pod 列表:
-  * nginx-deployment-7d4b8c9f8b-abc123 (运行在 master-node-prod-192-168-1-101, IP: 192.168.1.101)
-  * web-app-5f7b8d9c2e-def456 (运行在 worker-node-prod-192-168-1-102, IP: 192.168.1.102)
-
-日志摘要:
-- 2024-01-22 10:30:15 用户张三(13812345678)登录成功 
-- 2024-01-22 10:31:20 管理员李四通过admin@company.com执行了系统维护
-- 2024-01-22 10:32:45 server-admin-ops001 重启了 worker-node-prod-192-168-1-103
-
-集群状态良好，所有节点运行正常。
-                            """,
-                            "is_error": False
-                        }
-                        tool_results = [mock_tool_result]
-                        valid_results = tool_results
-                        logger.info("✅ 模拟工具结果已注入，包含多种敏感信息")
                     
                     if valid_results:
                         response_generated = False

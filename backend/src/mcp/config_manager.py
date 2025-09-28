@@ -781,13 +781,43 @@ class MCPConfigManager:
         
         # 查找工具配置
         tool_config = self.get_tool_by_name(tool_name)
-        if not tool_config:
+        if tool_config:
+            # 根据server_name查找服务器配置
+            for server in self.current_config.servers:
+                if server.name == tool_config.server_name:
+                    return server
             return None
         
-        # 根据server_name查找服务器配置
+        # 如果工具没有配置，尝试根据工具名称前缀自动分配服务器
+        logger.debug(f"工具 {tool_name} 没有配置，尝试自动分配服务器")
+        
+        # 根据工具名称前缀自动分配服务器
+        if tool_name.startswith("k8s-"):
+            # K8s工具分配到k8s-mcp服务器
+            for server in self.current_config.servers:
+                if server.name == "k8s-mcp" and server.enabled:
+                    logger.info(f"🔧 自动分配工具 {tool_name} 到服务器 {server.name}")
+                    return server
+        elif tool_name.startswith("ecs-"):
+            # ECS工具分配到ecs-sse-server服务器
+            for server in self.current_config.servers:
+                if server.name == "ecs-sse-server" and server.enabled:
+                    logger.info(f"🔧 自动分配工具 {tool_name} 到服务器 {server.name}")
+                    return server
+        elif tool_name.startswith("ssh-"):
+            # SSH工具分配到ssh服务器（如果存在）
+            for server in self.current_config.servers:
+                if "ssh" in server.name.lower() and server.enabled:
+                    logger.info(f"🔧 自动分配工具 {tool_name} 到服务器 {server.name}")
+                    return server
+        
+        # 如果没有匹配的前缀，尝试分配到第一个启用的服务器
         for server in self.current_config.servers:
-            if server.name == tool_config.server_name:
+            if server.enabled:
+                logger.warning(f"⚠️ 工具 {tool_name} 无法自动分配，使用默认服务器 {server.name}")
                 return server
+        
+        logger.error(f"❌ 无法为工具 {tool_name} 找到合适的服务器")
         return None
 
 

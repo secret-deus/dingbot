@@ -16,7 +16,7 @@ from .types import MCPClientConfig, MCPTool
 class MCPServerConfig(BaseModel):
     """MCP服务器配置"""
     name: str = Field(..., description="服务器名称")
-    type: str = Field(..., description="服务器类型", pattern="^(sse|stdio)$")
+    type: str = Field(..., description="服务器类型", pattern="^(sse|stdio|http)$")
     enabled: bool = Field(True, description="是否启用")
     
     # SSE配置

@@ -15,14 +15,16 @@ from .mcp_protocol import MCPToolSchema, MCPCallToolResult
 class MCPToolBase(ABC):
     """MCP工具基类"""
 
-    def __init__(self, name: str, description: str):
+    def __init__(self, name: str, description: str, timeout: Optional[int] = None, category: Optional[str] = None):
         self.name = name
         self.description = description
+        self.timeout = timeout  # 工具级别的超时时间（秒）
+        self.category = category or "ecs"
         self.enabled = True
         self.execution_count = 0
         self.last_execution_time = None
 
-        logger.debug(f"工具 {name} 初始化完成")
+        logger.debug(f"工具 {name} 初始化完成，超时: {timeout}秒")
 
     @abstractmethod
     def get_schema(self) -> MCPToolSchema:
