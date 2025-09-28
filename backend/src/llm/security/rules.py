@@ -78,11 +78,11 @@ class SensitiveDataRules:
             
             # 从后向前替换，避免位置偏移
             for name, start, end in reversed(names_found):
-                logger.error(f"   匹配项: '{name}' (位置: {start}-{end})")
+                # logger.error(f"   匹配项: '{name}' (位置: {start}-{end})")
                 
                 # 检查是否已经脱敏过
                 if mapping_store.is_masked(name):
-                    logger.error(f"⏭️ 跳过已脱敏项: '{name}'")
+                    # logger.error(f"⏭️ 跳过已脱敏项: '{name}'")
                     continue
                 
                 # 进行姓名脱敏
@@ -110,8 +110,8 @@ class SensitiveDataRules:
             # 先检查是否有匹配
             matches = list(re.finditer(pattern, masked_text))
             # logger.error(f"📋 规则 '{rule_name}' 匹配了 {len(matches)} 项:")
-            for match in matches:
-                logger.error(f"   匹配项: '{match.group(0)}' (位置: {match.start()}-{match.end()})")
+            # for match in matches:
+            #     logger.error(f"   匹配项: '{match.group(0)}' (位置: {match.start()}-{match.end()})")
             
             def replace_match(match):
                 nonlocal total_replacements
@@ -119,7 +119,7 @@ class SensitiveDataRules:
                 
                 # 检查是否已经脱敏过
                 if mapping_store.is_masked(original):
-                    logger.error(f"⏭️ 跳过已脱敏项: '{original}'")
+                    # logger.error(f"⏭️ 跳过已脱敏项: '{original}'")
                     return original
                 
                 # 根据策略进行脱敏
@@ -146,8 +146,8 @@ class SensitiveDataRules:
             
             masked_text = re.sub(pattern, replace_match, masked_text)
         
-        logger.error(f"📊 脱敏完成: 总共替换了 {total_replacements} 项")
-        logger.error(f"🔒 最终脱敏结果: '{masked_text[:200]}...'")
+        # logger.error(f"📊 脱敏完成: 总共替换了 {total_replacements} 项")
+        # logger.error(f"🔒 最终脱敏结果: '{masked_text[:200]}...'")
         return masked_text
     
     def _format_preserve_hash(self, value: str, config: Dict) -> str:

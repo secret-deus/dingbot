@@ -18,9 +18,9 @@ class DataMasker:
         self.session_manager = SessionMappingManager()
         self.enabled = self.config.masking_enabled
         
-        logger.info(f"🔒 数据脱敏器初始化完成，状态: {'启用' if self.enabled else '禁用'}")
-        if self.enabled and self.config.tool_whitelist:
-            logger.info(f"🔓 工具白名单: {', '.join(self.config.tool_whitelist)}")
+        # logger.info(f"🔒 数据脱敏器初始化完成，状态: {'启用' if self.enabled else '禁用'}")
+        # if self.enabled and self.config.tool_whitelist:
+        #     logger.info(f"🔓 工具白名单: {', '.join(self.config.tool_whitelist)}")
     
     def mask_tool_results(self, tool_results: List[Any], session_id: str, tool_names: List[str] = None) -> List[Any]:
         """脱敏工具结果 - 在第二阶段LLM调用前执行
@@ -38,7 +38,7 @@ class DataMasker:
         if tool_names and self.config.tool_whitelist:
             whitelisted_tools = [name for name in tool_names if name in self.config.tool_whitelist]
             if whitelisted_tools:
-                logger.info(f"🔓 工具白名单匹配，跳过脱敏处理: {whitelisted_tools}")
+                # logger.info(f"🔓 工具白名单匹配，跳过脱敏处理: {whitelisted_tools}")
                 return tool_results
         
         try:
@@ -49,28 +49,24 @@ class DataMasker:
             
             for i, result in enumerate(tool_results):
                 if result is not None:
-                    # 记录原始数据
-                    original_json = json.dumps(result, ensure_ascii=False, default=str)
-                    logger.info(f"📋 原始工具结果 #{i+1} (长度: {len(original_json)}):")
-                    logger.info(f"   {original_json[:500]}{'...' if len(original_json) > 500 else ''}")
-                    
                     # 执行脱敏
                     masked_result = self.rules.apply_rules(result, session_store)
-                    masked_json = json.dumps(masked_result, ensure_ascii=False, default=str)
-                    
-                    # 记录脱敏后数据
-                    # logger.warning(f"🔒 脱敏后工具结果 #{i+1} (长度: {len(masked_json)}):")
-                    logger.warning(f"   {masked_json[:500]}{'...' if len(masked_json) > 500 else ''}")
-                    
                     masked_results.append(masked_result)
                     
-                    # 统计脱敏信息
-                    mapping_count = len(session_store.original_to_masked)
-                    logger.info(f"   已建立 {mapping_count} 个脱敏映射")
+                    # 仅在调试模式下记录详细信息
+                    if self.config.debug_logging:
+                        original_json = json.dumps(result, ensure_ascii=False, default=str)
+                        masked_json = json.dumps(masked_result, ensure_ascii=False, default=str)
+                        logger.debug(f"📋 工具结果脱敏 #{i+1}: 原始长度={len(original_json)}, 脱敏长度={len(masked_json)}")
                 else:
                     masked_results.append(result)
             
-            logger.success(f"✅ 工具结果脱敏完成，处理了 {len(tool_results)} 个结果")
+            # 简化成功日志
+            mapping_count = len(session_store.original_to_masked)
+            # if mapping_count > 0:
+            #     logger.info(f"🔒 脱敏完成: {len(tool_results)}个结果, {mapping_count}个映射")
+            # else:
+            #     logger.debug(f"脱敏处理完成: {len(tool_results)}个结果 (无敏感数据)")
             return masked_results
             
         except Exception as e:
@@ -97,13 +93,13 @@ class DataMasker:
             restored_text = session_store.restore_text(response_text)
             
             # 检查是否有恢复操作
-            if restored_text != response_text:
-                mapping_count = len(session_store.masked_to_original)
-                logger.info(f"🔓 响应已恢复，当前有 {mapping_count} 个脱敏映射可用")
-                
-                if self.config.debug_logging:
-                    # logger.debug(f"🔓 恢复后响应片段: {restored_text[:100]}...")
-                    pass
+            # if restored_text != response_text:
+            #     mapping_count = len(session_store.masked_to_original)
+            #     logger.debug(f"🔓 响应恢复: {mapping_count}个映射")
+            #     
+            #     if self.config.debug_logging:
+            #         logger.debug(f"恢复前: {response_text[:100]}...")
+            #         logger.debug(f"恢复后: {restored_text[:100]}...")
             
             return restored_text
             
@@ -134,7 +130,7 @@ class DataMasker:
             if session_id in self.session_manager.sessions:
                 mapping_count = len(self.session_manager.sessions[session_id].original_to_masked)
                 del self.session_manager.sessions[session_id]
-                logger.info(f"🧹 会话 {session_id} 的脱敏数据已清理，清理了 {mapping_count} 个映射")
+                # logger.debug(f"🧹 会话清理: {session_id} ({mapping_count}个映射)")
         except Exception as e:
             logger.error(f"❌ 清理会话数据失败: {e}")
     

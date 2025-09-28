@@ -546,7 +546,7 @@ class EnhancedLLMProcessor:
                 
                 # 如果有工具调用，仍然执行脱敏逻辑和工具处理
                 if enable_tools and tool_calls_made and tool_results:
-                    logger.info("🔒 即使LLM客户端未初始化，仍执行脱敏处理演示")
+                    # logger.debug("🔒 执行脱敏处理演示")
                     session_id = f'demo_session_{int(time.time())}'
                     
                     # 🔒 执行脱敏演示
@@ -555,9 +555,8 @@ class EnhancedLLMProcessor:
                     
                     # 📝 在日志中记录脱敏效果
                     import json
-                    logger.warning(f"🔒 脱敏处理完成 (演示模式, 会话ID: {session_id}):")
-                    logger.warning(f"   原始工具结果: {json.dumps(tool_results, ensure_ascii=False)[:200]}...")
-                    logger.warning(f"   脱敏后结果: {json.dumps(masked_tool_results, ensure_ascii=False)[:200]}...")
+                    # logger.debug(f"🔒 脱敏处理完成 (演示模式, 会话: {session_id})")
+                    # 仅在调试模式下显示详细数据
                     
                     # 生成包含脱敏信息的模拟响应
                     mock_response = f"⚠️ LLM服务未配置，这是演示响应。\n\n工具已执行并完成脱敏处理：\n- 会话ID: {session_id}\n- 脱敏映射数: {len(self.data_masker.session_manager.sessions.get(session_id, {}).get('original_to_masked', {}))}\n\n请检查日志查看详细的脱敏效果。"
@@ -659,7 +658,7 @@ class EnhancedLLMProcessor:
                     # 🧪 如果工具结果无效，临时添加模拟数据来测试脱敏功能
                     if not valid_results or not all(is_valid_tool_result(r) for r in valid_results):
                         invalid_count = len([r for r in valid_results if not is_valid_tool_result(r)])
-                        logger.warning(f"⚠️ 工具调用失败或无效 ({invalid_count}/{len(valid_results)} 无效)，添加模拟数据测试脱敏功能")
+                        # logger.debug(f"⚠️ 工具调用部分失败 ({invalid_count}/{len(valid_results)})，添加模拟数据")
                         mock_tool_result = {
                             "content": """
 Kubernetes 节点信息:
@@ -1030,7 +1029,7 @@ Kubernetes 节点信息:
                                     delta.content, session_id
                                 )
                                 
-                                logger.debug(f"流式块 #{chunk_count}: '{delta.content}' → '{restored_content}'")
+                                # logger.debug(f"流式块 #{chunk_count}: '{delta.content}' → '{restored_content}'")  # 太冗余，已禁用
                                 yield restored_content
                             else:
                                 logger.debug(f"块 #{chunk_count} 无内容: {delta}")
@@ -1078,7 +1077,7 @@ Kubernetes 节点信息:
                 
                 # 🔧 阶段2: 完整内容恢复（修复因chunk分割导致的恢复失败）
                 if response_generated and full_response and session_id:
-                    # logger.info(f"🔧 开始完整响应恢复处理...")
+                    # logger.debug(f"🔧 开始完整响应恢复处理...")
                     
                     # 对完整响应进行脱敏恢复
                     final_restored_response = self.data_masker.restore_llm_response(
@@ -1086,21 +1085,18 @@ Kubernetes 节点信息:
                     )
 
                     # 新增：DEBUG 记录 LLM 最终原始回复（未恢复与已恢复），用于定位包裹/围栏问题
-                    try:
-                        logger.debug("LLM原始完整回复(未恢复)开始↓↓↓↓↓↓↓↓↓↓")
-                        logger.debug(full_response)
-                        logger.debug("LLM原始完整回复(未恢复)结束↑↑↑↑↑↑↑↑↑↑")
-                        logger.debug("LLM完整回复(恢复后)开始↓↓↓↓↓↓↓↓↓↓")
-                        logger.debug(final_restored_response)
-                        logger.debug("LLM完整回复(恢复后)结束↑↑↑↑↑↑↑↑↑↑")
-                    except Exception as _log_err:
-                        logger.warning(f"打印LLM最终回复失败: {_log_err}")
+                    # 仅在需要时记录详细日志（已禁用以减少日志量）
+                    # try:
+                    #     logger.debug("LLM原始完整回复(未恢复)开始")
+                    #     logger.debug(full_response[:200] + "..." if len(full_response) > 200 else full_response)
+                    #     logger.debug("LLM完整回复(恢复后)开始")
+                    #     logger.debug(final_restored_response[:200] + "..." if len(final_restored_response) > 200 else final_restored_response)
+                    # except Exception as _log_err:
+                    #     logger.warning(f"打印LLM最终回复失败: {_log_err}")
                     
                     # 检查是否有新的恢复内容
                     if final_restored_response != full_response:
-                        logger.info(f"🎯 检测到完整恢复差异，发送更新指令")
-                        logger.info(f"📝 原始完整响应长度: {len(full_response)} 字符")
-                        logger.info(f"🔓 恢复完整响应长度: {len(final_restored_response)} 字符")
+                        # logger.debug(f"🎯 检测到完整恢复差异: {len(full_response)} → {len(final_restored_response)} 字符")
                         
                         # 发送特殊的更新指令，告知客户端用恢复后的完整内容替换之前的输出
                         update_instruction = {
@@ -1110,9 +1106,10 @@ Kubernetes 节点信息:
                         }
                         
                         yield f"\n\n__UPDATE_CONTENT__:{json.dumps(update_instruction, ensure_ascii=False)}__END_UPDATE__\n"
-                        logger.info(f"✅ 完整内容恢复指令已发送")
+                        # logger.debug(f"✅ 完整内容恢复指令已发送")
                     else:
-                        logger.info(f"💭 完整响应无需额外恢复")
+                        # logger.debug(f"💭 完整响应无需额外恢复")
+                        pass
                 
                 # 如果没有生成任何响应，提供回退响应
                 if not response_generated:

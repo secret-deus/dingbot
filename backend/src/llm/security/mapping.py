@@ -57,17 +57,19 @@ class MaskingMappingStore:
             restore_count = 0
             
             from loguru import logger
-            logger.info(f"🔓 开始恢复脱敏信息，可用映射: {len(sorted_masked)} 个")
-            logger.info(f"📝 当前待恢复文本片段: '{text[:200]}...'")
-            for i, masked_value in enumerate(sorted_masked):
-                logger.info(f"  映射#{i+1}: '{masked_value}' → '{self.masked_to_original[masked_value]}'")
+            # logger.debug(f"🔓 开始恢复: {len(sorted_masked)}个映射, 文本长度: {len(text)}")
+            
+            # 仅在调试模式下显示详细映射
+            # if len(sorted_masked) <= 5:  # 只在映射数量较少时显示详情
+            #     for i, masked_value in enumerate(sorted_masked):
+            #         logger.debug(f"  映射#{i+1}: '{masked_value}' → '{self.masked_to_original[masked_value]}'")
             
             for masked_value in sorted_masked:
                 original_value = self.masked_to_original[masked_value]
                 
                 # 检查是否存在该脱敏值
                 if masked_value in restored_text:
-                    logger.info(f"🔍 在文本中找到脱敏值: '{masked_value}'")
+                    # logger.debug(f"🔍 找到脱敏值: '{masked_value}'")
                     
                     # 使用更精确的替换策略
                     import re
@@ -95,18 +97,17 @@ class MaskingMappingStore:
                     if new_text != restored_text:
                         restore_count += 1
                         restored_text = new_text
-                        logger.info(f"✅ 恢复成功: '{masked_value}' → '{original_value}'")
+                        # logger.debug(f"✅ 恢复: '{masked_value}' → '{original_value}'")
                     else:
-                        logger.warning(f"⚠️ 恢复失败，未找到匹配项: '{masked_value}' (使用模式: {pattern})")
+                        # logger.debug(f"⚠️ 恢复失败: '{masked_value}' (模式: {pattern})")
+                        pass
                 else:
                     # logger.info(f"⏭️ 文本中未找到脱敏值: '{masked_value}'")
                     pass
             
-            if restore_count > 0:
-                logger.info(f"🔓 成功恢复 {restore_count} 个脱敏值")
-            else:
-                # logger.debug("💭 无脱敏内容需要恢复")
-                pass
+            # if restore_count > 0:
+            #     logger.debug(f"🔓 恢复完成: {restore_count}个值")
+            # 无需记录无恢复情况
             
             return restored_text
     
