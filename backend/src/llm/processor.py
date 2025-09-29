@@ -968,7 +968,7 @@ class EnhancedLLMProcessor:
             
             # 根据配置选择流式或非流式调用
             try:
-                logger.info(f"准备调用LLM，请求参数: {json.dumps(request_params, ensure_ascii=False, indent=2)}")
+                # logger.info(f"准备调用LLM，请求参数: {json.dumps(request_params, ensure_ascii=False, indent=2)}")
                 
                 # 获取会话ID用于数据恢复
                 session_id = getattr(self, 'current_session_id', None)
@@ -983,32 +983,22 @@ class EnhancedLLMProcessor:
                 chunk_count = 0
                 full_response = ""  # 收集完整响应用于最终恢复
                 
+                # 修改逻辑：先获取完整内容，再逐行逐字流式输出
                 if stream_enabled:
-                    # LLM流式调用
+                    # LLM流式调用 - 先收集完整响应
                     stream = await self.client.chat.completions.create(**request_params)
-                    logger.info("LLM流式调用已启动")
+                    logger.info("LLM流式调用已启动，收集完整响应中...")
                     
                     async for chunk in stream:
                         chunk_count += 1
-                        logger.debug(f"收到流式块 #{chunk_count}: {chunk}")
                         if chunk.choices and len(chunk.choices) > 0:
                             delta = chunk.choices[0].delta
                             if delta.content:
-                                # 收集完整响应（LLM原始输出）
+                                # 只收集完整响应，不立即输出
                                 full_response += delta.content
                                 response_generated = True
-                                
-                                # 🚀 阶段1: 实时流式输出（保持用户体验，可能有部分脱敏值未恢复）
-                                restored_content = self.data_masker.restore_llm_response(
-                                    delta.content, session_id
-                                )
-                                
-                                # logger.debug(f"流式块 #{chunk_count}: '{delta.content}' → '{restored_content}'")  # 太冗余，已禁用
-                                yield restored_content
-                            else:
-                                logger.debug(f"块 #{chunk_count} 无内容: {delta}")
                 else:
-                    # LLM非流式调用，但后端模拟流式输出
+                    # LLM非流式调用
                     logger.info("LLM非流式调用已启动")
                     response = await self.client.chat.completions.create(**request_params)
                     logger.info("LLM非流式调用完成")
@@ -1016,74 +1006,29 @@ class EnhancedLLMProcessor:
                     if response and response.choices and len(response.choices) > 0:
                         full_response = response.choices[0].message.content or ""
                         response_generated = True
-                        
-                        # 恢复脱敏数据
-                        restored_content = self.data_masker.restore_llm_response(
-                            full_response, session_id
-                        )
-                        
-                        logger.info(f"非流式响应长度: {len(full_response)} 字符")
-                        
-                        # 模拟流式输出：将完整响应分块输出
-                        import re
-                        # 按句子分割，保持自然的输出节奏
-                        sentences = re.split(r'([。！？\n])', restored_content)
-                        current_chunk = ""
-                        
-                        for i, part in enumerate(sentences):
-                            current_chunk += part
-                            # 每个句子或换行符后输出一次
-                            if part in ['。', '！', '？', '\n'] or i == len(sentences) - 1:
-                                if current_chunk.strip():
-                                    yield current_chunk
-                                    current_chunk = ""
-                                    # 添加小延迟模拟真实流式体验
-                                    import asyncio
-                                    await asyncio.sleep(0.01)
                     else:
                         logger.error("非流式调用返回空响应")
                         response_generated = False
+                
+                # 统一处理：先恢复完整内容，然后直接输出
+                if response_generated and full_response:
+                    # 先进行完整的脱敏恢复
+                    final_restored_response = self.data_masker.restore_llm_response(
+                        full_response, session_id
+                    )
+                    
+                    logger.info(f"🔄 恢复后的完整内容:\n{final_restored_response}")
+                    logger.info(f"直接输出恢复后的完整内容，总长度: {len(final_restored_response)} 字符")
+                    
+                    # 直接输出恢复后的完整内容
+                    yield final_restored_response
                 
                 if stream_enabled:
                     logger.info(f"LLM流式调用完成，共生成 {chunk_count} 个块，有效响应: {response_generated}")
                 else:
                     logger.info(f"LLM非流式调用完成，有效响应: {response_generated}")
                 
-                # 🔧 阶段2: 完整内容恢复（修复因chunk分割导致的恢复失败）
-                if response_generated and full_response and session_id:
-                    # logger.debug(f"🔧 开始完整响应恢复处理...")
-                    
-                    # 对完整响应进行脱敏恢复
-                    final_restored_response = self.data_masker.restore_llm_response(
-                        full_response, session_id
-                    )
-
-                    # 新增：DEBUG 记录 LLM 最终原始回复（未恢复与已恢复），用于定位包裹/围栏问题
-                    # 仅在需要时记录详细日志（已禁用以减少日志量）
-                    # try:
-                    #     logger.debug("LLM原始完整回复(未恢复)开始")
-                    #     logger.debug(full_response[:200] + "..." if len(full_response) > 200 else full_response)
-                    #     logger.debug("LLM完整回复(恢复后)开始")
-                    #     logger.debug(final_restored_response[:200] + "..." if len(final_restored_response) > 200 else final_restored_response)
-                    # except Exception as _log_err:
-                    #     logger.warning(f"打印LLM最终回复失败: {_log_err}")
-                    
-                    # 检查是否有新的恢复内容
-                    if final_restored_response != full_response:
-                        # logger.debug(f"🎯 检测到完整恢复差异: {len(full_response)} → {len(final_restored_response)} 字符")
-                        
-                        # 发送特殊的更新指令，告知客户端用恢复后的完整内容替换之前的输出
-                        update_instruction = {
-                            "type": "content_update", 
-                            "content": final_restored_response,
-                            "reason": "脱敏信息恢复"
-                        }
-                        
-                        yield f"\n\n__UPDATE_CONTENT__:{json.dumps(update_instruction, ensure_ascii=False)}__END_UPDATE__\n"
-                        # logger.debug(f"✅ 完整内容恢复指令已发送")
-                    else:
-                        # logger.debug(f"💭 完整响应无需额外恢复")
-                        pass
+                # 原来的完整内容恢复逻辑已移到上面统一处理
                 
                 # 如果没有生成任何响应，提供回退响应
                 if not response_generated:
@@ -1199,6 +1144,8 @@ class EnhancedLLMProcessor:
         self.current_session_id = session_id  # 确保保存会话ID
         
         # logger.error(f"🆔 会话ID生成: {session_id}")
+        logger.info(f"🔄 恢复对话会话，会话ID: {session_id}")
+
         
         # 提取工具名称用于白名单检查
         tool_names = [tool_call.get("name", "") for tool_call in tool_calls]

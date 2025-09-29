@@ -154,30 +154,44 @@
               {{ chatStore.isConnected ? '已连接' : '未连接' }}
             </span>
             <span class="mcp-status" :class="{ enabled: mcpEnabled }">
-              🛠️ MCP {{ mcpEnabled ? '已启用' : '已禁用' }}
+              🛠️ MCP {{ enabledServersCount }}/{{ totalServersCount }} 已启用
             </span>
             <span class="shortcut-tip">Ctrl + Enter 发送</span>
           </div>
           <div class="action-buttons">
-            <!-- MCP工具开关 -->
+            <!-- MCP服务器开关 -->
             <div class="mcp-toggle">
-              <el-switch
-                v-model="mcpEnabled"
-                size="small"
-                active-text="MCP"
-                inactive-text="MCP"
-                :active-color="'#67C23A'"
-                :inactive-color="'#DCDFE6'"
-                @change="handleMcpToggle"
-              />
-              <el-tooltip 
-                content="开启后AI可调用K8s、SSH等运维工具" 
-                placement="top"
+              <el-popover
+                placement="top-end"
+                :width="320"
+                trigger="click"
+                :show-arrow="false"
               >
-                <el-icon class="mcp-info-icon">
-                  <InfoFilled />
-                </el-icon>
-              </el-tooltip>
+                <template #reference>
+                  <el-button 
+                    size="small"
+                    :type="mcpEnabled ? 'success' : 'info'"
+                    :icon="Setting"
+                  >
+                    MCP ({{ enabledServersCount }}/{{ totalServersCount }})
+                  </el-button>
+                </template>
+                
+                <div class="mcp-servers-panel">
+                  <div class="panel-header">
+                    <h4>MCP服务器控制</h4>
+                    <span class="panel-subtitle">选择要启用的MCP服务器</span>
+                  </div>
+                  
+                  <MCPServerSwitches 
+                    ref="mcpServerSwitches"
+                    :auto-load="true"
+                    :show-global-controls="true"
+                    @servers-changed="handleServersChanged"
+                    @server-toggled="handleServerToggled"
+                  />
+                </div>
+              </el-popover>
             </div>
             <el-button 
               @click="clearChat" 
@@ -215,6 +229,7 @@ import { useChatStore } from '@/stores/chat'
 import { api } from '@/api/client'
 import { formatMessageContent } from '@/utils/markdown'
 import { loadKatex } from '@/utils/katex'
+import MCPServerSwitches from './MCPServerSwitches.vue'
 
 // Props
 const props = defineProps({
@@ -235,8 +250,11 @@ const inputMessage = ref('')
 const messagesContainer = ref(null)
 const showTypingCursor = ref(true)
 const reconnecting = ref(false)
-// 添加MCP开关状态
-const mcpEnabled = ref(props.enableTools)
+// MCP服务器状态
+const mcpServerSwitches = ref(null)
+const enabledServersCount = ref(0)
+const totalServersCount = ref(0)
+const mcpEnabled = computed(() => enabledServersCount.value > 0)
 
 // 计算属性
 const inputRows = computed(() => {
@@ -766,12 +784,27 @@ const setInputMessage = (message) => {
   inputMessage.value = message
 }
 
-// MCP状态变化提示
-const handleMcpToggle = () => {
-  if (mcpEnabled.value) {
-    ElMessage.success('MCP工具已启用，AI可以调用K8s、SSH等运维工具')
+// MCP服务器状态变化处理
+const handleServersChanged = (data) => {
+  enabledServersCount.value = data.total_enabled
+  totalServersCount.value = data.servers.length
+  
+  if (data.total_enabled > 0) {
+    const serverNames = data.servers
+      .filter(s => s.enabled)
+      .map(s => s.display_name)
+      .join('、')
+    ElMessage.success(`已启用 ${data.total_enabled} 个MCP服务器: ${serverNames}`)
   } else {
-    ElMessage.info('MCP工具已禁用，AI将仅提供文本回复')
+    ElMessage.info('所有MCP服务器已禁用，AI将仅提供文本回复')
+  }
+}
+
+const handleServerToggled = (data) => {
+  if (data.enabled) {
+    ElMessage.success(`${data.server_info.display_name} 服务器已启用`)
+  } else {
+    ElMessage.info(`${data.server_info.display_name} 服务器已禁用`)
   }
 }
 
@@ -1177,6 +1210,28 @@ watch(() => chatStore.currentStreamMessage?.content, () => {
   color: var(--text-secondary);
   cursor: help;
   transition: color 0.3s ease;
+}
+
+.mcp-servers-panel {
+  padding: 0;
+}
+
+.panel-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--el-border-color-light);
+  margin-bottom: 12px;
+}
+
+.panel-header h4 {
+  margin: 0 0 4px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+.panel-subtitle {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 
 .mcp-info-icon:hover {

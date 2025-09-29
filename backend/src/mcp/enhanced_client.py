@@ -1003,7 +1003,14 @@ class EnhancedMCPClient:
         self.tools.clear()
         
         for connection in self.connections.values():
+            # 检查连接状态和服务器启用状态
             if connection.status == MCPConnectionStatus.CONNECTED:
+                # 检查服务器是否启用
+                server_config = self.config_manager.get_server_by_name(connection.config.name)
+                if not server_config or not server_config.enabled:
+                    logger.debug(f"⚠️ 服务器已禁用，跳过工具收集: {connection.config.name}")
+                    continue
+                
                 for tool_name, tool in connection.tools.items():
                     # 检查工具配置
                     tool_config = self.config_manager.get_tool_by_name(tool_name)

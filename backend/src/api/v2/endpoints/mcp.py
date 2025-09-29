@@ -5,10 +5,12 @@ MCP配置管理API端点
 from typing import Dict, List, Any, Optional
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
+from loguru import logger
 
 from ....mcp.config_manager import MCPConfigManager
 from ....mcp.enhanced_client import EnhancedMCPClient
 from ....mcp.config import get_config_manager
+from ....mcp.types import MCPConnectionStatus
 
 
 router = APIRouter(prefix="/mcp", tags=["MCP配置"])
@@ -128,6 +130,91 @@ async def validate_mcp_config(
         raise HTTPException(status_code=500, detail=f"验证MCP配置失败: {str(e)}")
 
 
+@router.get("/servers/status")
+async def get_servers_status():
+    """获取所有MCP服务器的详细状态（用于前端开关显示）"""
+    try:
+        config_manager = get_config_manager()
+        servers = config_manager.get_all_servers()
+        
+        # 获取全局MCP客户端实例
+        from main import mcp_client
+        
+        servers_status = []
+        for server in servers:
+            # 检查连接状态
+            is_connected = False
+            tools_count = 0
+            
+            if hasattr(mcp_client, 'connections'):
+                connection = mcp_client.connections.get(server.name)
+                is_connected = connection and connection.status == MCPConnectionStatus.CONNECTED
+                # 计算该服务器的工具数量
+                tools_count = 0
+                if connection and hasattr(connection, 'tools'):
+                    tools_count = len(connection.tools)
+            
+            servers_status.append({
+                "name": server.name,
+                "display_name": server.name,  # 使用name作为显示名称
+                "enabled": server.enabled,
+                "connected": is_connected,
+                "type": server.type,
+                "tools_count": tools_count,
+                "host": getattr(server, 'host', None),
+                "port": getattr(server, 'port', None)
+            })
+        
+        return {
+            "servers": servers_status,
+            "total_enabled": len([s for s in servers_status if s["enabled"]]),
+            "total_connected": len([s for s in servers_status if s["connected"]])
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取服务器状态失败: {str(e)}")
+
+
+@router.post("/servers/batch-toggle")
+async def batch_toggle_servers(
+    request: dict,
+    config_manager: MCPConfigManager = Depends(get_config_manager_dep)
+):
+    """批量切换服务器状态"""
+    try:
+        server_states = request.get("servers", {})
+        results = []
+        
+        for server_name, enabled in server_states.items():
+            server = config_manager.get_server_by_name(server_name)
+            if server:
+                server.enabled = enabled
+                results.append({
+                    "server": server_name,
+                    "enabled": enabled,
+                    "success": True
+                })
+            else:
+                results.append({
+                    "server": server_name,
+                    "enabled": enabled,
+                    "success": False,
+                    "error": "服务器不存在"
+                })
+        
+        config_manager.save_config()
+        
+        return {
+            "message": "批量更新完成",
+            "results": results,
+            "success_count": len([r for r in results if r["success"]]),
+            "total_count": len(results)
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"批量切换失败: {str(e)}")
+
+
 @router.get("/servers", response_model=List[Dict[str, Any]])
 async def get_mcp_servers(
     config_manager: MCPConfigManager = Depends(get_config_manager_dep)
@@ -225,7 +312,7 @@ async def get_mcp_status():
     """获取MCP客户端状态"""
     try:
         # 获取全局MCP客户端实例
-        from ....main import mcp_client
+        from main import mcp_client
         
         if hasattr(mcp_client, 'health_check'):
             # 增强客户端
@@ -244,6 +331,8 @@ async def get_mcp_status():
             )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取MCP状态失败: {str(e)}")
+
+
 
 
 @router.post("/tools/{tool_name}/enable")
@@ -328,6 +417,45 @@ async def disable_mcp_server(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"禁用服务器失败: {str(e)}")
+
+
+@router.post("/config/servers/{server_name}/toggle")
+async def toggle_mcp_server(
+    server_name: str,
+    config_manager: MCPConfigManager = Depends(get_config_manager_dep)
+):
+    """切换MCP服务器状态（启用/禁用）"""
+    try:
+        server = config_manager.get_server_by_name(server_name)
+        if not server:
+            raise HTTPException(status_code=404, detail=f"服务器 {server_name} 不存在")
+        
+        # 切换状态
+        old_enabled = server.enabled
+        server.enabled = not server.enabled
+        config_manager.save_config()
+        
+        # 通知MCP客户端重新收集工具
+        try:
+            from main import mcp_client
+            if hasattr(mcp_client, 'connections'):
+                if server.enabled and not old_enabled:
+                    # 服务器被启用，重新收集工具
+                    logger.info(f"服务器 {server_name} 被启用，重新收集工具...")
+                    mcp_client._collect_tools()
+                elif not server.enabled and old_enabled:
+                    # 服务器被禁用，重新收集工具（会跳过已禁用的服务器）
+                    logger.info(f"服务器 {server_name} 被禁用，重新收集工具...")
+                    mcp_client._collect_tools()
+        except Exception as reconnect_error:
+            logger.warning(f"重新收集MCP工具时出错: {reconnect_error}")
+        
+        status = "启用" if server.enabled else "禁用"
+        return {"message": f"服务器 {server_name} 已{status}"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"切换服务器状态失败: {str(e)}")
 
 
 @router.get("/categories")

@@ -774,6 +774,51 @@ class MCPConfigManager:
                 return tool
         return None
     
+    def get_server_by_name(self, server_name: str) -> Optional[MCPServerConfig]:
+        """根据名称获取服务器配置"""
+        if not self.current_config:
+            return None
+        
+        for server in self.current_config.servers:
+            if server.name == server_name:
+                return server
+        return None
+    
+    def get_all_servers(self) -> List[MCPServerConfig]:
+        """获取所有服务器配置"""
+        if not self.current_config:
+            return []
+        return self.current_config.servers
+    
+    def toggle_server(self, server_name: str) -> bool:
+        """切换服务器启用状态"""
+        server = self.get_server_by_name(server_name)
+        if server:
+            server.enabled = not server.enabled
+            self.save_config()
+            return True
+        return False
+    
+    def save_config(self):
+        """保存配置到文件"""
+        if not self.current_config or not self.config_file:
+            logger.warning("无法保存配置：配置或文件路径为空")
+            return
+        
+        try:
+            # 转换为字典格式
+            config_dict = self.current_config.model_dump()
+            
+            # 写入文件
+            with open(self.config_file, 'w', encoding='utf-8') as f:
+                json.dump(config_dict, f, ensure_ascii=False, indent=2)
+            
+            logger.info(f"✅ MCP配置已保存: {self.config_file}")
+            
+        except Exception as e:
+            logger.error(f"保存MCP配置失败: {e}")
+            raise
+    
     def get_server_for_tool(self, tool_name: str) -> Optional[MCPServerConfig]:
         """获取工具所属的服务器配置"""
         if not self.current_config:

@@ -145,7 +145,9 @@ async def initialize_services():
     try:
         # 1. 初始化增强MCP客户端
         logger.info("初始化增强MCP客户端...")
-        mcp_client = EnhancedMCPClient()
+        from backend.src.mcp.config import get_config_manager
+        mcp_config_manager = get_config_manager()
+        mcp_client = EnhancedMCPClient(config_manager=mcp_config_manager)
         await mcp_client.connect()
         logger.info("✅ 增强MCP客户端初始化成功")
 
@@ -153,7 +155,14 @@ async def initialize_services():
         logger.info("正在初始化简化LLM处理器...")
         
         # 直接从环境变量获取简单配置
-        llm_config_dict = await config_manager.get_current_llm_config()
+        llm_config_dict = {
+            "provider": os.getenv("LLM_PROVIDER", "openai"),
+            "model": os.getenv("LLM_MODEL", "gpt-4"),
+            "api_key": os.getenv("LLM_API_KEY", ""),
+            "base_url": os.getenv("LLM_BASE_URL"),
+            "temperature": float(os.getenv("LLM_TEMPERATURE", "0.7")),
+            "max_tokens": int(os.getenv("LLM_MAX_TOKENS", "4000"))
+        }
         
         logger.info(f"✅ LLM配置加载成功：{llm_config_dict.get('provider', 'unknown')} - {llm_config_dict.get('model', 'unknown')}")
         

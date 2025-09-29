@@ -49,7 +49,7 @@ class EcsInspectionTool(MCPToolBase):
                     "status": {"type": "string", "description": "实例状态过滤，如 Running/Stopped"},
                     "name_contains": {"type": "string", "description": "实例名包含关键字"},
                     "zone_id": {"type": "string", "description": "可用区过滤"},
-                    "max_instances": {"type": "integer", "default": 200, "description": "最大实例数（防止过大扫描）"},
+                    "max_instances": {"type": "integer", "default": 1000, "description": "最大实例数（防止过大扫描）"},
                     "page_size": {"type": "integer", "default": 100, "description": "分页大小（最大100）"},
                     "scan_all_pages": {"type": "boolean", "default": True, "description": "是否遍历所有页直到达到max_instances或无更多数据"},
                     "max_concurrency": {"type": "integer", "default": 5, "description": "监控抓取并发度"},
