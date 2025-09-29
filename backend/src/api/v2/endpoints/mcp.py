@@ -130,6 +130,51 @@ async def validate_mcp_config(
         raise HTTPException(status_code=500, detail=f"验证MCP配置失败: {str(e)}")
 
 
+@router.get("/runtime/servers")
+async def get_runtime_servers():
+    """获取运行时MCP服务器状态（兼容性端点）"""
+    try:
+        config_manager = get_config_manager()
+        servers = config_manager.get_all_servers()
+        
+        # 获取全局MCP客户端实例
+        from main import mcp_client
+        
+        servers_status = []
+        for server in servers:
+            # 检查连接状态
+            is_connected = False
+            tools_count = 0
+            
+            if hasattr(mcp_client, 'connections'):
+                connection = mcp_client.connections.get(server.name)
+                is_connected = connection and connection.status == MCPConnectionStatus.CONNECTED
+                # 计算该服务器的工具数量
+                tools_count = 0
+                if connection and hasattr(connection, 'tools'):
+                    tools_count = len(connection.tools)
+            
+            servers_status.append({
+                "name": server.name,
+                "display_name": server.name,  # 使用name作为显示名称
+                "enabled": server.enabled,
+                "connected": is_connected,
+                "type": server.type,
+                "tools_count": tools_count,
+                "host": getattr(server, 'host', None),
+                "port": getattr(server, 'port', None)
+            })
+        
+        return {
+            "servers": servers_status,
+            "total_enabled": len([s for s in servers_status if s["enabled"]]),
+            "total_connected": len([s for s in servers_status if s["connected"]])
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取运行时服务器状态失败: {str(e)}")
+
+
 @router.get("/servers/status")
 async def get_servers_status():
     """获取所有MCP服务器的详细状态（用于前端开关显示）"""
