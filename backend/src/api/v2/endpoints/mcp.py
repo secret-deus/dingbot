@@ -464,6 +464,80 @@ async def disable_mcp_server(
         raise HTTPException(status_code=500, detail=f"禁用服务器失败: {str(e)}")
 
 
+@router.post("/servers/{server_name}/connect")
+async def connect_mcp_server(server_name: str):
+    """连接MCP服务器"""
+    try:
+        from main import mcp_client
+        
+        if not mcp_client:
+            raise HTTPException(status_code=500, detail="MCP客户端未初始化")
+        
+        # 检查服务器是否存在
+        config_manager = get_config_manager()
+        server = config_manager.get_server_by_name(server_name)
+        if not server:
+            raise HTTPException(status_code=404, detail=f"服务器 {server_name} 不存在")
+        
+        # 尝试连接服务器
+        success = await mcp_client.connect_server(server_name)
+        
+        if success:
+            return {"message": f"服务器 {server_name} 连接成功", "connected": True}
+        else:
+            raise HTTPException(status_code=500, detail=f"服务器 {server_name} 连接失败")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"连接服务器失败: {str(e)}")
+
+
+@router.post("/servers/{server_name}/disconnect")
+async def disconnect_mcp_server(server_name: str):
+    """断开MCP服务器连接"""
+    try:
+        from main import mcp_client
+        
+        if not mcp_client:
+            raise HTTPException(status_code=500, detail="MCP客户端未初始化")
+        
+        # 断开服务器连接
+        success = await mcp_client.disconnect_server(server_name)
+        
+        if success:
+            return {"message": f"服务器 {server_name} 已断开连接", "connected": False}
+        else:
+            return {"message": f"服务器 {server_name} 断开连接失败", "connected": None}
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"断开连接失败: {str(e)}")
+
+
+@router.post("/servers/{server_name}/reconnect")
+async def reconnect_mcp_server(server_name: str):
+    """重新连接MCP服务器"""
+    try:
+        from main import mcp_client
+        
+        if not mcp_client:
+            raise HTTPException(status_code=500, detail="MCP客户端未初始化")
+        
+        # 先断开再连接
+        await mcp_client.disconnect_server(server_name)
+        success = await mcp_client.connect_server(server_name)
+        
+        if success:
+            return {"message": f"服务器 {server_name} 重连成功", "connected": True}
+        else:
+            raise HTTPException(status_code=500, detail=f"服务器 {server_name} 重连失败")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"重连服务器失败: {str(e)}")
+
+
 @router.post("/config/servers/{server_name}/toggle")
 async def toggle_mcp_server(
     server_name: str,
@@ -480,20 +554,28 @@ async def toggle_mcp_server(
         server.enabled = not server.enabled
         config_manager.save_config()
         
-        # 通知MCP客户端重新收集工具
+        # 自动连接/断开服务器
         try:
             from main import mcp_client
-            if hasattr(mcp_client, 'connections'):
+            if mcp_client:
                 if server.enabled and not old_enabled:
-                    # 服务器被启用，重新收集工具
-                    logger.info(f"服务器 {server_name} 被启用，重新收集工具...")
-                    mcp_client._collect_tools()
+                    # 服务器被启用，自动连接
+                    logger.info(f"服务器 {server_name} 被启用，正在自动连接...")
+                    connect_success = await mcp_client.connect_server(server_name)
+                    if connect_success:
+                        logger.info(f"✅ 服务器 {server_name} 自动连接成功")
+                    else:
+                        logger.warning(f"⚠️ 服务器 {server_name} 自动连接失败")
                 elif not server.enabled and old_enabled:
-                    # 服务器被禁用，重新收集工具（会跳过已禁用的服务器）
-                    logger.info(f"服务器 {server_name} 被禁用，重新收集工具...")
-                    mcp_client._collect_tools()
-        except Exception as reconnect_error:
-            logger.warning(f"重新收集MCP工具时出错: {reconnect_error}")
+                    # 服务器被禁用，自动断开
+                    logger.info(f"服务器 {server_name} 被禁用，正在自动断开...")
+                    disconnect_success = await mcp_client.disconnect_server(server_name)
+                    if disconnect_success:
+                        logger.info(f"✅ 服务器 {server_name} 自动断开成功")
+                    else:
+                        logger.warning(f"⚠️ 服务器 {server_name} 自动断开失败")
+        except Exception as auto_connect_error:
+            logger.warning(f"自动连接/断开服务器时出错: {auto_connect_error}")
         
         status = "启用" if server.enabled else "禁用"
         return {"message": f"服务器 {server_name} 已{status}"}

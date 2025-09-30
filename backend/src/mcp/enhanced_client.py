@@ -1160,6 +1160,94 @@ class EnhancedMCPClient:
         self.stats = MCPStats()
         self.stats.active_tools = len(self.tools)
     
+    async def connect_server(self, server_name: str) -> bool:
+        """连接指定的MCP服务器"""
+        try:
+            # 检查服务器是否已连接
+            if server_name in self.connections:
+                connection = self.connections[server_name]
+                if connection.status == MCPConnectionStatus.CONNECTED:
+                    logger.info(f"服务器 {server_name} 已经连接")
+                    return True
+            
+            # 获取服务器配置
+            config_manager = get_config_manager()
+            server_config = config_manager.get_server_by_name(server_name)
+            
+            if not server_config:
+                logger.error(f"服务器配置不存在: {server_name}")
+                return False
+            
+            if not server_config.enabled:
+                logger.error(f"服务器未启用: {server_name}")
+                return False
+            
+            # 创建连接
+            connection = MCPServerConnection(server_config)
+            connection.set_config_manager(config_manager)
+            
+            # 尝试连接
+            success = await connection.connect()
+            if success:
+                self.connections[server_name] = connection
+                
+                # 发现工具
+                await self._discover_tools_for_server(server_name, connection)
+                
+                logger.info(f"✅ 服务器 {server_name} 连接成功")
+                return True
+            else:
+                logger.error(f"❌ 服务器 {server_name} 连接失败")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ 连接服务器 {server_name} 时发生错误: {e}")
+            return False
+    
+    async def disconnect_server(self, server_name: str) -> bool:
+        """断开指定的MCP服务器连接"""
+        try:
+            if server_name not in self.connections:
+                logger.warning(f"服务器 {server_name} 未连接")
+                return True
+            
+            connection = self.connections[server_name]
+            
+            # 断开连接
+            await connection.disconnect()
+            
+            # 移除连接和工具
+            del self.connections[server_name]
+            
+            # 移除该服务器的工具
+            tools_to_remove = [name for name, tool in self.tools.items() 
+                             if getattr(tool, 'server_name', None) == server_name]
+            for tool_name in tools_to_remove:
+                del self.tools[tool_name]
+            
+            logger.info(f"✅ 服务器 {server_name} 已断开连接")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ 断开服务器 {server_name} 时发生错误: {e}")
+            return False
+    
+    async def _discover_tools_for_server(self, server_name: str, connection: 'MCPServerConnection'):
+        """为指定服务器发现工具"""
+        try:
+            # 发现工具
+            tools = await connection.discover_tools()
+            
+            # 添加到工具集合
+            for tool in tools:
+                tool.server_name = server_name
+                self.tools[tool.name] = tool
+            
+            logger.info(f"🔍 服务器 {server_name} 发现 {len(tools)} 个工具")
+            
+        except Exception as e:
+            logger.error(f"❌ 服务器 {server_name} 工具发现失败: {e}")
+
     async def disconnect(self) -> None:
         """断开所有连接"""
         disconnect_tasks = []

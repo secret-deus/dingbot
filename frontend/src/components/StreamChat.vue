@@ -227,6 +227,7 @@ import {
 } from '@element-plus/icons-vue'
 import { useChatStore } from '@/stores/chat'
 import { api } from '@/api/client'
+import axios from 'axios'
 import { formatMessageContent } from '@/utils/markdown'
 import { loadKatex } from '@/utils/katex'
 import MCPServerSwitches from './MCPServerSwitches.vue'
@@ -800,11 +801,40 @@ const handleServersChanged = (data) => {
   }
 }
 
-const handleServerToggled = (data) => {
-  if (data.enabled) {
-    ElMessage.success(`${data.server_info.display_name} 服务器已启用`)
+const handleServerToggled = async (data) => {
+  // 如果需要刷新工具列表
+  if (data.should_refresh_tools) {
+    console.log('🔄 MCP服务器状态变更，正在刷新工具列表...')
+    
+    try {
+      // 获取最新的工具列表
+      const response = await axios.get('/api/v2/tools')
+      const toolsCount = response.data.tools ? response.data.tools.length : 0
+      
+      console.log(`🛠️ 工具列表已更新，当前可用工具: ${toolsCount} 个`)
+      
+      // 显示更详细的状态信息
+      if (data.enabled) {
+        ElMessage.success(`${data.server_info.display_name} 已启用并连接，当前可用工具: ${toolsCount} 个`)
+      } else {
+        ElMessage.info(`${data.server_info.display_name} 已禁用并断开，当前可用工具: ${toolsCount} 个`)
+      }
+    } catch (error) {
+      console.error('刷新工具列表失败:', error)
+      // 降级显示基本信息
+      if (data.enabled) {
+        ElMessage.success(`${data.server_info.display_name} 服务器已启用`)
+      } else {
+        ElMessage.info(`${data.server_info.display_name} 服务器已禁用`)
+      }
+    }
   } else {
-    ElMessage.info(`${data.server_info.display_name} 服务器已禁用`)
+    // 没有要求刷新工具列表，显示基本信息
+    if (data.enabled) {
+      ElMessage.success(`${data.server_info.display_name} 服务器已启用`)
+    } else {
+      ElMessage.info(`${data.server_info.display_name} 服务器已禁用`)
+    }
   }
 }
 
@@ -846,6 +876,7 @@ const startTypingCursor = () => {
     showTypingCursor.value = !showTypingCursor.value
   }, 500)
 }
+
 
 // 生命周期
 onMounted(() => {
