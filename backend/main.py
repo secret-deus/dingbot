@@ -145,9 +145,17 @@ async def initialize_services():
     try:
         # 1. 初始化增强MCP客户端
         logger.info("初始化增强MCP客户端...")
-        from backend.src.mcp.config import get_config_manager
+        from src.mcp.config import get_config_manager  # 修正import路径
         mcp_config_manager = get_config_manager()
+        logger.info(f"🔍 配置管理器类型: {type(mcp_config_manager)}")
+        logger.info(f"🔍 current_config: {mcp_config_manager.current_config}")
+        if mcp_config_manager.current_config:
+            logger.info(f"🔍 current_config.servers: {len(mcp_config_manager.current_config.servers)} 个服务器")
+            for s in mcp_config_manager.current_config.servers:
+                logger.info(f"🔍   - {s.name}: enabled={s.enabled}, type={s.type}")
+        logger.info(f"🔍 启用的服务器数量: {len(mcp_config_manager.get_enabled_servers())}")
         mcp_client = EnhancedMCPClient(config_manager=mcp_config_manager)
+        logger.info(f"🔍 MCP客户端类型: {type(mcp_client)}")
         await mcp_client.connect()
         logger.info("✅ 增强MCP客户端初始化成功")
 

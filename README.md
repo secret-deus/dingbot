@@ -84,11 +84,11 @@ DINGTALK_SECRET=your_secret
 ```bash
 # 启动K8s MCP服务器
 cd k8s-mcp
-poetry run python -m k8s_mcp.server
+poetry run python start_k8s_mcp_http_server.py
 
-# SSH-Jumpserver MCP (开发中，暂不可用)
-# cd ssh-jumpserver-mcp
-# poetry run python -m ssh_jumpserver_mcp.server
+# 启动ECS MCP服务器
+cd ecs-mcp
+poetry run python start_ecs_mcp_http_server.py
 ```
 
 ### 4. 启动主服务
@@ -130,12 +130,14 @@ poetry run build && poetry run serve
 - **监控告警**: Prometheus指标分析、资源利用率监控
 - **运维操作**: 扩缩容、日志查看、事件监控
 
-详细工具列表请查看：**[K8s MCP服务器文档](./k8s-mcp/README.md)**
+详细工具列表请查看：
+- **[K8s MCP服务器文档](./k8s-mcp/README.md)**
+- **[ECS MCP服务器文档](./ecs-mcp/README.md)**
 
-### SSH工具集 (开发中)
-- `ssh-execute` - 远程命令执行
-- `ssh-asset-list` - 服务器资产管理  
-- `ssh-session-manager` - SSH会话管理
+### ECS工具集 (已完成)
+- `ecs-describe-instance-monitor-data` - ECS实例监控数据查询
+- `ecs-inspection-report` - 单实例巡检报告生成
+- `ecs-inspection-batch` - 批量实例巡检
 
 ## ⚡ 可用命令
 
@@ -187,7 +189,7 @@ poetry run build && poetry run serve
 - 📱 **移动端适配** - 响应式设计优化
 
 ### 未来功能
-- 🔧 **SSH-Jumpserver MCP** - 企业级SSH运维工具集
+- 🔧 **RDS数据库监控** - 云数据库运维监控工具
 - 🤖 **更多AI工具集成** - 扩展AI能力
 - 📊 **可视化运维面板** - 图形化运维界面
 

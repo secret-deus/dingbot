@@ -144,6 +144,11 @@ class MCPConfigManager:
             if os.path.exists(self.config_file):
                 with open(self.config_file, 'r', encoding='utf-8') as f:
                     config_data = json.load(f)
+                    # 调试：检查原始JSON数据中的 enabled 字段
+                    if 'servers' in config_data:
+                        logger.info(f"🔍 原始JSON中的服务器数量: {len(config_data['servers'])}")
+                        for srv_data in config_data['servers'][:2]:
+                            logger.info(f"🔍   原始JSON - {srv_data.get('name')}: enabled={srv_data.get('enabled')}")
                     self.current_config = MCPConfiguration(**config_data)
                 logger.info(f"✅ MCP配置加载成功: {self.config_file}")
             else:

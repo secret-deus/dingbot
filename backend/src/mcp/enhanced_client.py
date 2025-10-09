@@ -44,6 +44,9 @@ class MCPServerConnection:
         
         # 添加配置管理器引用，用于自动同步
         self.config_manager = None
+        
+        # SSE连接状态标记
+        self.sse_connected = False
     
     def set_config_manager(self, config_manager):
         """设置配置管理器，用于自动同步"""
@@ -116,12 +119,34 @@ class MCPServerConnection:
         if not self.session:
             self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=self.config.timeout))
         
+        # 添加连接状态标记
+        self.sse_connected = False
+        
         # 启动SSE事件监听任务
         self.sse_task = asyncio.create_task(self._sse_event_listener(uri))
         
-        # 等待连接建立
-        await asyncio.sleep(1)
-        logger.info(f"SSE连接已建立: {uri}")
+        # 等待SSE真正连接建立(最多等待5秒)
+        max_wait = 5.0
+        waited = 0.0
+        interval = 0.1
+        
+        while waited < max_wait:
+            if self.sse_connected:
+                logger.info(f"SSE连接已建立: {uri}")
+                return
+            
+            # 检查任务是否已经失败
+            if self.sse_task.done():
+                try:
+                    self.sse_task.result()  # 这会抛出异常如果任务失败了
+                except Exception as e:
+                    raise MCPException("SSE_CONNECTION_FAILED", f"SSE连接失败: {e}")
+            
+            await asyncio.sleep(interval)
+            waited += interval
+        
+        # 如果5秒后还没连上,记录警告但继续(可能网络慢)
+        logger.warning(f"⚠️ SSE连接建立超时(已等待{max_wait}秒)，但任务仍在运行，将继续等待")
     
     async def _sse_event_listener(self, uri: str):
         """SSE事件监听器"""
@@ -152,6 +177,7 @@ class MCPServerConnection:
                     
                     logger.info("SSE事件流连接成功，开始监听事件")
                     retry_count = 0  # 重置重试计数器
+                    self.sse_connected = True  # 标记连接已建立
                     
                     # 检查是否有活跃的工具调用
                     if self.active_tool_calls:
@@ -715,7 +741,14 @@ class MCPServerConnection:
             "arguments": parameters
         }
         
+        # 调试日志：检查参数类型
         logger.info(f"发送SSE工具调用请求: {name}, ID: {request_id}")
+        logger.info(f"🔍 参数类型检查: type={type(parameters)}, value={parameters}")
+        
+        # 参数类型验证
+        if not isinstance(parameters, dict):
+            logger.error(f"❌ 参数类型错误！期望dict，实际{type(parameters)}")
+            raise MCPException("INVALID_PARAMETERS", f"参数必须是字典类型，当前是{type(parameters)}")
         
         # 记录活跃的工具调用
         self.active_tool_calls[request_id] = {
@@ -1044,6 +1077,12 @@ class EnhancedMCPClient:
         context: Optional[Dict[str, Any]] = None
     ) -> Any:
         """调用工具"""
+        # 入口参数类型检查
+        logger.info(f"📥 call_tool 入口 - 工具={name}, 参数类型={type(parameters)}, 参数值={parameters}")
+        if not isinstance(parameters, dict):
+            logger.error(f"❌ call_tool 入口参数类型错误！期望dict，实际{type(parameters)}")
+            raise MCPException("INVALID_PARAMETERS", f"参数必须是字典类型，当前是{type(parameters)}")
+        
         if name not in self.tools:
             raise MCPException("TOOL_NOT_FOUND", f"工具不存在: {name}")
         
