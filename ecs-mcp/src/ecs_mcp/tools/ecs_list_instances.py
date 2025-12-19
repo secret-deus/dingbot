@@ -48,8 +48,11 @@ class EcsListInstancesTool(MCPToolBase):
         try:
             region_id = arguments.get("region_id") or self.config.region_id
             status = arguments.get("status")
-            page_number = int(arguments.get("page_number", 1))
-            page_size = int(arguments.get("page_size", 50))
+            # 安全处理可能为 None/null 的整数参数
+            page_number_val = arguments.get("page_number")
+            page_number = int(page_number_val) if page_number_val is not None else 1
+            page_size_val = arguments.get("page_size")
+            page_size = int(page_size_val) if page_size_val is not None else 50
 
             if not self.config.access_key_id or not self.config.access_key_secret:
                 return MCPCallToolResult.error("未配置阿里云AK/SK，请设置环境变量 ALIBABA_CLOUD_ACCESS_KEY_ID/SECRET")

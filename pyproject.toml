@@ -56,6 +56,7 @@ build = "scripts.build:build_frontend"
 # 生产环境脚本
 serve = "scripts.serve:main"
 start = "scripts.serve:run_production"
+start-all = "scripts.start_all:main"
 
 # 工具脚本
 setup = "scripts.setup:main"

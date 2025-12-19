@@ -1035,15 +1035,24 @@ class EnhancedMCPClient:
         """收集所有连接的工具"""
         self.tools.clear()
         
+        total_servers = len(self.connections)
+        connected_servers = 0
+        tools_by_server = {}
+        
         for connection in self.connections.values():
+            server_name = connection.config.name
+            
             # 检查连接状态和服务器启用状态
             if connection.status == MCPConnectionStatus.CONNECTED:
+                connected_servers += 1
+                
                 # 检查服务器是否启用
-                server_config = self.config_manager.get_server_by_name(connection.config.name)
+                server_config = self.config_manager.get_server_by_name(server_name)
                 if not server_config or not server_config.enabled:
-                    logger.debug(f"⚠️ 服务器已禁用，跳过工具收集: {connection.config.name}")
+                    logger.debug(f"⚠️ 服务器已禁用，跳过工具收集: {server_name}")
                     continue
                 
+                server_tools = []
                 for tool_name, tool in connection.tools.items():
                     # 检查工具配置
                     tool_config = self.config_manager.get_tool_by_name(tool_name)
@@ -1051,16 +1060,32 @@ class EnhancedMCPClient:
                         # 如果有配置，检查是否启用
                         if tool_config.enabled:
                             self.tools[tool_name] = tool
-                            logger.debug(f"✅ 工具已启用并加载: {tool_name}")
+                            server_tools.append(tool_name)
+                            logger.debug(f"✅ 工具已启用并加载: {tool_name} (来自 {server_name})")
                         else:
-                            logger.debug(f"⚠️ 工具已禁用，跳过: {tool_name}")
+                            logger.debug(f"⚠️ 工具已禁用，跳过: {tool_name} (来自 {server_name})")
                     else:
                         # 如果没有配置，默认加载工具（向后兼容）
                         self.tools[tool_name] = tool
-                        logger.debug(f"📦 工具无配置，默认加载: {tool_name}")
+                        server_tools.append(tool_name)
+                        logger.debug(f"📦 工具无配置，默认加载: {tool_name} (来自 {server_name})")
+                
+                tools_by_server[server_name] = len(server_tools)
+            else:
+                logger.debug(f"⚠️ 服务器未连接，跳过工具收集: {server_name} (状态: {connection.status.name})")
         
         self.stats.active_tools = len(self.tools)
-        logger.info(f"收集到 {len(self.tools)} 个可用工具")
+        
+        # 详细日志输出
+        logger.info(f"📊 工具收集完成: 总服务器数={total_servers}, 已连接={connected_servers}, 可用工具数={len(self.tools)}")
+        for server_name, tool_count in tools_by_server.items():
+            logger.info(f"   - {server_name}: {tool_count} 个工具")
+        
+        if len(self.tools) == 0:
+            logger.warning(f"⚠️ 未收集到任何工具！请检查:")
+            logger.warning(f"   1. MCP服务器是否已正确连接")
+            logger.warning(f"   2. 服务器配置中enabled是否为true")
+            logger.warning(f"   3. 工具配置中enabled是否为true")
     
     async def list_tools(self) -> List[MCPTool]:
         """列出所有可用工具"""
@@ -1207,6 +1232,8 @@ class EnhancedMCPClient:
                 connection = self.connections[server_name]
                 if connection.status == MCPConnectionStatus.CONNECTED:
                     logger.info(f"服务器 {server_name} 已经连接")
+                    # 即使已连接，也重新收集工具以确保工具列表是最新的
+                    self._collect_tools()
                     return True
             
             # 获取服务器配置
@@ -1233,7 +1260,10 @@ class EnhancedMCPClient:
                 # 发现工具
                 await self._discover_tools_for_server(server_name, connection)
                 
-                logger.info(f"✅ 服务器 {server_name} 连接成功")
+                # 重新收集所有工具，确保工具列表是最新的
+                self._collect_tools()
+                
+                logger.info(f"✅ 服务器 {server_name} 连接成功，当前共有 {len(self.tools)} 个可用工具")
                 return True
             else:
                 logger.error(f"❌ 服务器 {server_name} 连接失败")
@@ -1255,16 +1285,13 @@ class EnhancedMCPClient:
             # 断开连接
             await connection.disconnect()
             
-            # 移除连接和工具
+            # 移除连接
             del self.connections[server_name]
             
-            # 移除该服务器的工具
-            tools_to_remove = [name for name, tool in self.tools.items() 
-                             if getattr(tool, 'server_name', None) == server_name]
-            for tool_name in tools_to_remove:
-                del self.tools[tool_name]
+            # 重新收集工具，自动移除该服务器的工具
+            self._collect_tools()
             
-            logger.info(f"✅ 服务器 {server_name} 已断开连接")
+            logger.info(f"✅ 服务器 {server_name} 已断开连接，当前共有 {len(self.tools)} 个可用工具")
             return True
             
         except Exception as e:
@@ -1274,15 +1301,32 @@ class EnhancedMCPClient:
     async def _discover_tools_for_server(self, server_name: str, connection: 'MCPServerConnection'):
         """为指定服务器发现工具"""
         try:
-            # 发现工具
-            tools = await connection.discover_tools()
+            # 检查连接状态
+            if connection.status != MCPConnectionStatus.CONNECTED:
+                logger.warning(f"⚠️ 服务器 {server_name} 未连接，无法发现工具")
+                return
             
-            # 添加到工具集合
-            for tool in tools:
-                tool.server_name = server_name
-                self.tools[tool.name] = tool
+            # 工具已经在连接时通过_discover_tools()方法发现并存储在connection.tools中
+            # 这里只需要等待一下，确保工具已经发现（特别是SSE连接可能需要时间）
+            tools_count = len(connection.tools) if hasattr(connection, 'tools') else 0
             
-            logger.info(f"🔍 服务器 {server_name} 发现 {len(tools)} 个工具")
+            # 如果工具数量为0，等待一下（SSE连接可能需要时间接收工具列表）
+            if tools_count == 0:
+                logger.debug(f"⏳ 服务器 {server_name} 工具列表为空，等待工具发现...")
+                # 等待最多3秒让工具被发现
+                for _ in range(6):  # 6次 * 0.5秒 = 3秒
+                    await asyncio.sleep(0.5)
+                    tools_count = len(connection.tools) if hasattr(connection, 'tools') else 0
+                    if tools_count > 0:
+                        break
+            
+            if tools_count > 0:
+                logger.info(f"🔍 服务器 {server_name} 有 {tools_count} 个工具")
+            else:
+                logger.warning(f"⚠️ 服务器 {server_name} 工具列表为空，可能工具尚未发现或服务器未提供工具")
+            
+            # 工具会在_collect_tools中统一收集，这里只记录日志
+            logger.debug(f"📊 服务器 {server_name} 工具状态: 连接状态={connection.status.name}, 工具数={tools_count}")
             
         except Exception as e:
             logger.error(f"❌ 服务器 {server_name} 工具发现失败: {e}")

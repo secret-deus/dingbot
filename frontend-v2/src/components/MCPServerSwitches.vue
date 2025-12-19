@@ -483,6 +483,8 @@ onMounted(() => {
   border: 1px solid var(--el-border-color-light);
   border-radius: 6px;
   transition: all 0.2s;
+  gap: 8px; /* 添加间距，防止内容挤压 */
+  min-width: 0; /* 允许flex子元素收缩 */
 }
 
 .server-switch-item:hover {
@@ -506,6 +508,8 @@ onMounted(() => {
 
 .server-info {
   flex: 1;
+  min-width: 0; /* 允许flex子元素收缩 */
+  overflow: hidden; /* 防止内容溢出 */
 }
 
 .server-name {
@@ -546,16 +550,23 @@ onMounted(() => {
   flex-direction: column;
   align-items: flex-end;
   gap: 8px;
+  min-width: 0; /* 允许flex子元素收缩 */
+  flex-shrink: 1; /* 允许收缩 */
 }
 
 .connection-controls {
   display: flex;
   gap: 4px;
+  flex-wrap: wrap; /* 允许按钮换行 */
+  justify-content: flex-end;
+  max-width: 100%; /* 限制最大宽度 */
 }
 
 .connection-controls .el-button {
   padding: 4px 8px;
   font-size: 12px;
+  flex-shrink: 1; /* 允许按钮收缩 */
+  white-space: nowrap; /* 防止按钮文字换行 */
 }
 
 .mcp-tooltip {

@@ -229,11 +229,53 @@ export function containsMarkdown(text) {
 }
 
 // 渲染完整markdown
+function unwrapPseudoMarkdownFences(text) {
+  if (!text || typeof text !== 'string') return text
+
+  const COMMON_LANGUAGES = [
+    'bash', 'sh', 'shell', 'zsh', 'powershell', 'ps', 'ps1',
+    'json', 'yaml', 'yml', 'toml', 'ini', 'xml', 'html',
+    'javascript', 'js', 'typescript', 'ts', 'jsx', 'tsx',
+    'python', 'py', 'go', 'golang', 'java', 'kotlin', 'swift',
+    'c', 'cpp', 'csharp', 'cs', 'php', 'ruby', 'rust', 'perl', 'lua',
+    'sql', 'dockerfile', 'makefile', 'gradle', 'groovy', 'proto'
+  ]
+
+  // 解包 ```markdown / ```md```
+  let normalized = text.replace(/```(?:markdown|md)[^\n]*\r?\n([\s\S]*?)\r?\n?```[ \t]*$/gim, (_match, body) => {
+    return String(body)
+      .replace(/^\s*\r?\n+/, '')
+      .replace(/\r?\n+\s*$/, '\n')
+  })
+
+  // 解包 ```text / ```plain / ```txt / ```plaintext```
+  normalized = normalized.replace(/```(?:text|plain|txt|plaintext)[^\n]*\r?\n([\s\S]*?)\r?\n?```[ \t]*$/gim, (match, body) => {
+    const content = String(body)
+      .replace(/^\s*\r?\n+/, '')
+      .replace(/\r?\n+\s*$/, '\n')
+    const looksMarkdown = /(^|\n)\s*(#{1,6}\s|[-*+]\s|\d+\.\s|\|.*\||>\s)/.test(content)
+    return looksMarkdown ? content : match
+  })
+
+  // 合并被拆开的语言标记：```\nlang\n -> ```lang\n
+  normalized = normalized.replace(/```[ \t]*\n([^\n\r]{1,30})\n/g, (match, langLine) => {
+    const candidate = langLine.trim()
+    if (!candidate || candidate.length > 30) return match
+    const normalizedLang = candidate.replace(/[^\w#+.-]/g, '')
+    if (!normalizedLang) return match
+    const lower = normalizedLang.toLowerCase()
+    if (!COMMON_LANGUAGES.includes(lower)) return match
+    return `\`\`\`${lower}\n`
+  })
+
+  return normalized
+}
+
 export function renderMarkdown(text) {
   if (!text || typeof text !== 'string') return ''
   try {
-    // 原样渲染：不进行任何预处理与修复，仅做代码块与表格样式增强
-    let html = marked.parse(text)
+    const normalized = unwrapPseudoMarkdownFences(text)
+    let html = marked.parse(normalized)
     html = enhanceCodeBlocks(html)
     html = enhanceClusterStatsHTML(html)
     return `<div class="markdown-content">${html}</div>`
@@ -247,8 +289,8 @@ export function renderMarkdown(text) {
 export function renderStreamingMarkdown(text) {
   if (!text || typeof text !== 'string') return ''
   try {
-    // 原样渲染（流式）：不做补齐/不改行，仅做代码块与表格样式增强
-    let html = marked.parse(text)
+    const normalized = unwrapPseudoMarkdownFences(text)
+    let html = marked.parse(normalized)
     html = enhanceCodeBlocks(html)
     html = enhanceClusterStatsHTML(html)
     return `<div class="markdown-content">${html}</div>`

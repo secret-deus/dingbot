@@ -464,14 +464,40 @@ async def disable_mcp_server(
         raise HTTPException(status_code=500, detail=f"禁用服务器失败: {str(e)}")
 
 
+def _get_or_create_mcp_client() -> EnhancedMCPClient:
+    """
+    获取全局MCP客户端实例。
+    - 若已在 main 中初始化，则直接复用
+    - 若尚未初始化（例如启动时所有服务器都禁用），则在这里按当前配置延迟创建
+    """
+    import main  # 延迟导入以避免循环依赖
+
+    client = getattr(main, "mcp_client", None)
+
+    if client is None:
+        logger.info("⚙️ 全局MCP客户端未初始化，正在进行延迟初始化...")
+        config_manager = get_config_manager()
+        enabled_servers = config_manager.get_enabled_servers()
+        if not enabled_servers:
+            # 没有任何启用的服务器，无需创建客户端
+            raise HTTPException(
+                status_code=400,
+                detail="当前没有启用的MCP服务器，请先在配置中启用后再连接"
+            )
+
+        client = EnhancedMCPClient(config_manager=config_manager)
+        # 挂载到 main 模块，后续请求可复用
+        main.mcp_client = client
+        logger.info("✅ 已通过延迟初始化创建全局MCP客户端")
+
+    return client
+
+
 @router.post("/servers/{server_name}/connect")
 async def connect_mcp_server(server_name: str):
     """连接MCP服务器"""
     try:
-        from main import mcp_client
-        
-        if not mcp_client:
-            raise HTTPException(status_code=500, detail="MCP客户端未初始化")
+        mcp_client = _get_or_create_mcp_client()
         
         # 检查服务器是否存在
         config_manager = get_config_manager()
@@ -497,10 +523,7 @@ async def connect_mcp_server(server_name: str):
 async def disconnect_mcp_server(server_name: str):
     """断开MCP服务器连接"""
     try:
-        from main import mcp_client
-        
-        if not mcp_client:
-            raise HTTPException(status_code=500, detail="MCP客户端未初始化")
+        mcp_client = _get_or_create_mcp_client()
         
         # 断开服务器连接
         success = await mcp_client.disconnect_server(server_name)
@@ -518,10 +541,7 @@ async def disconnect_mcp_server(server_name: str):
 async def reconnect_mcp_server(server_name: str):
     """重新连接MCP服务器"""
     try:
-        from main import mcp_client
-        
-        if not mcp_client:
-            raise HTTPException(status_code=500, detail="MCP客户端未初始化")
+        mcp_client = _get_or_create_mcp_client()
         
         # 先断开再连接
         await mcp_client.disconnect_server(server_name)

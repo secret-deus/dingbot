@@ -26,7 +26,7 @@ def build_frontend():
     print("🎨 构建前端项目...")
     
     project_root = Path(__file__).parent.parent
-    frontend_dir = project_root / "frontend"
+    frontend_dir = project_root / "frontend-v2"  # 修改为frontend-v2
     
     if not frontend_dir.exists():
         print(f"❌ 前端目录不存在: {frontend_dir}")
@@ -59,8 +59,8 @@ def clean():
         shutil.rmtree(static_dir)
         print(f"✅ 删除静态文件: {static_dir}")
     
-    # 清理前端构建产物
-    frontend_dir = project_root / "frontend"
+    # 清理前端构建产物 - 更新为frontend-v2
+    frontend_dir = project_root / "frontend-v2"
     dist_dir = frontend_dir / "dist"
     if dist_dir.exists():
         shutil.rmtree(dist_dir)
@@ -74,7 +74,7 @@ def main():
     
     # 获取项目根目录
     project_root = Path(__file__).parent.parent
-    frontend_dir = project_root / "frontend"
+    frontend_dir = project_root / "frontend-v2"  # 修改为frontend-v2
     backend_dir = project_root / "backend"
     static_dir = backend_dir / "static"
     

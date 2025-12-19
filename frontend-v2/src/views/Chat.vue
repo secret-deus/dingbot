@@ -1,84 +1,75 @@
 <template>
   <div class="chat-page">
-    <div class="chat-header">
-      <div class="header-left">
-        <el-button 
-          type="text" 
-          @click="toggleSidebar"
-          class="sidebar-toggle"
-        >
-          <el-icon><Burger v-if="!sidebarVisible" /><Close v-else /></el-icon>
-        </el-button>
+    <el-card class="chat-header-card" shadow="hover">
+      <div class="header-content">
+        <div class="header-left">
+          <el-button 
+            type="text" 
+            @click="toggleSidebar"
+            class="sidebar-toggle"
+          >
+            <el-icon><Burger v-if="!sidebarVisible" /><Close v-else /></el-icon>
+          </el-button>
+          
+          <h1 class="page-title">智能对话</h1>
+          <div class="chat-status">
+            <el-tag :type="connectionStatusType" size="small" effect="plain">
+              <el-icon><Connection /></el-icon>
+              {{ connectionStatusText }}
+            </el-tag>
+            <el-tag v-if="chatStore.currentSession" type="success" size="small" effect="plain">
+              当前: {{ chatStore.currentSession.title }}
+            </el-tag>
+          </div>
+        </div>
         
-        <h1 class="page-title">智能对话</h1>
-        <div class="chat-status">
-          <el-tag :type="connectionStatusType" size="small">
-            <el-icon><Connection /></el-icon>
-            {{ connectionStatusText }}
-          </el-tag>
-          <el-tag v-if="chatStats.totalMessages > 0" type="info" size="small">
-            {{ chatStats.totalMessages }} 条消息
-          </el-tag>
-          <el-tag v-if="chatStore.currentSession" type="success" size="small">
-            当前: {{ chatStore.currentSession.title }}
-          </el-tag>
-          <el-tag v-if="storageInfo.needsCleanup" type="warning" size="small">
-            <el-icon><Warning /></el-icon>
-            存储空间不足
-          </el-tag>
+        <div class="header-actions">
+          <el-tooltip content="新建对话" placement="bottom">
+            <el-button type="primary" size="small" circle @click="createNewChat">
+              <el-icon><ChatDotSquare /></el-icon>
+            </el-button>
+          </el-tooltip>
+
+          <el-tooltip content="搜索消息" placement="bottom">
+            <el-button size="small" circle @click="showMessageSearch">
+              <el-icon><Search /></el-icon>
+            </el-button>
+          </el-tooltip>
+          
+          <el-dropdown @command="handleMenuCommand">
+            <el-tooltip content="更多" placement="bottom">
+              <el-button size="small" circle>
+                <el-icon><MoreFilled /></el-icon>
+              </el-button>
+            </el-tooltip>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="clearCurrent" :disabled="!chatStore.hasMessages">
+                  <el-icon><Refresh /></el-icon>
+                  清空当前对话
+                </el-dropdown-item>
+                <el-dropdown-item command="exportCurrent" :disabled="!chatStore.hasMessages">
+                  <el-icon><Download /></el-icon>
+                  导出当前对话
+                </el-dropdown-item>
+                <el-dropdown-item command="importChat">
+                  <el-icon><Upload /></el-icon>
+                  导入对话
+                </el-dropdown-item>
+                <el-dropdown-item command="storageManagement">
+                  <el-icon><FolderOpened /></el-icon>
+                  存储管理
+                </el-dropdown-item>
+                <el-dropdown-item divided command="settings">
+                  <el-icon><Setting /></el-icon>
+                  聊天设置
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </div>
       </div>
-      
-      <div class="header-actions">
-        <el-button 
-          type="primary" 
-          size="small"
-          @click="createNewChat"
-        >
-          <el-icon><ChatDotSquare /></el-icon>
-          新建对话
-        </el-button>
-        
-        <el-button 
-          size="small"
-          @click="showMessageSearch"
-        >
-          <el-icon><Search /></el-icon>
-          搜索消息
-        </el-button>
-        
-        <el-dropdown @command="handleMenuCommand">
-          <el-button size="small">
-            聊天管理
-            <el-icon class="el-icon--right"><ArrowDown /></el-icon>
-          </el-button>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="clearCurrent" :disabled="!chatStore.hasMessages">
-                <el-icon><Refresh /></el-icon>
-                清空当前对话
-              </el-dropdown-item>
-              <el-dropdown-item command="exportCurrent" :disabled="!chatStore.hasMessages">
-                <el-icon><Download /></el-icon>
-                导出当前对话
-              </el-dropdown-item>
-              <el-dropdown-item command="importChat">
-                <el-icon><Upload /></el-icon>
-                导入对话
-              </el-dropdown-item>
-              <el-dropdown-item command="storageManagement">
-                <el-icon><FolderOpened /></el-icon>
-                存储管理
-              </el-dropdown-item>
-              <el-dropdown-item divided command="settings">
-                <el-icon><Setting /></el-icon>
-                聊天设置
-              </el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
-      </div>
-    </div>
+    </el-card>
     
     <!-- 主内容区域 -->
     <div class="chat-body">
@@ -86,9 +77,13 @@
       <el-aside 
         :width="sidebarVisible ? '350px' : '0px'"
         class="history-sidebar"
+        :class="{ 'is-hidden': !sidebarVisible }"
       >
         <div v-if="sidebarVisible" class="sidebar-content">
-          <ChatHistory @session-switched="handleSessionSwitch" />
+          <ChatHistory
+            @session-switched="handleSessionSwitch"
+            @collapse="collapseHistorySidebar"
+          />
         </div>
       </el-aside>
       
@@ -418,6 +413,12 @@ const cleanupOptions = ref({
 const toggleSidebar = () => {
   sidebarVisible.value = !sidebarVisible.value
   chatSettings.value.showSidebar = sidebarVisible.value
+  saveSettings()
+}
+
+const collapseHistorySidebar = () => {
+  sidebarVisible.value = false
+  chatSettings.value.showSidebar = false
   saveSettings()
 }
 
@@ -821,46 +822,86 @@ watch(chatSettings, (newSettings) => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: #f0f2f5;
+  /* 更偏企业风的浅色背景 */
+  background: var(--background-page, #f6f8fa);
 }
 
-.chat-header {
-  background: white;
-  padding: 16px 24px;
-  border-bottom: 1px solid #e4e7ed;
+.chat-header-card {
+  margin: 10px 12px;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.chat-header-card:hover {
+  border-color: #d1d5db;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+}
+
+.chat-header-card :deep(.el-card__body) {
+  padding: 12px 14px;
+}
+
+.header-content {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  gap: 16px;
 }
 
 .header-left {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 10px;
 }
 
 .sidebar-toggle {
-  padding: 8px;
+  padding: 6px;
   font-size: 16px;
+  border-radius: 8px;
 }
 
 .page-title {
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 650;
+  color: #111827;
   margin: 0;
+  letter-spacing: 0.2px;
 }
 
 .chat-status {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
+}
+
+.chat-status :deep(.el-tag) {
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  color: #374151;
+}
+
+.chat-status :deep(.el-tag--success) {
+  border-color: rgba(16, 185, 129, 0.25);
+  background: rgba(16, 185, 129, 0.06);
+  color: #065f46;
+}
+
+.chat-status :deep(.el-tag--warning) {
+  border-color: rgba(245, 158, 11, 0.25);
+  background: rgba(245, 158, 11, 0.06);
+  color: #92400e;
 }
 
 .header-actions {
   display: flex;
-  gap: 12px;
+  gap: 8px;
+}
+
+.header-actions :deep(.el-button) {
+  border-radius: 10px;
 }
 
 .chat-body {
@@ -870,10 +911,15 @@ watch(chatSettings, (newSettings) => {
 }
 
 .history-sidebar {
-  background: white;
-  border-right: 1px solid #e4e7ed;
+  background: var(--background-page, #f6f8fa);
+  border-right: 1px solid #e5e7eb;
+  box-shadow: none;
   transition: width 0.3s ease;
   overflow: hidden;
+}
+
+.history-sidebar.is-hidden {
+  border-right: none;
 }
 
 .sidebar-content {
@@ -933,20 +979,30 @@ watch(chatSettings, (newSettings) => {
 .stat-item {
   text-align: center;
   padding: 12px;
-  background: #f8f9fa;
-  border-radius: 6px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  border: 2px solid #f093fb;
+  transition: all 0.3s ease;
+}
+
+.stat-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(240, 147, 251, 0.2);
+  border-color: #f5576c;
 }
 
 .stat-label {
   font-size: 12px;
-  color: var(--text-secondary);
+  color: #9333ea;
   margin-bottom: 4px;
+  font-weight: 600;
 }
 
 .stat-value {
   font-size: 18px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: #ec4899;
 }
 
 .storage-quota {

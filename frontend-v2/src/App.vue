@@ -5,18 +5,31 @@
       <!-- 导航栏 -->
       <el-container class="layout-container">
       <!-- 侧边栏 -->
-      <el-aside :width="isCollapse ? '64px' : '200px'" class="sidebar">
+      <el-aside 
+        :width="sidebarWidth" 
+        class="sidebar"
+        :class="{ 'sidebar-hidden': sidebarState === 'hidden' }"
+      >
         <div class="logo-container">
-          <img src="/src/assets/images/logo.png" alt="Logo" class="logo" v-if="!isCollapse">
-          <span class="logo-text" v-if="!isCollapse">钉钉运维机器人</span>
+          <img 
+            src="/src/assets/images/logo.png" 
+            alt="Logo" 
+            class="logo"
+            :class="{ 'logo-hidden': sidebarState === 'hidden' }"
+          >
+          <span 
+            class="logo-text"
+            :class="{ 'logo-text-hidden': sidebarState === 'hidden' }"
+          >钉钉运维机器人</span>
         </div>
         
         <el-menu
           :default-active="activeMenu"
-          :collapse="isCollapse"
+          :collapse="false"
           :unique-opened="true"
           router
           class="sidebar-menu"
+          :class="{ 'sidebar-menu-hidden': sidebarState === 'hidden' }"
           background-color="#1E293B"
           text-color="rgba(255, 255, 255, 0.8)"
           active-text-color="#FFFFFF"
@@ -50,10 +63,10 @@
           <div class="header-left">
             <el-button
               type="text"
-              @click="toggleSidebar"
+              @click="toggleGlobalSidebar"
               class="sidebar-toggle"
             >
-              <el-icon><Fold v-if="!isCollapse" /><Expand v-else /></el-icon>
+              <el-icon><Fold v-if="sidebarState === 'expanded'" /><Expand v-else /></el-icon>
             </el-button>
             
             <el-breadcrumb separator="/" class="breadcrumb">
@@ -92,6 +105,18 @@
     </el-container>
     </div>
     
+    <!-- 隐藏侧边栏时的浮动按钮 -->
+    <el-button
+      v-if="showMainLayout && sidebarState === 'hidden'"
+      class="float-sidebar-toggle"
+      type="primary"
+      circle
+      @click="toggleGlobalSidebar"
+      title="展开侧边栏"
+    >
+      <el-icon><Expand /></el-icon>
+    </el-button>
+
     <!-- 未登录时显示路由视图（登录页） -->
     <div v-else>
       <router-view />
@@ -117,7 +142,7 @@ import {
 } from '@element-plus/icons-vue'
 
 // 响应式数据
-const isCollapse = ref(false)
+const sidebarState = ref('expanded') // 'expanded' 或 'hidden'
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
@@ -139,9 +164,29 @@ const breadcrumbTitle = computed(() => {
   return titles[route.path] || '钉钉K8s运维机器人'
 })
 
+const sidebarWidth = computed(() => {
+  return sidebarState.value === 'expanded' ? '200px' : '0px'
+})
+
 // 方法
-const toggleSidebar = () => {
-  isCollapse.value = !isCollapse.value
+const toggleGlobalSidebar = () => {
+  console.log('切换侧边栏状态，当前:', sidebarState.value)
+  sidebarState.value = sidebarState.value === 'expanded' ? 'hidden' : 'expanded'
+  console.log('切换后状态:', sidebarState.value)
+  localStorage.setItem('layout.sidebarState', sidebarState.value)
+}
+
+const loadSidebarState = () => {
+  const saved = localStorage.getItem('layout.sidebarState')
+  // 兼容旧的两态值（collapsed/expanded），转换为新的两态（hidden/expanded）
+  if (saved === 'expanded' || saved === 'collapsed' || saved === null) {
+    sidebarState.value = saved === 'collapsed' ? 'hidden' : 'expanded'
+  } else if (saved === 'hidden') {
+    sidebarState.value = 'hidden'
+  } else {
+    sidebarState.value = 'expanded'
+  }
+  localStorage.setItem('layout.sidebarState', sidebarState.value)
 }
 
 const handleUserCommand = async (command) => {
@@ -182,6 +227,7 @@ watch(route, (newRoute) => {
 // 组件挂载时初始化认证状态
 onMounted(() => {
   authStore.initAuth()
+  loadSidebarState()
 })
 </script>
 
@@ -202,10 +248,22 @@ onMounted(() => {
   background: var(--sidebar-bg);
   border-right: 1px solid var(--sidebar-border);
   color: var(--sidebar-text);
-  transition: width 0.2s ease;
   box-shadow: none;
   position: relative;
   z-index: 100;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* 使用更平滑的缓动函数和更长的过渡时间 */
+  transition: width 0.6s cubic-bezier(0.23, 1, 0.32, 1), 
+              opacity 0.5s cubic-bezier(0.23, 1, 0.32, 1),
+              transform 0.6s cubic-bezier(0.23, 1, 0.32, 1);
+  will-change: width, opacity, transform;
+}
+
+.sidebar-hidden {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .logo-container {
@@ -215,6 +273,9 @@ onMounted(() => {
   justify-content: center;
   padding: 0 20px;
   border-bottom: 1px solid var(--sidebar-border);
+  flex-shrink: 0;
+  overflow: hidden;
+  transition: opacity 0.4s cubic-bezier(0.23, 1, 0.32, 1) 0.1s;
 }
 
 .logo {
@@ -223,6 +284,15 @@ onMounted(() => {
   margin-right: 10px;
   border-radius: var(--border-radius-small);
   object-fit: contain;
+  transition: opacity 0.4s cubic-bezier(0.23, 1, 0.32, 1) 0.15s,
+              transform 0.4s cubic-bezier(0.23, 1, 0.32, 1) 0.15s,
+              margin-right 0.4s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.logo-hidden {
+  opacity: 0;
+  transform: translateX(-15px);
+  margin-right: 0;
 }
 
 .logo-text {
@@ -230,12 +300,108 @@ onMounted(() => {
   font-weight: 600;
   color: var(--sidebar-text);
   letter-spacing: -0.2px;
+  white-space: nowrap;
+  transition: opacity 0.4s cubic-bezier(0.23, 1, 0.32, 1) 0.2s,
+              transform 0.4s cubic-bezier(0.23, 1, 0.32, 1) 0.2s,
+              width 0.4s cubic-bezier(0.23, 1, 0.32, 1) 0.2s,
+              margin 0.4s cubic-bezier(0.23, 1, 0.32, 1) 0.2s;
+  overflow: hidden;
+}
+
+.logo-text-hidden {
+  opacity: 0;
+  transform: translateX(-20px);
+  width: 0;
+  margin: 0;
 }
 
 .sidebar-menu {
   border: none;
   background: transparent;
   padding: 12px 0;
+  flex-grow: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  transition: opacity 0.4s cubic-bezier(0.23, 1, 0.32, 1) 0.25s;
+}
+
+.sidebar-menu:not(.el-menu--collapse) {
+  width: 200px;
+}
+
+.sidebar-menu-hidden {
+  opacity: 0;
+}
+
+.sidebar-menu .el-menu-item {
+  height: 44px;
+  line-height: 44px;
+  color: var(--sidebar-text);
+  font-size: 14px;
+  padding: 0 20px !important;
+  margin: 4px 8px;
+  border-radius: var(--border-radius-base);
+  width: calc(100% - 16px);
+  transition: all 0.4s cubic-bezier(0.23, 1, 0.32, 1);
+  position: relative;
+  overflow: hidden;
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.sidebar-hidden .sidebar-menu .el-menu-item {
+  opacity: 0;
+  transform: translateX(-25px);
+  transition-delay: 0s;
+}
+
+.sidebar-menu .el-menu-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 3px;
+  height: 100%;
+  background: var(--sidebar-active);
+  transform: scaleY(0);
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transform-origin: center;
+}
+
+.sidebar-menu .el-menu-item.is-active::before {
+  transform: scaleY(1);
+}
+
+.sidebar-menu .el-menu-item.is-active {
+  background-color: var(--sidebar-active) !important;
+  color: var(--text-white) !important;
+  font-weight: 500;
+  transform: translateX(2px);
+}
+
+.sidebar-menu .el-menu-item:hover {
+  background-color: var(--sidebar-hover) !important;
+  color: var(--sidebar-text) !important;
+  transform: translateX(2px);
+}
+
+.sidebar-menu .el-menu-item.is-active:hover {
+  color: var(--text-white) !important;
+}
+
+.sidebar-menu .el-menu-item .el-icon {
+  color: var(--sidebar-text-secondary);
+  font-size: 18px;
+  margin-right: 8px;
+  transition: color 0.25s ease, transform 0.25s ease;
+}
+
+.sidebar-menu .el-menu-item:hover .el-icon {
+  transform: scale(1.1);
+}
+
+.sidebar-menu .el-menu-item.is-active .el-icon {
+  color: var(--text-white);
 }
 
 /* === 顶部导航栏 - 极简设计 === */
@@ -261,15 +427,31 @@ onMounted(() => {
 .sidebar-toggle {
   font-size: 18px;
   color: var(--text-secondary);
-  transition: var(--transition-base);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   padding: 8px;
   border-radius: var(--border-radius-small);
   cursor: pointer;
+  position: relative;
+}
+
+.sidebar-toggle::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--border-radius-small);
+  background: var(--background-hover);
+  opacity: 0;
+  transition: opacity 0.25s ease;
 }
 
 .sidebar-toggle:hover {
   background: var(--background-hover);
   color: var(--text-primary);
+  transform: scale(1.05);
+}
+
+.sidebar-toggle:active {
+  transform: scale(0.95);
 }
 
 .breadcrumb {
@@ -289,7 +471,7 @@ onMounted(() => {
   cursor: pointer;
   padding: 6px 12px;
   border-radius: var(--border-radius-base);
-  transition: var(--transition-base);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   border: 1px solid var(--border-base);
   background: var(--background-base);
 }
@@ -297,6 +479,12 @@ onMounted(() => {
 .user-dropdown:hover {
   background: var(--background-hover);
   border-color: var(--border-dark);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.user-dropdown:active {
+  transform: translateY(0);
 }
 
 .user-avatar {
@@ -327,10 +515,10 @@ onMounted(() => {
   overflow-y: auto;
 }
 
-/* === 路由过渡动画 - 简洁 === */
+/* === 路由过渡动画 - 丝滑 === */
 .fade-transform-enter-active,
 .fade-transform-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .fade-transform-enter-from {
@@ -341,6 +529,48 @@ onMounted(() => {
 .fade-transform-leave-to {
   opacity: 0;
   transform: translateY(-10px);
+}
+
+/* 浮动按钮样式 */
+.float-sidebar-toggle {
+  position: fixed;
+  top: 20px;
+  left: 20px;
+  z-index: 101;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  box-shadow: var(--shadow-md);
+  background-color: var(--primary-color);
+  color: var(--text-white);
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: floatIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes floatIn {
+  from {
+    opacity: 0;
+    transform: scale(0.8) translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.float-sidebar-toggle:hover {
+  transform: scale(1.1) translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+.float-sidebar-toggle:active {
+  transform: scale(0.95) translateY(0);
 }
 
 /* === 响应式优化 === */

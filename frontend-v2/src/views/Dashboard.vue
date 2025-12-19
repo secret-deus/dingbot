@@ -454,6 +454,25 @@ onUnmounted(() => {
 .dashboard {
   height: 100%;
   overflow-y: auto;
+  /* 仪表盘整体使用浅灰背景，偏企业风 */
+  background: #f5f7fb;
+  padding: 20px;
+}
+
+/* 通用卡片：白底 + 轻微阴影 */
+.card {
+  border-radius: 14px;
+  padding: 24px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
+  transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.1);
+  border-color: #d1d5db;
 }
 
 .dashboard-header {
@@ -461,6 +480,15 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 24px;
+  background: #ffffff;
+  padding: 20px 24px;
+  border-radius: 14px;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
+}
+
+.page-title {
+  color: #111827;
 }
 
 .actions { display: flex; gap: 12px; }

@@ -142,24 +142,38 @@ async def initialize_services():
     """初始化所有服务"""
     global mcp_client, llm_processor, dingtalk_bot
 
+    # 1. 初始化增强MCP客户端（允许禁用或失败时降级）
     try:
-        # 1. 初始化增强MCP客户端
         logger.info("初始化增强MCP客户端...")
         from src.mcp.config import get_config_manager  # 修正import路径
         mcp_config_manager = get_config_manager()
         logger.info(f"🔍 配置管理器类型: {type(mcp_config_manager)}")
         logger.info(f"🔍 current_config: {mcp_config_manager.current_config}")
+
+        enabled_servers = mcp_config_manager.get_enabled_servers()
         if mcp_config_manager.current_config:
             logger.info(f"🔍 current_config.servers: {len(mcp_config_manager.current_config.servers)} 个服务器")
             for s in mcp_config_manager.current_config.servers:
                 logger.info(f"🔍   - {s.name}: enabled={s.enabled}, type={s.type}")
-        logger.info(f"🔍 启用的服务器数量: {len(mcp_config_manager.get_enabled_servers())}")
-        mcp_client = EnhancedMCPClient(config_manager=mcp_config_manager)
-        logger.info(f"🔍 MCP客户端类型: {type(mcp_client)}")
-        await mcp_client.connect()
-        logger.info("✅ 增强MCP客户端初始化成功")
+        logger.info(f"🔍 启用的服务器数量: {len(enabled_servers)}")
 
-        # 2. 简化的LLM处理器初始化（直接从环境变量）
+        if not enabled_servers:
+            # 没有启用的MCP服务器时，以“无MCP模式”启动，而不是直接失败
+            logger.warning("⚠️ 未启用任何MCP服务器，将以“无MCP工具”模式启动（LLM仍可正常工作）")
+            mcp_client = None
+        else:
+            mcp_client = EnhancedMCPClient(config_manager=mcp_config_manager)
+            logger.info(f"🔍 MCP客户端类型: {type(mcp_client)}")
+            await mcp_client.connect()
+            logger.info("✅ 增强MCP客户端初始化成功")
+
+    except Exception as e:
+        # MCP初始化失败时不阻塞服务启动，只记录日志并降级
+        logger.error(f"❌ 增强MCP客户端初始化失败，将以“无MCP工具”模式启动: {e}")
+        mcp_client = None
+
+    # 2. 简化的LLM处理器初始化（直接从环境变量）
+    try:
         logger.info("正在初始化简化LLM处理器...")
         
         # 直接从环境变量获取简单配置
@@ -174,7 +188,7 @@ async def initialize_services():
         
         logger.info(f"✅ LLM配置加载成功：{llm_config_dict.get('provider', 'unknown')} - {llm_config_dict.get('model', 'unknown')}")
         
-        # 使用简化的LLM处理器，传入字典配置
+        # 使用简化的LLM处理器，传入字典配置（mcp_client 可能为 None，表示不启用工具）
         llm_processor = EnhancedLLMProcessor(llm_config_dict, mcp_client)
         logger.info("✅ LLM 处理器初始化成功")
         
@@ -191,7 +205,8 @@ async def initialize_services():
             logger.info("钉钉机器人配置未提供，跳过初始化")
 
     except Exception as e:
-        logger.error(f"❌ 服务初始化失败: {e}")
+        logger.error(f"❌ LLM / 钉钉服务初始化失败: {e}")
+        # LLM是核心能力，这里仍然保留失败即中止启动的语义
         raise e
 
     # 4. 启动最小定时巡检（可选，基于asyncio，不引入新依赖）

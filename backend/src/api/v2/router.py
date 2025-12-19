@@ -202,7 +202,11 @@ async def stream_chat(
                     chunk_count += 1
                     
                     # 标准化SSE格式输出
-                    if isinstance(chunk, str):
+                    if isinstance(chunk, dict):
+                        # 处理结构化消息(工具状态更新等)
+                        chunk_json = json.dumps(chunk, ensure_ascii=False)
+                        yield f"data: {chunk_json}\n"
+                    elif isinstance(chunk, str):
                         # 处理换行符：逐字符处理，将换行符转换为空的data行
                         if '\n' in chunk:
                             # 逐字符处理，构建正确的SSE格式

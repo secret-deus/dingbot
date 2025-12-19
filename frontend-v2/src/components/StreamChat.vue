@@ -3,110 +3,164 @@
     <!-- 消息列表区域 -->
     <div class="chat-messages" ref="messagesContainer">
       <div class="messages-wrapper">
-        <!-- 欢迎消息 -->
-        <div v-if="!chatStore.hasMessages" class="welcome-message">
-          <div class="welcome-icon">🤖</div>
-          <h3>钉钉K8s运维机器人</h3>
-          <p>我是您的智能Kubernetes运维助手，可以帮助您管理集群、查看状态、执行运维操作。请告诉我您需要什么帮助。</p>
-          <div class="example-questions">
-            <h4>试试这些问题：</h4>
-            <div class="question-chips">
-              <el-tag 
-                v-for="example in exampleQuestions" 
-                :key="example"
-                @click="setInputMessage(example)"
-                class="question-chip"
-                type="primary"
-                effect="plain"
-              >
-                {{ example }}
-              </el-tag>
+        <!-- 欢迎消息（轻量面板） -->
+        <div v-if="!chatStore.hasMessages" class="welcome-card">
+          <div class="welcome-content">
+            <div class="welcome-icon">🤖</div>
+            <h3>钉钉K8s运维机器人</h3>
+            <p>我是您的智能Kubernetes运维助手，可以帮助您管理集群、查看状态、执行运维操作。请告诉我您需要什么帮助。</p>
+            <div class="example-questions">
+              <h4>试试这些问题：</h4>
+              <div class="question-chips">
+                <el-button
+                  v-for="example in exampleQuestions"
+                  :key="example"
+                  class="question-chip"
+                  size="small"
+                  text
+                  @click="setInputMessage(example)"
+                >
+                  <el-icon class="question-icon"><Position /></el-icon>
+                  <span>{{ example }}</span>
+                </el-button>
+              </div>
             </div>
           </div>
         </div>
 
-        <!-- 消息列表 -->
+        <!-- 消息列表 - 卡片式布局 -->
         <div 
           v-for="message in chatStore.messages" 
           :key="message.id"
           :id="`message-${message.id}`"
-          :class="['message-item', `message-${message.type}`]"
+          :class="['message-card', `message-card-${message.type}`]"
         >
-          <!-- 用户消息 -->
-          <div v-if="message.type === 'user'" class="user-message">
-            <div class="message-meta">
-              <el-avatar :size="32" class="user-avatar">
-                <el-icon><User /></el-icon>
-              </el-avatar>
-              <span class="message-time">{{ formatTime(message.timestamp) }}</span>
-            </div>
-            <div class="message-bubble user-bubble">
+          <!-- 用户消息卡片 -->
+          <div v-if="message.type === 'user'" class="user-message-card">
+            <div class="card-content user-content">
               {{ message.content }}
             </div>
+            <div class="bubble-meta">{{ formatTime(message.timestamp) }}</div>
           </div>
 
-          <!-- 系统消息 -->
-          <div v-else-if="message.type === 'system'" class="system-message">
+          <!-- 系统消息卡片 -->
+          <div v-else-if="message.type === 'system'" class="system-message-card">
             <div class="system-content">
-              <el-icon><InfoFilled /></el-icon>
+              <el-icon class="system-icon"><InfoFilled /></el-icon>
               <span>{{ message.content }}</span>
             </div>
           </div>
 
-          <!-- AI助手消息 -->
-          <div v-else-if="message.type === 'assistant'" class="assistant-message">
+          <!-- AI助手消息卡片 -->
+          <div v-else-if="message.type === 'assistant'" class="assistant-message-card">
             <div class="message-meta">
-              <el-avatar :size="32" class="assistant-avatar" style="background-color: #409EFF;">
-                <el-icon><Monitor /></el-icon>
-              </el-avatar>
-              <span class="message-time">{{ formatTime(message.timestamp) }}</span>
-              <el-tag 
-                v-if="message.status === 'streaming'" 
-                type="info" 
-                size="small"
-                class="status-tag"
-              >
-                输入中...
-              </el-tag>
-            </div>
-            <div class="message-bubble assistant-bubble">
-              <!-- 工具调用状态 -->
-              <div v-if="getMessageToolCalls(message.id).length > 0" class="tool-calls">
-                <div 
-                  v-for="toolCall in getMessageToolCalls(message.id)" 
-                  :key="toolCall.id"
-                  class="tool-call-item"
-                >
-                  <el-icon class="tool-icon">
-                    <Loading v-if="toolCall.status === 'calling'" />
-                    <Check v-else-if="toolCall.status === 'success'" />
-                    <Close v-else-if="toolCall.status === 'error'" />
-                  </el-icon>
-                  <span class="tool-name">{{ getToolDisplayName(toolCall.tool) }}</span>
-                  <span class="tool-status" :class="toolCall.status">
-                    {{ getToolStatusText(toolCall.status) }}
-                  </span>
+              <div class="meta-left">
+                <span class="meta-role">AI</span>
+                <div v-if="message.status === 'streaming'" class="meta-spinner">
+                  <div class="spinner-container">
+                    <div class="spinner"></div>
+                  </div>
                 </div>
               </div>
-              
-              <!-- 消息内容（带打字机效果） -->
-              <div class="message-content" @click="handleMarkdownClicks">
-                <div 
-                  v-if="message.status === 'streaming'" 
-                  class="typing-text markdown-content"
-                  v-html="formatMessageContent(message.content, true)"
-                ></div>
-                <div 
-                  v-else 
-                  class="markdown-content"
-                  v-html="formatMessageContent(message.content, false)"
-                ></div>
-                <span 
-                  v-if="message.status === 'streaming' && showTypingCursor" 
-                  class="typing-cursor"
-                >|</span>
+              <span class="meta-time">{{ formatTime(message.timestamp) }}</span>
+            </div>
+            
+            <!-- 工具调用状态卡片 - 折叠式设计 -->
+            <div v-if="getMessageToolCalls(message.id).length > 0" class="tool-calls-card">
+              <div
+                v-for="toolCall in getMessageToolCalls(message.id)" 
+                :key="toolCall.id"
+                class="tool-call-card-wrapper"
+              >
+                <div
+                  :class="['tool-call-card', `tool-call-${toolCall.status}`, { 'tool-call-expanded': isToolCallExpanded(message.id, toolCall.id) }]"
+                  @click="toggleToolCallExpand(message.id, toolCall.id)"
+                >
+                  <!-- 卡片头部：始终可见 -->
+                  <div class="tool-call-header">
+                    <div v-if="toolCall.status === 'calling'" class="tool-icon-wrapper">
+                      <div class="tool-spinner"></div>
+                    </div>
+                    <el-icon v-else class="tool-icon">
+                      <Check v-if="toolCall.status === 'success'" />
+                      <Close v-else-if="toolCall.status === 'error'" />
+                    </el-icon>
+                    <span class="tool-name">{{ getToolDisplayName(toolCall.tool) }}</span>
+                    <el-tag 
+                      :type="toolCall.status === 'success' ? 'success' : toolCall.status === 'error' ? 'danger' : 'info'"
+                      size="small"
+                      effect="plain"
+                      class="tool-status-tag"
+                    >
+                      {{ getToolStatusText(toolCall.status) }}
+                    </el-tag>
+                    <span v-if="toolCall.duration" class="tool-duration">
+                      ({{ toolCall.duration }}秒)
+                    </span>
+                    <el-icon class="expand-icon" :class="{ 'expanded': isToolCallExpanded(message.id, toolCall.id) }">
+                      <ArrowRight />
+                    </el-icon>
+                  </div>
+                  
+                  <!-- 详细信息：可折叠 -->
+                  <el-collapse-transition>
+                    <div v-show="isToolCallExpanded(message.id, toolCall.id)" class="tool-call-details">
+                      <!-- 参数信息 -->
+                      <div v-if="toolCall.parameters && Object.keys(toolCall.parameters).length > 0" class="tool-detail-section">
+                        <div class="tool-detail-label">参数</div>
+                        <pre class="tool-detail-content">{{ JSON.stringify(toolCall.parameters, null, 2) }}</pre>
+                      </div>
+                      
+                      <!-- 结果信息 -->
+                      <div v-if="toolCall.result" class="tool-detail-section">
+                        <div class="tool-detail-label">结果</div>
+                        <div class="tool-detail-content">
+                          <pre v-if="typeof toolCall.result === 'object'">{{ JSON.stringify(toolCall.result, null, 2) }}</pre>
+                          <div v-else>{{ toolCall.result }}</div>
+                        </div>
+                      </div>
+                      
+                      <!-- 错误信息 -->
+                      <div v-if="toolCall.status === 'error' && toolCall.error" class="tool-detail-section">
+                        <div class="tool-detail-label">错误</div>
+                        <div class="tool-detail-content error-content">{{ toolCall.error }}</div>
+                      </div>
+                    </div>
+                  </el-collapse-transition>
+                </div>
               </div>
             </div>
+            
+            <!-- 消息内容（带打字机效果） -->
+            <div class="card-content assistant-content" @click="handleMarkdownClicks">
+              <div 
+                v-if="message.status === 'streaming'" 
+                class="typing-text markdown-content"
+                v-html="formatMessageContent(filterToolCallMessages(message.content), true)"
+              ></div>
+              <div 
+                v-else 
+                class="markdown-content"
+                v-html="formatMessageContent(filterToolCallMessages(message.content), false)"
+              ></div>
+              <!-- 优化的等待动画 -->
+              <div v-if="message.status === 'streaming' && (!message.content || message.content.trim() === '')" class="loading-animation">
+                <div class="wave-dots">
+                  <span class="dot"></span>
+                  <span class="dot"></span>
+                  <span class="dot"></span>
+                </div>
+                <span class="loading-text">AI正在思考中...</span>
+              </div>
+              <!-- 打字时的转圈动画 -->
+              <div 
+                v-else-if="message.status === 'streaming'" 
+                class="typing-spinner-wrapper"
+              >
+                <div class="typing-spinner"></div>
+              </div>
+            </div>
+            <div class="bubble-meta">{{ formatTime(message.timestamp) }}</div>
           </div>
         </div>
 
@@ -134,83 +188,86 @@
       </div>
     </div>
 
-    <!-- 输入区域 -->
-    <div class="chat-input">
-      <div class="input-wrapper">
-        <el-input
-          v-model="inputMessage"
-          type="textarea"
-          :rows="inputRows"
-          placeholder="请输入您的问题或需求... (Ctrl + Enter 发送)"
-          @keydown="handleKeydown"
-          :disabled="!chatStore.canSendMessage"
-          class="message-input"
-          resize="none"
-        />
-        <div class="input-actions">
-          <div class="input-tips">
-            <span class="connection-status" :class="{ connected: chatStore.isConnected }">
-              <el-icon><VideoPause v-if="!chatStore.isConnected" /><VideoPlay v-else /></el-icon>
-              {{ chatStore.isConnected ? '已连接' : '未连接' }}
-            </span>
-            <span class="mcp-status" :class="{ enabled: mcpEnabled }">
-              🛠️ MCP {{ enabledServersCount }}/{{ totalServersCount }} 已启用
-            </span>
-            <span class="shortcut-tip">Ctrl + Enter 发送</span>
-          </div>
-          <div class="action-buttons">
-            <!-- MCP服务器开关 -->
-            <div class="mcp-toggle">
-              <el-popover
-                placement="top-end"
-                :width="320"
-                trigger="click"
-                :show-arrow="false"
+    <!-- 输入区域 - 卡片式布局 -->
+    <div class="chat-input-container">
+      <div class="input-card">
+        <div class="input-wrapper">
+          <el-input
+            v-model="inputMessage"
+            type="textarea"
+            :rows="inputRows"
+            placeholder="请输入您的问题或需求... (Ctrl + Enter 发送)"
+            @keydown="handleKeydown"
+            :disabled="!chatStore.canSendMessage"
+            class="message-input"
+            resize="none"
+          />
+          <div class="input-actions">
+            <div class="input-tips">
+              <el-tag 
+                :type="mcpEnabled ? 'success' : 'info'"
+                size="small"
+                effect="plain"
+                class="status-tag-item"
               >
-                <template #reference>
-                  <el-button 
-                    size="small"
-                    :type="mcpEnabled ? 'success' : 'info'"
-                    :icon="Setting"
-                  >
-                    MCP ({{ enabledServersCount }}/{{ totalServersCount }})
-                  </el-button>
-                </template>
-                
-                <div class="mcp-servers-panel">
-                  <div class="panel-header">
-                    <h4>MCP服务器控制</h4>
-                    <span class="panel-subtitle">选择要启用的MCP服务器</span>
-                  </div>
-                  
-                  <MCPServerSwitches 
-                    ref="mcpServerSwitches"
-                    :auto-load="true"
-                    :show-global-controls="true"
-                    @servers-changed="handleServersChanged"
-                    @server-toggled="handleServerToggled"
-                  />
-                </div>
-              </el-popover>
+                🛠️ MCP {{ enabledServersCount }}/{{ totalServersCount }}
+              </el-tag>
+              <span class="shortcut-tip">Ctrl + Enter 发送</span>
             </div>
-            <el-button 
-              @click="clearChat" 
-              size="small"
-              :disabled="!chatStore.hasMessages"
-            >
-              <el-icon><Delete /></el-icon>
-              清空
-            </el-button>
-            <el-button 
-              type="primary" 
-              @click="sendMessage" 
-              :loading="chatStore.isStreaming"
-              :disabled="!inputMessage.trim() || !chatStore.canSendMessage"
-              size="small"
-            >
-              <el-icon><Position /></el-icon>
-              发送
-            </el-button>
+            <div class="action-buttons">
+              <!-- MCP服务器开关 -->
+              <div class="mcp-toggle">
+                <el-popover
+                  placement="top-end"
+                  :width="320"
+                  trigger="click"
+                  :show-arrow="false"
+                >
+                  <template #reference>
+                    <el-button 
+                      size="small"
+                      :type="mcpEnabled ? 'success' : 'info'"
+                      :icon="Setting"
+                    >
+                      MCP ({{ enabledServersCount }}/{{ totalServersCount }})
+                    </el-button>
+                  </template>
+                  
+                  <div class="mcp-servers-panel">
+                    <div class="panel-header">
+                      <h4>MCP服务器控制</h4>
+                      <span class="panel-subtitle">选择要启用的MCP服务器</span>
+                    </div>
+                    
+                    <MCPServerSwitches 
+                      ref="mcpServerSwitches"
+                      :auto-load="true"
+                      :show-global-controls="true"
+                      @servers-changed="handleServersChanged"
+                      @server-toggled="handleServerToggled"
+                    />
+                  </div>
+                </el-popover>
+              </div>
+              <el-button 
+                @click="clearChat" 
+                size="small"
+                :disabled="!chatStore.hasMessages"
+              >
+                <el-icon><Delete /></el-icon>
+                清空
+              </el-button>
+              <el-button 
+                type="primary" 
+                @click="sendMessage" 
+                :loading="chatStore.isStreaming"
+                :disabled="!inputMessage.trim() || !chatStore.canSendMessage"
+                size="small"
+              >
+                <el-icon><Position /></el-icon>
+                发送
+              </el-button>
+            </div>
           </div>
         </div>
       </div>
@@ -223,7 +280,7 @@ import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { 
   User, Monitor, Loading, Check, Close, Delete, Position, 
-  VideoPause, VideoPlay, InfoFilled, Setting, CircleCheckFilled, CircleCloseFilled 
+  VideoPause, VideoPlay, InfoFilled, Setting, CircleCheckFilled, CircleCloseFilled, ArrowRight
 } from '@element-plus/icons-vue'
 import { useChatStore } from '@/stores/chat'
 import { api } from '@/api/client'
@@ -256,6 +313,32 @@ const mcpServerSwitches = ref(null)
 const enabledServersCount = ref(0)
 const totalServersCount = ref(0)
 const mcpEnabled = computed(() => enabledServersCount.value > 0)
+// 工具调用展开状态管理（每个消息的展开工具ID列表）
+const expandedToolCalls = ref({})
+
+// 检查工具调用是否展开
+const isToolCallExpanded = (messageId, toolCallId) => {
+  const expanded = expandedToolCalls.value[messageId] || []
+  return expanded.includes(toolCallId)
+}
+
+// 切换工具调用的展开/折叠状态
+const toggleToolCallExpand = (messageId, toolCallId) => {
+  if (!expandedToolCalls.value[messageId]) {
+    expandedToolCalls.value[messageId] = []
+  }
+  
+  const expanded = expandedToolCalls.value[messageId]
+  const index = expanded.indexOf(toolCallId)
+  
+  if (index > -1) {
+    // 如果已展开，则折叠
+    expanded.splice(index, 1)
+  } else {
+    // 如果已折叠，则展开
+    expanded.push(toolCallId)
+  }
+}
 
 // 计算属性
 const inputRows = computed(() => {
@@ -304,6 +387,43 @@ const getToolStatusText = (status) => {
 }
 
 // formatMessageContent 已从 @/utils/markdown 导入
+
+// 过滤消息内容中的工具调用信息
+const filterToolCallMessages = (content) => {
+  if (!content) return content
+  
+  // 过滤掉工具调用相关的文本信息（支持多种格式）
+  const patterns = [
+    // 工具调用开始
+    /🛠️\s*\*\*正在调用工具\*\*:\s*`?[^`\n]+`?.*?\n/g,
+    /🛠️\s*工具执行中.*?\n/g,
+    // 参数信息
+    /📋\s*\*\*参数\*\*:.*?\n/g,
+    // 执行中
+    /⏳\s*工具执行中\.\.\..*?\n/g,
+    // 执行成功（包含耗时）
+    /✅\s*\*\*工具执行成功\*\*:.*?\(耗时:.*?\)\s*\n/g,
+    /✅\s*\*\*工具执行成功\*\*:.*?\n/g,
+    // 结果摘要
+    /📊\s*\*\*结果摘要\*\*:.*?\n/g,
+    // 执行失败
+    /❌\s*\*\*工具执行失败\*\*:.*?\n/g,
+    // 工具执行成功（简单格式）
+    /✅\s*工具执行成功:.*?\n/g,
+    // 工具执行失败（简单格式）
+    /❌\s*工具执行失败:.*?\n/g,
+  ]
+  
+  let filtered = content
+  patterns.forEach(pattern => {
+    filtered = filtered.replace(pattern, '')
+  })
+  
+  // 清理多余的连续换行
+  filtered = filtered.replace(/\n{3,}/g, '\n\n')
+  
+  return filtered.trim()
+}
 
 // 处理Markdown点击事件（目录锚点、复制按钮）
 const handleMarkdownClicks = (e) => {
@@ -585,22 +705,49 @@ const handleStructuredEvent = async (data) => {
         ElMessage.error(errorMessage)
         break
         
+      case 'tool_call_start':
+        // 工具调用开始 - 创建工具调用卡片,状态为calling
+        console.log('工具调用开始:', data.tool_call)
+        chatStore.addToolCall({
+          tool: data.tool_call.name,
+          status: 'calling',
+          parameters: JSON.parse(data.tool_call.arguments || '{}'),
+          id: data.tool_call.id
+        })
+        // 初始化展开状态为折叠
+        const messageId = chatStore.currentStreamMessage?.id
+        if (messageId && !expandedToolCalls.value[messageId]) {
+          expandedToolCalls.value[messageId] = []
+        }
+        break
+        
+      case 'tool_call_update':
+        // 工具调用状态更新 - 更新工具调用卡片的状态和结果
+        console.log('工具调用状态更新:', data.tool_call)
+        const toolCalls = chatStore.toolCalls
+        const toolCall = toolCalls.find(tc => 
+          tc.id === data.tool_call.id || 
+          (tc.tool === data.tool_call.name && tc.messageId === chatStore.currentStreamMessage?.id)
+        )
+        
+        if (toolCall) {
+          chatStore.updateToolCall(toolCall.id, {
+            status: data.tool_call.status,
+            result: data.result || null,
+            duration: data.tool_call.duration || null,
+            error: data.error || null
+          })
+        }
+        break
+        
       case 'tool_call':
-        // 处理工具调用
+        // 处理工具调用(旧格式,兼容)
         handleToolCall(data)
         break
         
       case 'tool_result':
-        // 处理工具结果
-        if (data.success) {
-          await nextTick(() => {
-            chatStore.appendStreamContent(`\n✅ 工具执行成功: ${data.tool}`)
-          })
-        } else {
-          await nextTick(() => {
-            chatStore.appendStreamContent(`\n❌ 工具执行失败: ${data.tool} - ${data.error}`)
-          })
-        }
+        // 处理工具结果 - 不再在消息内容中显示，只更新工具调用状态
+        // 工具调用状态已通过 tool_call 事件更新，这里不需要额外处理
         break
         
       case 'status':
@@ -680,11 +827,16 @@ const handleStreamEvent = async (data) => {
 const handleToolCall = (data) => {
   if (data.status === 'calling') {
     // 新的工具调用
-    chatStore.addToolCall({
+    const toolCall = chatStore.addToolCall({
       tool: data.tool,
       status: 'calling',
       parameters: data.parameters || {}
     })
+    // 初始化展开状态为折叠（默认不展开）
+    const messageId = chatStore.currentStreamMessage?.id
+    if (messageId && !expandedToolCalls.value[messageId]) {
+      expandedToolCalls.value[messageId] = []
+    }
   } else {
     // 更新工具调用状态
     const toolCalls = chatStore.toolCalls
@@ -696,7 +848,9 @@ const handleToolCall = (data) => {
     if (toolCall) {
       chatStore.updateToolCall(toolCall.id, {
         status: data.status,
-        result: data.result || null
+        result: data.result || null,
+        duration: data.duration || null,
+        error: data.error || null
       })
     }
   }
@@ -951,192 +1105,699 @@ watch(() => chatStore.currentStreamMessage?.content, () => {
   padding: 0 15px;
 }
 
-/* 欢迎消息 */
-.welcome-message {
+/* 欢迎消息卡片：大卡片采用浅色+轻微阴影 */
+.welcome-card {
+  max-width: 800px;
+  margin: 40px auto;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.96));
+  border: 1px solid rgba(59, 130, 246, 0.14);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+}
+
+.welcome-content {
   text-align: center;
-  padding: 60px 20px;
+  padding: 20px;
   color: var(--text-secondary);
 }
 
 .welcome-icon {
   font-size: 64px;
   margin-bottom: 20px;
+  filter: drop-shadow(0 4px 8px rgba(102, 126, 234, 0.2));
 }
 
-.welcome-message h3 {
+.welcome-content h3 {
   margin: 0 0 16px 0;
   color: var(--text-primary);
   font-size: 24px;
+  font-weight: 600;
 }
 
-.welcome-message p {
+.welcome-content p {
   margin: 0 0 32px 0;
   font-size: 16px;
   line-height: 1.6;
   max-width: 600px;
   margin-left: auto;
   margin-right: auto;
+  color: var(--text-secondary);
 }
 
 .example-questions h4 {
   margin: 0 0 16px 0;
   color: var(--text-primary);
   font-size: 16px;
+  font-weight: 600;
 }
 
 .question-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 12px;
   justify-content: center;
 }
 
 .question-chip {
-  cursor: pointer;
-  transition: all 0.3s;
+  border-radius: 999px !important;
+  border: 1px solid rgba(59, 130, 246, 0.18) !important;
+  background: linear-gradient(180deg, rgba(239, 246, 255, 0.95), rgba(255, 255, 255, 0.95)) !important;
+  color: #1f2937 !important;
+  padding: 6px 10px !important;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  position: relative;
+  overflow: hidden;
+}
+
+.question-chip::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  background: rgba(59, 130, 246, 0.1);
+  transform: translate(-50%, -50%);
+  transition: width 0.4s ease, height 0.4s ease;
 }
 
 .question-chip:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.3);
+  border-color: rgba(147, 51, 234, 0.22) !important;
+  background: linear-gradient(180deg, rgba(250, 245, 255, 0.95), rgba(255, 255, 255, 0.95)) !important;
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15) !important;
 }
 
-/* 消息项 */
-.message-item {
-  margin-bottom: 24px;
-  animation: fadeInUp 0.3s ease-out;
+.question-chip:hover::before {
+  width: 200px;
+  height: 200px;
+}
+
+.question-chip:active {
+  transform: translateY(0) scale(0.98);
+}
+
+.question-icon {
+  color: #667eea;
+  font-size: 16px;
+}
+
+/* 消息卡片 */
+.message-card {
+  margin-bottom: 20px;
+  animation: fadeInUp 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  max-width: 100%;
+  transition: transform 0.25s ease, opacity 0.25s ease;
+}
+
+.message-card:hover {
+  transform: translateY(-2px);
+}
+
+/* 用户消息卡片：改为浅色气泡 */
+.user-message-card {
+  margin-left: auto;
+  max-width: 75%;
+  border-radius: 14px;
+  background: var(--indigo-bg, #eef2ff);
+  border: 2px solid var(--indigo-border, #c7d2fe);
+  border-right: 4px solid var(--indigo-color, #6366f1);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  padding: 12px 14px;
+  position: relative;
+}
+
+.user-message-card:hover {
+  border-color: var(--indigo-color, #6366f1);
+  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.15);
+  transform: translateY(-2px);
+}
+
+.card-header {
+  display: none;
+}
+
+.card-avatar {
+  display: none;
+}
+
+.card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0px;
+}
+
+.card-author {
+  display: none;
+}
+
+.user-message-card .card-author {
+  color: #1f2937;
+}
+
+.assistant-message-card .card-author {
+  color: var(--text-primary);
+}
+
+.card-time {
+  display: none;
 }
 
 .message-meta {
   display: flex;
   align-items: center;
-  margin-bottom: 8px;
+  justify-content: space-between;
+}
+
+.meta-left {
+  display: inline-flex;
+  align-items: center;
   gap: 8px;
 }
 
-.message-time {
-  font-size: 12px;
+.meta-role {
+  font-size: 11px;
+  font-weight: 600;
+  color: #6b7280;
+  letter-spacing: 0.2px;
+}
+
+.meta-time {
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.meta-spinner .spinner-container {
+  width: 12px;
+  height: 12px;
+}
+
+.bubble-meta {
+  font-size: 11px;
+  color: #9ca3af;
+  text-align: right;
+}
+
+.user-message-card .card-time {
+  color: #6b7280;
+}
+
+.assistant-message-card .card-time {
   color: var(--text-secondary);
 }
 
-.status-tag {
-  margin-left: auto;
-}
-
-/* 消息气泡 */
-.message-bubble {
-  max-width: 80%;
-  padding: 20px 24px;
-  border-radius: 20px;
+.user-content {
+  color: #111827;
+  font-size: 14px;
+  line-height: 1.65;
   word-wrap: break-word;
-  line-height: 1.6;
-  font-size: 15px;
-  min-height: 40px;
 }
 
-/* 包含表格的消息气泡需要更大的宽度 */
-.assistant-bubble .markdown-content {
-  min-width: 0; /* 允许收缩 */
-}
-
-/* 当消息包含表格时，扩大气泡宽度 */
-.assistant-message .message-bubble {
-  max-width: 95%;
-}
-
-.user-message {
+/* AI助手消息卡片：大面积内容，使用白底浅色风格 */
+.assistant-message-card {
+  margin-right: auto;
+  max-width: 85%;
+  min-width: 300px;
+  border-radius: 14px;
+  background: #ffffff;
+  border: 2px solid var(--purple-border, #e9d5ff);
+  border-left: 4px solid var(--purple-color, #9333ea);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  padding: 16px 18px;
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  max-height: 80vh; /* 限制最大高度，避免过长 */
+  overflow: hidden; /* 外层容器不滚动 */
+  position: relative;
 }
 
-.user-bubble {
-  background: linear-gradient(135deg, #409EFF, #66b1ff);
-  color: white;
-  border-bottom-right-radius: 6px;
+.assistant-message-card:hover {
+  box-shadow: 0 8px 24px rgba(147, 51, 234, 0.15);
+  border-color: var(--purple-color, #9333ea);
+  transform: translateY(-2px);
 }
 
-.assistant-message {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-}
-
-.assistant-bubble {
-  background: white;
-  color: var(--text-primary);
-  border: 1px solid #e4e7ed;
-  border-bottom-left-radius: 6px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-/* 工具调用状态 */
-.tool-calls {
+/* 消息元信息区域 */
+.assistant-message-card .message-meta {
+  flex-shrink: 0;
   margin-bottom: 12px;
-  padding: 12px;
-  background: #f8f9fa;
-  border-radius: 8px;
-  border-left: 3px solid #409EFF;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 
-.tool-call-item {
+/* 工具调用卡片容器 */
+.assistant-message-card .tool-calls-card {
+  flex-shrink: 0;
+  margin-bottom: 12px;
+}
+
+/* 消息内容区域 - 可滚动 */
+.assistant-message-card .card-content.assistant-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0; /* 允许flex子元素收缩 */
+  max-height: calc(80vh - 200px); /* 为元信息和工具卡片预留空间 */
+  padding-right: 4px; /* 为滚动条预留空间 */
+}
+
+/* 滚动条样式 */
+.assistant-message-card .card-content.assistant-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.assistant-message-card .card-content.assistant-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.assistant-message-card .card-content.assistant-content::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+
+.assistant-message-card .card-content.assistant-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+/* 时间戳元信息 */
+.assistant-message-card .bubble-meta {
+  flex-shrink: 0;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+/* 当消息包含表格时，扩大卡片宽度 */
+.assistant-message-card .markdown-content table {
+  min-width: 600px;
+  width: 100%;
+  table-layout: auto;
+}
+
+.assistant-content {
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.7;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.status-tag {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* AI思考中状态指示器 */
+.streaming-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+  border: none;
+}
+
+.spinner-container {
+  width: 12px;
+  height: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(59, 130, 246, 0.18);
+  border-top-color: #3b82f6;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.streaming-text {
+  display: none;
+}
+
+/* 系统消息卡片 */
+.system-message-card {
+  max-width: 500px;
+  margin: 16px auto;
+  border-radius: 12px;
+  background: rgba(240, 249, 255, 0.8);
+  border: 1px solid rgba(186, 230, 253, 0.5);
+  box-shadow: none;
+}
+
+.system-message-card {
+  padding: 12px 16px;
+}
+
+.system-content {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 6px;
   font-size: 13px;
+  color: #0369a1;
+  text-align: center;
+  justify-content: center;
 }
 
-.tool-call-item:last-child {
+.system-icon {
+  font-size: 16px;
+  color: #0369a1;
+}
+
+/* 工具调用状态卡片 - 折叠式设计 */
+.tool-calls-card {
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.tool-call-card-wrapper {
+  width: 100%;
+}
+
+.tool-call-card {
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
   margin-bottom: 0;
+  box-shadow: none;
+  position: relative;
+  overflow: hidden;
+}
+
+.tool-call-card:hover {
+  border-color: rgba(59, 130, 246, 0.35);
+  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.15);
+  transform: translateX(4px);
+}
+
+.tool-call-card.tool-call-calling {
+  border-left: 4px solid var(--info-color, #3b82f6);
+  background: var(--indigo-bg, #eef2ff);
+  border-color: var(--indigo-border, #c7d2fe);
+}
+
+.tool-call-card.tool-call-success {
+  border-left: 4px solid var(--success-color, #10b981);
+  background: var(--teal-bg, #f0fdfa);
+  border-color: var(--teal-border, #ccfbf1);
+}
+
+.tool-call-card.tool-call-error {
+  border-left: 4px solid var(--danger-color, #ef4444);
+  background: var(--pink-bg, #fdf2f8);
+  border-color: var(--pink-border, #fce7f3);
+}
+
+.tool-call-card {
+  padding: 10px 12px;
+}
+
+.tool-call-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  width: 100%;
 }
 
 .tool-icon {
-  font-size: 14px;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.tool-icon-wrapper {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.tool-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(64, 158, 255, 0.2);
+  border-top-color: #409EFF;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.tool-call-calling .tool-icon-wrapper .tool-spinner {
+  border-top-color: #409EFF;
+  border-right-color: rgba(64, 158, 255, 0.3);
+  border-bottom-color: rgba(64, 158, 255, 0.2);
+  border-left-color: rgba(64, 158, 255, 0.3);
+}
+
+.tool-call-success .tool-icon {
+  color: #67C23A;
+}
+
+.tool-call-error .tool-icon {
+  color: #F56C6C;
 }
 
 .tool-name {
   font-weight: 500;
   color: var(--text-primary);
+  flex: 1;
+  min-width: 0;
 }
 
-.tool-status {
+.tool-status-tag {
+  flex-shrink: 0;
+}
+
+.tool-duration {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-left: 4px;
+}
+
+.expand-icon {
   margin-left: auto;
+  font-size: 14px;
+  color: var(--text-secondary);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
+}
+
+.expand-icon.expanded {
+  transform: rotate(90deg);
+  color: var(--primary-color);
+}
+
+.tool-call-card:hover .expand-icon {
+  color: var(--primary-color);
+  transform: scale(1.1);
+}
+
+.tool-call-card:hover .expand-icon.expanded {
+  transform: rotate(90deg) scale(1.1);
+}
+
+.tool-call-details {
+  padding: 12px 0 0 0;
+  animation: slideDown 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    max-height: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    max-height: 1000px;
+    transform: translateY(0);
+  }
+}
+
+.tool-detail-section {
+  margin-bottom: 12px;
+}
+
+.tool-detail-section:last-child {
+  margin-bottom: 0;
+}
+
+.tool-detail-label {
   font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 6px;
 }
 
-.tool-status.calling {
-  color: #409EFF;
+.tool-detail-content {
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.8);
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(102, 126, 234, 0.1);
+  overflow-x: auto;
+  max-height: 300px;
+  overflow-y: auto;
 }
 
-.tool-status.success {
-  color: #67C23A;
+.tool-detail-content pre {
+  margin: 0;
+  font-family: 'Monaco', 'Consolas', monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
 }
 
-.tool-status.error {
+.tool-detail-content.error-content {
   color: #F56C6C;
+  background: rgba(245, 108, 108, 0.05);
+  border-color: rgba(245, 108, 108, 0.2);
 }
 
 /* 消息内容 */
-.message-content {
+.card-content {
   position: relative;
-  padding-left: 12px;
+  margin-top: 0;
+}
+
+.assistant-content {
+  padding-left: 0;
+  margin-top: 12px;
+}
+
+.user-content {
+  margin-top: 0;
 }
 
 .typing-text {
   display: block;
 }
 
+/* 优化的等待动画 */
+.loading-animation {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 0;
+  animation: fadeIn 0.3s ease-in;
+}
+
+.wave-dots {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.wave-dots .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  animation: wave 1.4s ease-in-out infinite;
+}
+
+.wave-dots .dot:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.wave-dots .dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.wave-dots .dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes wave {
+  0%, 60%, 100% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  30% {
+    transform: scale(1.4);
+    opacity: 1;
+  }
+}
+
+.loading-text {
+  font-size: 14px;
+  color: #667eea;
+  font-weight: 500;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .typing-cursor {
   display: inline-block;
+  width: 2px;
+  height: 18px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  margin-left: 2px;
   animation: blink 1s infinite;
-  font-weight: bold;
-  color: #409EFF;
+  vertical-align: text-bottom;
 }
 
 @keyframes blink {
   0%, 50% { opacity: 1; }
   51%, 100% { opacity: 0; }
+}
+
+/* 打字时的转圈动画 */
+.typing-spinner-wrapper {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.typing-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(102, 126, 234, 0.2);
+  border-top-color: #667eea;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  display: inline-block;
 }
 
 /* 代码样式 */
@@ -1161,62 +1822,103 @@ watch(() => chatStore.currentStreamMessage?.content, () => {
   margin: 16px 0;
 }
 
-/* 输入区域 */
-.chat-input {
-  background: white;
-  border-top: 1px solid #e4e7ed;
-  padding: 16px 20px;
+/* 输入区域 - 卡片式布局 */
+.chat-input-container {
+  background: var(--background-page, #f6f8fa);
+  border-top: 1px solid #e5e7eb;
+  padding: 12px 12px;
+}
+
+.input-card {
+  max-width: 1000px;
+  margin: 0 auto;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 2px solid var(--orange-border, #fed7aa);
+  border-bottom: 3px solid var(--orange-color, #f97316);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  padding: 12px 12px;
+  position: relative;
+}
+
+.input-card:hover {
+  box-shadow: 0 6px 20px rgba(249, 115, 22, 0.15);
+  border-color: var(--orange-color, #f97316);
+  transform: translateY(-2px);
+}
+
+.input-card:focus-within {
+  box-shadow: 0 8px 24px rgba(249, 115, 22, 0.2);
+  border-color: var(--orange-color, #f97316);
 }
 
 .input-wrapper {
-  max-width: 800px;
-  margin: 0 auto;
+  width: 100%;
 }
 
 .message-input {
   margin-bottom: 12px;
 }
 
+.message-input :deep(.el-textarea__inner) {
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.message-input :deep(.el-textarea__inner):focus {
+  border-color: rgba(59, 130, 246, 0.55);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+  transform: scale(1.01);
+}
+
 .input-actions {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .input-tips {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   font-size: 12px;
-  color: var(--text-secondary);
+  flex-wrap: wrap;
 }
 
-.connection-status {
+.status-tag-item {
   display: flex;
   align-items: center;
   gap: 4px;
+  border-radius: 8px;
 }
 
-.connection-status.connected {
-  color: var(--success-color);
-}
-
-.mcp-status {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  color: #F56C6C;
-  font-size: 12px;
-}
-
-.mcp-status.enabled {
-  color: #67C23A;
+.shortcut-tip {
+  display: none;
 }
 
 .action-buttons {
   display: flex;
   gap: 8px;
   align-items: center;
+}
+
+.action-buttons :deep(.el-button) {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.action-buttons :deep(.el-button:hover) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.action-buttons :deep(.el-button:active) {
+  transform: translateY(0);
 }
 
 /* MCP开关样式 */
@@ -1226,14 +1928,15 @@ watch(() => chatStore.currentStreamMessage?.content, () => {
   gap: 6px;
   padding: 4px 8px;
   border-radius: 6px;
-  background: rgba(64, 158, 255, 0.05);
-  border: 1px solid rgba(64, 158, 255, 0.2);
-  transition: all 0.3s ease;
+  background: rgba(59, 130, 246, 0.06);
+  border: 1px solid rgba(59, 130, 246, 0.20);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .mcp-toggle:hover {
-  background: rgba(64, 158, 255, 0.1);
-  border-color: rgba(64, 158, 255, 0.3);
+  background: rgba(59, 130, 246, 0.10);
+  border-color: rgba(59, 130, 246, 0.30);
+  transform: scale(1.05);
 }
 
 .mcp-info-icon {
@@ -1681,14 +2384,37 @@ watch(() => chatStore.currentStreamMessage?.content, () => {
   }
 }
 
+/* 为消息卡片添加延迟，实现依次出现的效果 */
+.message-card:nth-child(1) { animation-delay: 0s; }
+.message-card:nth-child(2) { animation-delay: 0.05s; }
+.message-card:nth-child(3) { animation-delay: 0.1s; }
+.message-card:nth-child(4) { animation-delay: 0.15s; }
+.message-card:nth-child(5) { animation-delay: 0.2s; }
+.message-card:nth-child(n+6) { animation-delay: 0.25s; }
+
 /* 响应式 */
 @media (max-width: 768px) {
   .chat-messages {
     padding: 12px;
   }
   
-  .message-bubble {
-    max-width: 85%;
+  .user-message-card,
+  .assistant-message-card {
+    max-width: 95%;
+    max-height: 75vh;
+  }
+  
+  .assistant-message-card .card-content.assistant-content {
+    max-height: calc(75vh - 180px);
+  }
+  
+  .welcome-card {
+    margin: 20px auto;
+    max-width: 95%;
+  }
+  
+  .input-card {
+    max-width: 100%;
   }
   
   .input-actions {
@@ -1710,6 +2436,16 @@ watch(() => chatStore.currentStreamMessage?.content, () => {
   .mcp-toggle {
     order: -1;
     align-self: center;
+  }
+  
+  .card-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  
+  .question-chip {
+    width: 100%;
+    justify-content: flex-start;
   }
 }
 </style>

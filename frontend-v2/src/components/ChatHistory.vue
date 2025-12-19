@@ -1,64 +1,80 @@
 <template>
   <div class="chat-history">
-    <div class="history-header">
-      <div class="header-title">
-        <h3>对话历史</h3>
-        <el-tag size="small" type="info">{{ chatStore.sessionHistory.length }} 个会话</el-tag>
-      </div>
-      
-      <div class="header-actions">
-        <el-button type="primary" size="small" @click="createNewSession">
-          <el-icon><Plus /></el-icon>
-          新建对话
-        </el-button>
+    <div class="history-header-card">
+      <div class="header-content">
+        <div class="header-title">
+          <h3>对话历史</h3>
+          <el-tag size="small" type="info" effect="plain">{{ chatStore.sessionHistory.length }} 个会话</el-tag>
+        </div>
         
-        <el-dropdown @command="handleMenuCommand" placement="bottom-end">
-          <el-button size="small">
-            <el-icon><MoreFilled /></el-icon>
-          </el-button>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="exportAll">
-                <el-icon><Download /></el-icon>
-                导出全部历史
-              </el-dropdown-item>
-              <el-dropdown-item command="importHistory">
-                <el-icon><Upload /></el-icon>
-                导入历史记录
-              </el-dropdown-item>
-              <el-dropdown-item command="clearAll" divided>
-                <el-icon><Delete /></el-icon>
-                清空全部历史
-              </el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
+        <div class="header-actions">
+          <el-tooltip content="收起侧栏" placement="bottom">
+            <el-button size="small" circle @click="emit('collapse')">
+              <el-icon><Fold /></el-icon>
+            </el-button>
+          </el-tooltip>
+
+          <el-tooltip content="新建对话" placement="bottom">
+            <el-button type="primary" size="small" circle @click="createNewSession">
+              <el-icon><Plus /></el-icon>
+            </el-button>
+          </el-tooltip>
+          
+          <el-dropdown @command="handleMenuCommand" placement="bottom-end">
+            <el-tooltip content="更多" placement="bottom">
+              <el-button size="small" circle>
+                <el-icon><MoreFilled /></el-icon>
+              </el-button>
+            </el-tooltip>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="exportAll">
+                  <el-icon><Download /></el-icon>
+                  导出全部历史
+                </el-dropdown-item>
+                <el-dropdown-item command="importHistory">
+                  <el-icon><Upload /></el-icon>
+                  导入历史记录
+                </el-dropdown-item>
+                <el-dropdown-item command="clearAll" divided>
+                  <el-icon><Delete /></el-icon>
+                  清空全部历史
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
       </div>
     </div>
     
-    <!-- 搜索和过滤 -->
-    <div class="search-section">
-      <el-input
-        v-model="searchQuery"
-        placeholder="搜索对话..."
-        size="small"
-        clearable
-        @input="handleSearch"
-      >
-        <template #prefix>
-          <el-icon><Search /></el-icon>
-        </template>
-      </el-input>
-      
-      <el-button 
-        size="small" 
-        @click="showFilters = !showFilters"
-        :type="hasActiveFilters ? 'primary' : 'default'"
-      >
-        <el-icon><Filter /></el-icon>
-        筛选
+    <!-- 搜索和过滤 - 卡片式布局 -->
+    <div class="search-section-card">
+      <div class="search-section">
+        <el-input
+          v-model="searchQuery"
+          placeholder="搜索对话..."
+          size="small"
+          clearable
+          @input="handleSearch"
+          class="search-input"
+        >
+          <template #prefix>
+            <el-icon><Search /></el-icon>
+          </template>
+        </el-input>
+        
+        <el-tooltip content="筛选" placement="bottom">
+          <el-button
+            size="small"
+            circle
+            @click="showFilters = !showFilters"
+            :type="hasActiveFilters ? 'primary' : 'default'"
+          >
+            <el-icon><Filter /></el-icon>
+          </el-button>
+        </el-tooltip>
         <el-badge v-if="activeFilterCount > 0" :value="activeFilterCount" class="filter-badge" />
-      </el-button>
+      </div>
     </div>
     
     <!-- 过滤器面板 -->
@@ -132,42 +148,47 @@
       <div
         v-for="session in filteredSessions"
         :key="session.id"
-        :class="['session-item', { active: session.id === chatStore.currentSessionId }]"
+        :class="['session-card', { 'session-card-active': session.id === chatStore.currentSessionId }]"
         @click="switchToSession(session.id)"
       >
         <div class="session-main">
-          <div class="session-title-container list-item">
+          <div class="session-title-container">
             <el-icon class="item-icon"><ChatDotRound /></el-icon>
-            <div 
-              v-if="editingSessionId === session.id"
-              class="title-edit"
-            >
-              <el-input
-                v-model="editingTitle"
-                size="small"
-                @blur="saveTitle(session.id)"
-                @keydown.enter="saveTitle(session.id)"
-                @keydown.esc="cancelEdit"
-                ref="titleInput"
-              />
-            </div>
-            <div 
-              v-else
-              class="session-title"
-              @dblclick="startEditTitle(session)"
-            >
-              {{ session.title }}
-            </div>
-            
-            <div class="session-meta">
-              <span class="message-count">{{ session.metadata.messageCount }} 条消息</span>
-              <span class="last-activity">{{ formatTime(session.metadata.lastActivity) }}</span>
+            <div class="session-info">
+              <div 
+                v-if="editingSessionId === session.id"
+                class="title-edit"
+              >
+                <el-input
+                  v-model="editingTitle"
+                  size="small"
+                  @blur="saveTitle(session.id)"
+                  @keydown.enter="saveTitle(session.id)"
+                  @keydown.esc="cancelEdit"
+                  @click.stop
+                  ref="titleInput"
+                />
+              </div>
+              <div 
+                v-else
+                class="session-title"
+                @dblclick.stop="startEditTitle(session)"
+              >
+                {{ session.title }}
+              </div>
+              
+              <div class="session-meta">
+                <el-tag size="small" type="info" effect="plain" class="meta-tag">
+                  {{ session.metadata.messageCount }} 条消息
+                </el-tag>
+                <span class="last-activity">{{ formatTime(session.metadata.lastActivity) }}</span>
+              </div>
             </div>
           </div>
           
-          <div class="session-actions">
+          <div class="session-actions" @click.stop>
             <el-dropdown @command="(cmd) => handleSessionCommand(cmd, session)" placement="bottom-end">
-              <el-button type="text" size="small" @click.stop>
+              <el-button type="text" size="small">
                 <el-icon><MoreFilled /></el-icon>
               </el-button>
               <template #dropdown>
@@ -205,17 +226,11 @@
             :key="tag"
             size="small"
             type="info"
+            effect="plain"
             class="session-tag"
           >
             {{ tag }}
           </el-tag>
-        </div>
-        
-        <!-- 最近消息预览 -->
-        <div v-if="session.messages.length > 0" class="session-preview">
-          <div class="preview-message">
-            {{ getLastMessagePreview(session) }}
-          </div>
         </div>
       </div>
     </div>
@@ -288,7 +303,7 @@
 import { ref, computed, nextTick, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  Plus, MoreFilled, Search, Filter, Download, Upload, Delete,
+  Plus, MoreFilled, Search, Filter, Download, Upload, Delete, Fold,
   Edit, CopyDocument, PriceTag, ChatDotRound
 } from '@element-plus/icons-vue'
 import { useChatStore } from '@/stores/chat'
@@ -302,7 +317,7 @@ const props = defineProps({
 })
 
 // Emits
-const emit = defineEmits(['session-switched'])
+const emit = defineEmits(['session-switched', 'collapse'])
 
 // 响应式数据
 const chatStore = useChatStore()
@@ -623,13 +638,6 @@ const formatTime = (timestamp) => {
   }
 }
 
-const getLastMessagePreview = (session) => {
-  if (session.messages.length === 0) return '暂无消息'
-  
-  const lastMessage = session.messages[session.messages.length - 1]
-  const content = lastMessage.content.replace(/\n/g, ' ').trim()
-  return content.length > 50 ? content.slice(0, 50) + '...' : content
-}
 
 // 初始化
 const initialize = () => {
@@ -650,17 +658,38 @@ initialize()
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: white;
-  border-radius: 8px;
+  background: transparent;
+  border-radius: 0;
   overflow: hidden;
 }
 
-.history-header {
-  padding: 16px;
-  border-bottom: 1px solid #e4e7ed;
+.history-header-card {
+  margin: 10px 12px 8px 12px;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 2px solid var(--cyan-border, #cffafe);
+  border-top: 3px solid var(--cyan-color, #06b6d4);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.history-header-card:hover {
+  box-shadow: 0 4px 12px rgba(6, 182, 212, 0.15);
+  border-color: var(--cyan-color, #06b6d4);
+}
+
+.history-header-card {
+  padding: 12px 12px;
+}
+
+.header-content {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
 }
 
 .header-title {
@@ -671,8 +700,8 @@ initialize()
 
 .header-title h3 {
   margin: 0;
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 650;
   color: var(--text-primary);
 }
 
@@ -681,11 +710,40 @@ initialize()
   gap: 8px;
 }
 
+.search-section-card {
+  margin: 0 12px 10px 12px;
+  border-radius: 12px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  position: sticky;
+  top: 54px;
+  z-index: 2;
+}
+
+.search-section-card {
+  padding: 0;
+}
+
 .search-section {
-  padding: 12px 16px;
-  border-bottom: 1px solid #f0f0f0;
   display: flex;
   gap: 8px;
+}
+
+.search-input {
+  flex: 1;
+}
+
+.search-input :deep(.el-input__inner) {
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  background: #ffffff;
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.search-input :deep(.el-input__inner):focus {
+  border-color: rgba(59, 130, 246, 0.55);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
 }
 
 .filter-badge {
@@ -721,26 +779,69 @@ initialize()
 .sessions-list {
   flex: 1;
   overflow-y: auto;
-  padding: 8px;
+  padding: 0 12px 12px 12px;
 }
 
-.session-item {
-  padding: 12px;
+.session-card {
   margin-bottom: 8px;
-  border-radius: 8px;
-  border: 1px solid #e4e7ed;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 2px solid #e5e7eb;
   cursor: pointer;
-  transition: all 0.3s;
+  transition: box-shadow 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+  position: relative;
 }
 
-.session-item:hover {
-  border-color: #409EFF;
-  box-shadow: 0 2px 8px rgba(64, 158, 255, 0.2);
+/* 为不同位置的卡片添加不同颜色的边框 */
+.session-card:nth-child(6n+1) {
+  border-left: 3px solid var(--primary-color, #0969da);
 }
 
-.session-item.active {
-  border-color: #409EFF;
-  background-color: #f0f8ff;
+.session-card:nth-child(6n+2) {
+  border-left: 3px solid var(--purple-color, #9333ea);
+}
+
+.session-card:nth-child(6n+3) {
+  border-left: 3px solid var(--teal-color, #14b8a6);
+}
+
+.session-card:nth-child(6n+4) {
+  border-left: 3px solid var(--orange-color, #f97316);
+}
+
+.session-card:nth-child(6n+5) {
+  border-left: 3px solid var(--pink-color, #ec4899);
+}
+
+.session-card:nth-child(6n+6) {
+  border-left: 3px solid var(--cyan-color, #06b6d4);
+}
+
+.session-card:hover {
+  border-color: #3b82f6;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.10);
+  transform: translateX(2px);
+}
+
+.session-card-active {
+  background: rgba(59, 130, 246, 0.06);
+  border-color: rgba(59, 130, 246, 0.55);
+  border-left-width: 4px !important;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.10);
+}
+
+.session-card-active .session-title,
+.session-card-active .last-activity {
+  color: #111827 !important;
+}
+
+.session-card-active .item-icon {
+  color: #1d4ed8 !important;
+}
+
+.session-card {
+  padding: 12px 12px;
 }
 
 .session-main {
@@ -750,6 +851,21 @@ initialize()
 }
 
 .session-title-container {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.item-icon {
+  font-size: 18px;
+  color: #667eea;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.session-info {
   flex: 1;
   min-width: 0;
 }
@@ -768,9 +884,19 @@ initialize()
 
 .session-meta {
   display: flex;
-  gap: 12px;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
   font-size: 12px;
+}
+
+.meta-tag {
+  font-size: 11px;
+}
+
+.last-activity {
   color: var(--text-secondary);
+  font-size: 11px;
 }
 
 .session-actions {
@@ -789,17 +915,6 @@ initialize()
   font-size: 11px;
 }
 
-.session-preview {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid #f0f0f0;
-}
-
-.preview-message {
-  font-size: 12px;
-  color: var(--text-secondary);
-  line-height: 1.4;
-}
 
 .empty-state {
   padding: 40px 20px;

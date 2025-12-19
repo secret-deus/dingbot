@@ -179,6 +179,8 @@ class EnhancedLLMProcessor:
             # 根据工具类型采用不同的提炼策略
             if tool_name.startswith('k8s_'):
                 return self._extract_k8s_key_info(content, tool_name, context)
+            elif tool_name.startswith('ecs-'):
+                return self._extract_ecs_key_info(content, tool_name, context)
             elif 'log' in tool_name.lower():
                 return self._extract_log_key_info(content)
             else:
@@ -190,6 +192,14 @@ class EnhancedLLMProcessor:
     
     def _extract_k8s_key_info(self, content: str, tool_name: str, context: Optional[Dict[str, Any]] = None) -> str:
         """提炼Kubernetes相关信息的关键内容"""
+        return self._extract_resource_key_info(content, tool_name, context, ['namespace', 'pod', 'service', 'deployment'])
+
+    def _extract_ecs_key_info(self, content: str, tool_name: str, context: Optional[Dict[str, Any]] = None) -> str:
+        """提炼ECS相关信息的关键内容"""
+        return self._extract_resource_key_info(content, tool_name, context, ['instance', 'region', 'status', 'zone'])
+
+    def _extract_resource_key_info(self, content: str, tool_name: str, context: Optional[Dict[str, Any]], resource_keywords: List[str]) -> str:
+        """通用的资源信息提炼逻辑"""
         lines = content.split('\n')
         
         # 从上下文中提取用户查询的资源信息
@@ -200,9 +210,8 @@ class EnhancedLLMProcessor:
         # 保留重要的状态信息
         important_keywords = [
             'status', 'state', 'ready', 'running', 'pending', 'failed', 'error',
-            'warning', 'critical', 'name', 'namespace', 'age', 'restarts',
-            'cpu', 'memory', 'node', 'image', 'port', 'service', 'endpoint'
-        ]
+            'warning', 'critical', 'name', 'age', 'id'
+        ] + resource_keywords
         
         # 分类收集信息
         summary_lines = []
@@ -220,10 +229,10 @@ class EnhancedLLMProcessor:
                 continue
             
             # 保留统计摘要信息
-            if any(word in line_lower for word in ['total', 'count', 'summary', '总计', '数量', 'namespace']):
+            if any(word in line_lower for word in ['total', 'count', 'summary', '总计', '数量']):
                 summary_lines.append(line)
             # 保留表格头部
-            elif '|' in line and ('name' in line_lower or 'namespace' in line_lower or 'ready' in line_lower):
+            elif '|' in line and any(kw in line_lower for kw in resource_keywords + ['name', 'id']):
                 table_headers.append(line)
             # 保留包含重要关键词的行
             elif any(keyword in line_lower for keyword in important_keywords):
@@ -235,37 +244,24 @@ class EnhancedLLMProcessor:
             else:
                 other_lines.append(line)
         
-        # 智能组合结果：目标资源 > 摘要 > 表头 > 重要信息 > 其他
+        # 智能组合结果
         result_lines = []
-        
-        # 1. 用户查询的特定资源（全部保留）
         if target_resource_lines:
             result_lines.extend(target_resource_lines)
-            result_lines.append("") # 空行分隔
+            result_lines.append("")
         
-        # 2. 摘要信息（前10行）
         result_lines.extend(summary_lines[:10])
-        
-        # 3. 表格头部（前3行）
         result_lines.extend(table_headers[:3])
+        result_lines.extend(important_lines[:20])
         
-        # 4. 重要信息（前15行，错误优先）
-        result_lines.extend(important_lines[:15])
-        
-        # 5. 如果还有空间，添加其他信息
-        remaining_space = max(0, 30 - len(result_lines))
+        remaining_space = max(0, 40 - len(result_lines))
         if remaining_space > 0:
             result_lines.extend(other_lines[:remaining_space])
         
-        # 添加提炼说明
         if len(result_lines) < len(lines):
             filtered_count = len(lines) - len(result_lines)
-            result_lines.append(f"\n[已智能提炼关键信息，原始数据 {len(lines)} 行，显示 {len(result_lines)} 行，过滤 {filtered_count} 行]")
+            result_lines.append(f"\n[已智能提炼关键信息，原始 {len(lines)} 行，显示 {len(result_lines)} 行]")
             
-            # 如果有目标资源，特别说明
-            if target_resource_lines:
-                result_lines.append(f"[✅ 已优先保留查询的目标资源: {', '.join(target_resources)}]")
-        
         return '\n'.join(result_lines)
     
     def _extract_target_resources_from_context(self, context: Optional[Dict[str, Any]]) -> List[str]:
@@ -580,21 +576,34 @@ class EnhancedLLMProcessor:
             tools = None
             if enable_tools and self.mcp_client:
                 try:
+                    # 检查MCP客户端连接状态
+                    if hasattr(self.mcp_client, 'status') and self.mcp_client.status.name != "CONNECTED":
+                        logger.warning(f"MCP客户端状态异常: {self.mcp_client.status.name}，尝试重新连接...")
+                        try:
+                            await self.mcp_client.connect()
+                            logger.info("✅ MCP客户端重新连接成功")
+                        except Exception as reconnect_error:
+                            logger.error(f"❌ MCP客户端重新连接失败: {reconnect_error}")
+                            logger.warning("将使用非工具模式进行对话")
+                    
+                    # 获取工具列表
                     available_tools = await self.mcp_client.list_tools()
                     tool_count = len(available_tools) if available_tools else 0
-                    logger.info(f"MCP客户端获取到 {tool_count} 个工具")
+                    logger.info(f"📊 MCP客户端获取到 {tool_count} 个工具")
                     
                     # ✅ 恢复完整工具功能 - 工具转换问题已修复
-                    if available_tools:
-                        logger.info(f"✅ 使用所有可用工具: {len(available_tools)} 个")
+                    if available_tools and tool_count > 0:
+                        logger.info(f"✅ 使用所有可用工具: {tool_count} 个")
                         limited_tools = available_tools
                         tools = self._convert_tools_to_openai(limited_tools)
                         tool_names = [tool['function']['name'] for tool in tools]
-                        logger.info(f"转换为OpenAI格式的工具: {tool_names}")
+                        logger.info(f"🔧 转换为OpenAI格式的工具 ({len(tool_names)} 个): {', '.join(tool_names[:5])}{'...' if len(tool_names) > 5 else ''}")
                     else:
+                        logger.warning(f"⚠️ 未获取到可用工具 (工具数量: {tool_count})")
                         tools = None
                 except Exception as e:
-                    logger.warning(f"获取工具失败，使用非工具模式: {e}")
+                    logger.error(f"❌ 获取工具失败，使用非工具模式: {e}", exc_info=True)
+                    tools = None
             
             # 如果没有工具可用，直接进行普通对话
             if not tools or len(tools) == 0:
@@ -603,35 +612,54 @@ class EnhancedLLMProcessor:
                     yield chunk
                 return
             
-            # 第一阶段：LLM决策和工具执行
-            logger.info("开始第一阶段：LLM决策和工具执行")
+            # 迭代决策和工具执行（支持多轮工具调用）
+            logger.info("开始工具决策和执行循环")
             tool_calls_made = []
             tool_results = []
             updated_conversation_history = conversation_history.copy()
+            max_rounds = 5  # 最大支持5轮工具调用，防止无限循环
+            current_round = 0
             
-            try:
-                async for chunk in self._phase_one_tool_execution(updated_conversation_history, tools, message):
-                    if isinstance(chunk, dict) and chunk.get("type") == "tool_call_complete":
-                        # 收集工具调用信息
-                        tool_calls_made.append(chunk["tool_call"])
-                        tool_results.append(chunk["result"])
-                        # 更新对话历史
-                        if "conversation_history" in chunk:
-                            updated_conversation_history = chunk["conversation_history"]
-                    else:
-                        # 流式输出工具执行状态
-                        yield chunk
-                        
-                logger.info(f"第一阶段完成，工具调用数: {len(tool_calls_made)}, 结果数: {len(tool_results)}")
+            while current_round < max_rounds:
+                current_round += 1
+                logger.info(f"第 {current_round} 轮决策开始")
                 
-            except Exception as e:
-                logger.error(f"第一阶段工具执行失败: {e}", exc_info=True)
-                yield f"\n❌ 工具执行失败: {str(e)}"
-                return
+                round_tool_calls = []
+                round_has_tool_call = False
+                
+                try:
+                    async for chunk in self._phase_one_tool_execution(updated_conversation_history, tools, message):
+                        if isinstance(chunk, dict) and chunk.get("type") == "tool_call_complete":
+                            round_has_tool_call = True
+                            # 收集工具调用信息
+                            tool_calls_made.append(chunk["tool_call"])
+                            round_tool_calls.append(chunk["tool_call"])
+                            tool_results.append(chunk["result"])
+                            # 更新对话历史
+                            if "conversation_history" in chunk:
+                                updated_conversation_history = chunk["conversation_history"]
+                        else:
+                            # 流式输出工具执行状态
+                            yield chunk
+                    
+                    # 如果本轮没有产生任何工具调用，说明决策已完成，跳出循环
+                    if not round_has_tool_call:
+                        logger.info(f"第 {current_round} 轮未产生工具调用，决策完成")
+                        break
+                        
+                    logger.info(f"第 {current_round} 轮完成，产生了 {len(round_tool_calls)} 个工具调用")
+                    
+                except Exception as e:
+                    logger.error(f"工具执行决策循环出错 (Round {current_round}): {e}", exc_info=True)
+                    yield f"\n❌ 工具执行决策出错: {str(e)}"
+                    return
             
-            # 第二阶段：基于工具结果生成LLM对话回复
+            if current_round >= max_rounds:
+                logger.warning(f"达到最大工具调用轮数 ({max_rounds})，强制终止")
+            
+            # 最终阶段：基于所有工具结果生成LLM对话回复
             if tool_calls_made:
-                logger.info("开始第二阶段：基于工具结果生成LLM对话回复")
+                logger.info(f"开始最终回复生成，共执行了 {len(tool_calls_made)} 个工具调用")
                 yield "\n\n---\n\n"  # 清晰的分隔符
                 
                 try:
@@ -743,12 +771,14 @@ class EnhancedLLMProcessor:
                 
             assistant_message = response.choices[0].message
             
-            # 如果没有工具调用，直接流式输出内容
+            # 如果没有工具调用，说明这是一条普通消息或最终回复
             if not assistant_message.tool_calls:
+                # 将内容记录到对话历史（如果是普通回复）
                 if assistant_message.content:
-                    # 流式输出普通回复
-                    async for chunk in self._stream_llm_response(conversation_history):
-                        yield chunk
+                    conversation_history.append({
+                        "role": "assistant",
+                        "content": assistant_message.content
+                    })
                 return
             
             # 将LLM的工具调用决策添加到对话历史
@@ -777,18 +807,50 @@ class EnhancedLLMProcessor:
                 arguments_json = tool_call.function.arguments
                 tool_call_id = tool_call.id
                 
-                # 输出工具执行开始状态
-                yield f"\n🛠️ **正在调用工具**: `{tool_name}`"
-                yield f"\n📋 **参数**: {self._format_tool_arguments(arguments_json)}"
+                # 发送工具调用开始的结构化消息
+                yield {
+                    "type": "tool_call_start",
+                    "tool_call": {
+                        "name": tool_name,
+                        "arguments": arguments_json,
+                        "id": tool_call_id
+                    }
+                }
+                
                 logger.info(f"执行工具调用: {tool_name}")
                 
                 try:
                     # 执行工具调用
-                    arguments = json.loads(arguments_json)
+                    # 解析参数JSON
+                    parsed_args = json.loads(arguments_json)
                     start_time = time.time()
                     
-                    # 显示执行中状态
-                    yield f"\n⏳ 工具执行中..."
+                    # 处理参数类型：如果LLM返回的是列表，需要合并为字典
+                    if isinstance(parsed_args, list):
+                        logger.warning(f"⚠️ LLM返回的参数是列表类型，包含 {len(parsed_args)} 个元素，正在合并...")
+                        logger.debug(f"原始参数列表: {parsed_args}")
+                        
+                        # 合并所有字典参数
+                        arguments = {}
+                        for i, arg_item in enumerate(parsed_args):
+                            if isinstance(arg_item, dict):
+                                arguments.update(arg_item)
+                                logger.debug(f"合并参数项 {i+1}: {arg_item}")
+                            else:
+                                logger.warning(f"参数项 {i+1} 不是字典类型，跳过: {type(arg_item)}")
+                        
+                        logger.info(f"✅ 参数合并完成，最终参数: {arguments}")
+                    elif isinstance(parsed_args, dict):
+                        arguments = parsed_args
+                        logger.debug(f"参数类型正确（字典）: {arguments}")
+                    else:
+                        # 如果不是字典也不是列表，尝试转换为字典
+                        logger.warning(f"⚠️ 参数类型异常: {type(parsed_args)}，尝试转换...")
+                        if parsed_args is None:
+                            arguments = {}
+                        else:
+                            arguments = {"value": parsed_args}
+                        logger.info(f"转换后的参数: {arguments}")
                     
                     # 添加超时保护和连接状态检查的工具调用
                     try:
@@ -807,6 +869,7 @@ class EnhancedLLMProcessor:
                                 raise Exception(f"MCP连接异常且重连失败: {reconnect_error}")
                         
                         # 执行工具调用
+                        logger.debug(f"🔧 调用工具 {tool_name}，参数类型: {type(arguments)}, 参数值: {arguments}")
                         result = await self.mcp_client.call_tool(tool_name, arguments)
                         execution_time = time.time() - start_time
                         
@@ -820,9 +883,18 @@ class EnhancedLLMProcessor:
                         }
                         conversation_history.append(tool_result_message)
                         
-                        # 输出工具执行完成状态
-                        yield f"\n✅ **工具执行成功**: `{tool_name}` (耗时: {execution_time:.2f}秒)"
-                        yield f"\n📊 **结果摘要**: {self._get_result_summary(result)}"
+                        # 发送结构化的状态更新
+                        yield {
+                            "type": "tool_call_update",
+                            "tool_call": {
+                                "name": tool_name,
+                                "arguments": arguments_json,
+                                "id": tool_call_id,
+                                "status": "success",
+                                "duration": execution_time
+                            },
+                            "result": result
+                        }
                         
                         # 返回工具调用完成信息
                         yield {
@@ -848,7 +920,18 @@ class EnhancedLLMProcessor:
                         }
                         conversation_history.append(tool_error_message)
                         
-                        yield f"⏰ 工具 {tool_name} 执行超时 (耗时: {execution_time:.2f}秒)"
+                        # 发送结构化的状态更新
+                        yield {
+                            "type": "tool_call_update",
+                            "tool_call": {
+                                "name": tool_name,
+                                "arguments": arguments_json,
+                                "id": tool_call_id,
+                                "status": "error",
+                                "duration": execution_time
+                            },
+                            "error": "执行超时"
+                        }
                         
                         # 返回超时信息
                         yield {
@@ -875,7 +958,18 @@ class EnhancedLLMProcessor:
                         }
                         conversation_history.append(tool_error_message)
                         
-                        yield f"❌ 工具 {tool_name} 执行失败: {str(tool_error)} (耗时: {execution_time:.2f}秒)"
+                        # 发送结构化的状态更新
+                        yield {
+                            "type": "tool_call_update",
+                            "tool_call": {
+                                "name": tool_name,
+                                "arguments": arguments_json,
+                                "id": tool_call_id,
+                                "status": "error",
+                                "duration": execution_time
+                            },
+                            "error": str(tool_error)
+                        }
                         
                         # 返回工具调用失败信息
                         yield {
@@ -901,7 +995,18 @@ class EnhancedLLMProcessor:
                     }
                     conversation_history.append(tool_error_message)
                     
-                    yield f"❌ 工具 {tool_name} 执行失败: {str(e)}"
+                    # 发送结构化的状态更新
+                    yield {
+                        "type": "tool_call_update",
+                        "tool_call": {
+                            "name": tool_name,
+                            "arguments": arguments_json,
+                            "id": tool_call_id,
+                            "status": "error",
+                            "duration": 0
+                        },
+                        "error": str(e)
+                    }
                     
                     # 返回工具调用失败信息
                     yield {
@@ -1012,13 +1117,23 @@ class EnhancedLLMProcessor:
                 
                 # 统一处理：先恢复完整内容，然后直接输出
                 if response_generated and full_response:
+                    # 记录恢复前的长度
+                    logger.info(f"🔍 恢复前的 full_response 长度: {len(full_response)} 字符")
+                    logger.info(f"🔍 恢复前的内容预览（前200字符）:\n{full_response[:200]}")
+                    
                     # 先进行完整的脱敏恢复
                     final_restored_response = self.data_masker.restore_llm_response(
                         full_response, session_id
                     )
                     
-                    logger.info(f"🔄 恢复后的完整内容:\n{final_restored_response}")
-                    logger.info(f"直接输出恢复后的完整内容，总长度: {len(final_restored_response)} 字符")
+                    logger.info(f"🔄 恢复后的内容预览（前200字符）:\n{final_restored_response[:200]}")
+                    logger.info(f"🔄 恢复后的完整内容长度: {len(final_restored_response)} 字符")
+                    
+                    # 检查是否发生了截断
+                    if len(final_restored_response) < len(full_response):
+                        logger.error(f"⚠️ 恢复后内容变短了！恢复前: {len(full_response)}, 恢复后: {len(final_restored_response)}")
+                    elif len(final_restored_response) < len(full_response) * 0.5:
+                        logger.error(f"⚠️ 恢复后内容显著变短！可能存在严重的恢复问题")
                     
                     # 直接输出恢复后的完整内容
                     yield final_restored_response
@@ -1583,16 +1698,38 @@ class EnhancedLLMProcessor:
         for tool_call in message.tool_calls:
             try:
                 # 解析参数
-                parameters = json.loads(tool_call.function.arguments)
+                parsed_params = json.loads(tool_call.function.arguments)
+                
+                # 处理参数类型：如果LLM返回的是列表，需要合并为字典
+                if isinstance(parsed_params, list):
+                    logger.warning(f"⚠️ LLM返回的参数是列表类型，包含 {len(parsed_params)} 个元素，正在合并...")
+                    # 合并所有字典参数
+                    parameters = {}
+                    for i, param_item in enumerate(parsed_params):
+                        if isinstance(param_item, dict):
+                            parameters.update(param_item)
+                        else:
+                            logger.warning(f"参数项 {i+1} 不是字典类型，跳过: {type(param_item)}")
+                    logger.info(f"✅ 参数合并完成，最终参数: {parameters}")
+                elif isinstance(parsed_params, dict):
+                    parameters = parsed_params
+                else:
+                    # 如果不是字典也不是列表，尝试转换为字典
+                    logger.warning(f"⚠️ 参数类型异常: {type(parsed_params)}，尝试转换...")
+                    if parsed_params is None:
+                        parameters = {}
+                    else:
+                        parameters = {"value": parsed_params}
                 
                 # 调用 MCP 工具
                 if not self.mcp_client:
                     result = "MCP客户端未连接，无法执行工具调用"
                 else:
+                    logger.debug(f"🔧 调用工具 {tool_call.function.name}，参数类型: {type(parameters)}, 参数值: {parameters}")
                     result = await self.mcp_client.call_tool(
-                    tool_call.function.name,
-                    parameters
-                )
+                        tool_call.function.name,
+                        parameters
+                    )
                 
                 function_results.append(FunctionCallResult(
                     function_call=FunctionCall(

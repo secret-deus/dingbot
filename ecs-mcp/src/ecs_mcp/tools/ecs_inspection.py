@@ -86,8 +86,11 @@ class EcsInspectionTool(MCPToolBase):
             status = arguments.get("status") or "Running"
             name_contains = arguments.get("name_contains")
             zone_id = arguments.get("zone_id")
-            max_instances = int(arguments.get("max_instances", 200))
-            page_size = max(1, min(100, int(arguments.get("page_size", 100))))
+            # 安全处理可能为None的整数参数
+            max_instances_val = arguments.get("max_instances")
+            max_instances = int(max_instances_val) if max_instances_val is not None else 200
+            page_size_val = arguments.get("page_size")
+            page_size = max(1, min(100, int(page_size_val) if page_size_val is not None else 100))
             scan_all_pages = bool(arguments.get("scan_all_pages", True))
 
             # 快速阶段参数
@@ -99,9 +102,13 @@ class EcsInspectionTool(MCPToolBase):
             relative_range = arguments.get("relative_range") or "1h"
             period = arguments.get("period")
             thresholds = arguments.get("thresholds") or {}
-            cpu_p95_high = float(thresholds.get("cpu_p95_high", 80))
-            mem_high = float(thresholds.get("memory_util_high", 85))
-            disk_high = float(thresholds.get("disk_util_high", 80))
+            # 安全处理可能为None的浮点数参数
+            cpu_p95_high_val = thresholds.get("cpu_p95_high")
+            cpu_p95_high = float(cpu_p95_high_val) if cpu_p95_high_val is not None else 80.0
+            mem_high_val = thresholds.get("memory_util_high")
+            mem_high = float(mem_high_val) if mem_high_val is not None else 85.0
+            disk_high_val = thresholds.get("disk_util_high")
+            disk_high = float(disk_high_val) if disk_high_val is not None else 80.0
 
             # 1) 列出实例（按状态/名称/Zone过滤），支持多地域与分页
             candidates: List[Dict[str, Any]] = []
@@ -162,7 +169,9 @@ class EcsInspectionTool(MCPToolBase):
 
             # 2) 并发获取监控摘要
             monitor_tool = EcsDescribeInstanceMonitorDataTool()
-            concurrency = int(arguments.get("max_concurrency", 5))
+            # 安全处理可能为None的整数参数
+            concurrency_val = arguments.get("max_concurrency")
+            concurrency = int(concurrency_val) if concurrency_val is not None else 5
             sem = asyncio.Semaphore(max(1, concurrency))
 
             async def fetch_one(inst: Dict[str, Any]) -> Dict[str, Any]:
