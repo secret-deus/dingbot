@@ -1,7 +1,7 @@
 # 钉钉K8s运维机器人 - 项目状态与计划
 
-**最后更新**: 2025-12-18 19:52:00 +08:00  
-**版本**: v2.0.0  
+**最后更新**: 2025-12-18 19:52:00 +08:00
+**版本**: v2.0.0
 **状态**: 生产就绪 ✅
 
 ---
@@ -21,7 +21,7 @@
 
 ### 项目规模
 - **代码量**: ~28,000行
-- **模块数**: 前端(frontend-v2) + 后端 + 2个MCP服务器
+- **模块数**: 前端(frontend-v2) + 后端（进程内 K8s/ECS MCP 工具 + 可选远程 MCP）
 - **工具数**: 25+ K8s工具 + ECS监控工具 + Prometheus分析工具
 
 ---
@@ -38,8 +38,9 @@
 |------|------|------|
 | **前端** | `frontend-v2/` | Vue3 SPA，企业风浅色主题 |
 | **后端** | `backend/` | FastAPI REST API + SSE流式响应 |
-| **K8s MCP** | `k8s-mcp/` | Kubernetes管理工具集(25+) |
-| **ECS MCP** | `ecs-mcp/` | 阿里云ECS监控和巡检 |
+| **K8s 工具** | `backend/src/k8s_mcp/` | Kubernetes管理工具集(25+)，进程内注册 |
+| **ECS 工具** | `backend/src/ecs_mcp/` | 阿里云ECS监控和巡检，进程内注册 |
+| **归档（旧独立服务）** | `archived/k8s-mcp-standalone/`、`archived/ecs-mcp-standalone/` | 仅供参考，不再作为运行路径 |
 | **配置** | `config/` | 统一配置目录 |
 
 ---
@@ -105,7 +106,9 @@ ding-robot/
 │   │   ├── api/v2/         # API路由
 │   │   ├── config/         # 配置管理
 │   │   ├── llm/            # LLM处理 + 安全
-│   │   └── mcp/            # MCP客户端
+│   │   ├── mcp/            # MCP客户端 + 进程内工具注册
+│   │   ├── k8s_mcp/        # 进程内 K8s 工具
+│   │   └── ecs_mcp/        # 进程内 ECS 工具
 │   ├── static/spa/         # 前端构建产物
 │   └── config.env          # 环境配置
 ├── frontend-v2/            # Vue.js 3 前端 (当前使用)
@@ -117,8 +120,7 @@ ding-robot/
 ├── config/                  # 统一配置目录
 │   ├── mcp_config.json     # MCP配置
 │   └── llm_providers.json  # LLM配置
-├── k8s-mcp/                # Kubernetes MCP服务器
-├── ecs-mcp/                # 阿里云ECS MCP服务器
+├── archived/               # 历史独立 K8s/ECS MCP 工程归档
 ├── scripts/                # 构建脚本
 └── project_document/       # 项目文档
 ```
@@ -144,10 +146,9 @@ cp backend/config.env.example backend/config.env
 
 ### 3. 启动服务
 ```bash
-# 启动MCP服务器 (可选)
-poetry run python k8s-mcp/start_k8s_mcp_http_server.py
-
-# 启动后端 (包含前端)
+# K8s/ECS 工具默认在主进程内（BUILTIN_K8S_ECS_TOOLS=true），无需单独起子服务
+poetry run start-all
+# 或
 poetry run serve
 ```
 
@@ -182,8 +183,7 @@ poetry run serve
 | 文档 | 说明 |
 |------|------|
 | [技术架构与配置指南](./技术架构与配置指南.md) | 系统架构详解、配置管理 |
-| [K8s MCP文档](../k8s-mcp/README.md) | K8s工具集使用指南 |
-| [ECS MCP文档](../ecs-mcp/README.md) | ECS监控工具使用指南 |
+| [归档说明](../archived/README.md) | 原独立 k8s-mcp / ecs-mcp 工程说明 |
 | [API文档](./api-documentation.md) | REST API参考 |
 
 ---
@@ -194,8 +194,8 @@ poetry run serve
 
 1. **MCP连接失败**
    ```bash
-   # 检查MCP服务器是否启动
-   curl http://localhost:8766/health
+   # 检查后端健康；远程 MCP 端口以 config/mcp_config.json 为准
+   curl http://localhost:8000/health
    ```
 
 2. **工具无法使用**

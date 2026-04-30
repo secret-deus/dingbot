@@ -1,47 +1,33 @@
 <template>
-  <div class="chat-page">
-    <el-card class="chat-header-card" shadow="hover">
-      <div class="header-content">
-        <div class="header-left">
-          <el-button 
-            type="text" 
-            @click="toggleSidebar"
-            class="sidebar-toggle"
-          >
-            <el-icon><Burger v-if="!sidebarVisible" /><Close v-else /></el-icon>
-          </el-button>
-          
-          <h1 class="page-title">智能对话</h1>
-          <div class="chat-status">
-            <el-tag :type="connectionStatusType" size="small" effect="plain">
-              <el-icon><Connection /></el-icon>
-              {{ connectionStatusText }}
-            </el-tag>
-            <el-tag v-if="chatStore.currentSession" type="success" size="small" effect="plain">
-              当前: {{ chatStore.currentSession.title }}
-            </el-tag>
-          </div>
-        </div>
-        
-        <div class="header-actions">
-          <el-tooltip content="新建对话" placement="bottom">
-            <el-button type="primary" size="small" circle @click="createNewChat">
+  <div class="chat-page chat-cockpit-page">
+    <section class="chat-command-strip">
+      <div class="command-copy">
+        <p class="eyebrow">AI MISSION CONTROL</p>
+        <h1>智能对话</h1>
+        <span>{{ activeMissionLine }}</span>
+      </div>
+
+      <div class="command-status">
+        <div class="command-actions">
+          <el-tooltip :content="sidebarVisible ? '收起历史' : '展开历史'" placement="bottom">
+            <el-button size="small" circle @click="toggleSidebar">
+              <el-icon><Burger v-if="!sidebarVisible" /><Close v-else /></el-icon>
+            </el-button>
+          </el-tooltip>
+          <el-tooltip content="新建诊断" placement="bottom">
+            <el-button size="small" circle @click="createNewChat">
               <el-icon><ChatDotSquare /></el-icon>
             </el-button>
           </el-tooltip>
-
-          <el-tooltip content="搜索消息" placement="bottom">
+          <el-tooltip content="检索证据" placement="bottom">
             <el-button size="small" circle @click="showMessageSearch">
               <el-icon><Search /></el-icon>
             </el-button>
           </el-tooltip>
-          
           <el-dropdown @command="handleMenuCommand">
-            <el-tooltip content="更多" placement="bottom">
-              <el-button size="small" circle>
-                <el-icon><MoreFilled /></el-icon>
-              </el-button>
-            </el-tooltip>
+            <el-button size="small" circle>
+              <el-icon><Setting /></el-icon>
+            </el-button>
             <template #dropdown>
               <el-dropdown-menu>
                 <el-dropdown-item command="clearCurrent" :disabled="!chatStore.hasMessages">
@@ -68,15 +54,26 @@
             </template>
           </el-dropdown>
         </div>
+        <div class="status-pill" :class="{ live: chatStore.isConnected, warning: chatStore.isStreaming }">
+          <span class="status-dot"></span>
+          {{ connectionStatusText }}
+        </div>
+        <div class="status-pill">
+          <span class="status-dot cyan"></span>
+          Local MCP
+        </div>
+        <div class="status-pill">
+          <span class="status-dot amber"></span>
+          只读优先
+        </div>
       </div>
-    </el-card>
-    
-    <!-- 主内容区域 -->
-    <div class="chat-body">
+    </section>
+
+    <div class="chat-body cockpit-grid" :class="{ 'history-collapsed': !sidebarVisible }">
       <!-- 历史记录侧边栏 -->
-      <el-aside 
-        :width="sidebarVisible ? '350px' : '0px'"
-        class="history-sidebar"
+      <el-aside
+        :width="sidebarVisible ? '280px' : '0px'"
+        class="history-sidebar cockpit-panel"
         :class="{ 'is-hidden': !sidebarVisible }"
       >
         <div v-if="sidebarVisible" class="sidebar-content">
@@ -86,16 +83,100 @@
           />
         </div>
       </el-aside>
-      
+
       <!-- 主聊天区域 -->
-      <el-main class="chat-main">
-        <StreamChat 
+      <el-main class="chat-main cockpit-panel">
+        <div class="mission-head">
+          <div>
+            <p class="eyebrow">MISSION STREAM</p>
+            <h2>AI Mission Stream</h2>
+            <span>把运维问题转成可审计的诊断链路：先读状态，再列证据，最后给下一步。</span>
+          </div>
+          <div class="mission-stats">
+            <div class="mission-stat">
+              <strong>{{ toolBusCount }}</strong>
+              <span>Tools</span>
+            </div>
+            <div class="mission-stat">
+              <strong>{{ riskyOpsCount }}</strong>
+              <span>Risky Ops</span>
+            </div>
+            <div class="mission-stat">
+              <strong>{{ confidenceScore }}</strong>
+              <span>Confidence</span>
+            </div>
+          </div>
+        </div>
+        <StreamChat
           :auto-connect="true"
           :enable-tools="chatSettings.enableTools"
           :key="currentSessionKey"
           class="stream-chat-container"
         />
       </el-main>
+
+      <aside class="context-sidebar cockpit-panel">
+        <div class="context-head">
+          <div>
+            <p class="eyebrow">CONTEXT STACK</p>
+            <h3>上下文与工具总线</h3>
+          </div>
+          <el-button size="small" circle @click="refreshStorageInfo">
+            <el-icon><Refresh /></el-icon>
+          </el-button>
+        </div>
+
+        <div class="context-body">
+          <section class="context-card">
+            <h4>当前范围</h4>
+            <div class="mini-grid">
+              <div class="mini-tile">
+                <span>Session</span>
+                <strong>{{ currentSessionName }}</strong>
+              </div>
+              <div class="mini-tile">
+                <span>Messages</span>
+                <strong>{{ chatStore.messages.length }}</strong>
+              </div>
+              <div class="mini-tile">
+                <span>Mode</span>
+                <strong>{{ chatSettings.enableTools ? 'Tools On' : 'Chat Only' }}</strong>
+              </div>
+              <div class="mini-tile">
+                <span>Audit</span>
+                <strong>On</strong>
+              </div>
+            </div>
+          </section>
+
+          <section class="context-card">
+            <h4>工具状态</h4>
+            <div class="runbook-stack">
+              <div class="runbook-item">
+                <span class="status-dot"></span>
+                K8s / ECS Builtin MCP ready
+              </div>
+              <div class="runbook-item">
+                <span class="status-dot cyan"></span>
+                {{ chatStore.toolCalls.length }} tool calls in history
+              </div>
+              <div class="runbook-item">
+                <span class="status-dot amber"></span>
+                变更动作需要二次确认
+              </div>
+            </div>
+          </section>
+
+          <section class="context-card">
+            <h4>快捷动作</h4>
+            <div class="quick-actions">
+              <button @click="createNewChat">新建诊断</button>
+              <button @click="showMessageSearch">检索证据</button>
+              <button @click="settingsDialogVisible = true">工具策略</button>
+            </div>
+          </section>
+        </div>
+      </aside>
     </div>
 
     <!-- 聊天设置对话框 -->
@@ -112,33 +193,33 @@
             启用后，AI可以调用K8s工具执行实际操作
           </div>
         </el-form-item>
-        
+
         <el-form-item label="自动滚动">
           <el-switch v-model="chatSettings.autoScroll" />
           <div class="setting-help">
             新消息到达时自动滚动到底部
           </div>
         </el-form-item>
-        
+
         <el-form-item label="显示时间戳">
           <el-switch v-model="chatSettings.showTimestamp" />
           <div class="setting-help">
             在消息旁显示发送时间
           </div>
         </el-form-item>
-        
+
         <el-form-item label="最大消息数">
-          <el-input-number 
-            v-model="chatSettings.maxMessages" 
-            :min="50" 
-            :max="1000" 
+          <el-input-number
+            v-model="chatSettings.maxMessages"
+            :min="50"
+            :max="1000"
             :step="50"
           />
           <div class="setting-help">
             超过此数量时自动清理旧消息
           </div>
         </el-form-item>
-        
+
         <el-form-item label="显示历史侧栏">
           <el-switch v-model="chatSettings.showSidebar" />
           <div class="setting-help">
@@ -146,7 +227,7 @@
           </div>
         </el-form-item>
       </el-form>
-      
+
       <template #footer>
         <span class="dialog-footer">
           <el-button @click="resetSettings">重置</el-button>
@@ -163,7 +244,7 @@
       style="display: none"
       @change="handleFileImport"
     />
-    
+
     <!-- 存储管理对话框 -->
     <el-dialog
       v-model="storageDialogVisible"
@@ -183,7 +264,7 @@
               </el-button>
             </div>
           </template>
-          
+
           <div class="storage-stats">
             <div class="stat-item">
               <div class="stat-label">存储类型</div>
@@ -202,17 +283,17 @@
               <div class="stat-value">{{ storageInfo.formattedDataSize }}</div>
             </div>
           </div>
-          
+
           <!-- 存储配额进度条 -->
           <div class="storage-quota" v-if="storageInfo.quota.available > 0">
             <div class="quota-label">存储使用情况</div>
-            <el-progress 
-              :percentage="storageInfo.quota.percentage" 
+            <el-progress
+              :percentage="storageInfo.quota.percentage"
               :color="getQuotaColor(storageInfo.quota.percentage)"
               :show-text="true"
             />
             <div class="quota-info">
-              已使用: {{ formatBytes(storageInfo.quota.used) }} / 
+              已使用: {{ formatBytes(storageInfo.quota.used) }} /
               总容量: {{ formatBytes(storageInfo.quota.available) }}
             </div>
           </div>
@@ -223,10 +304,10 @@
           <template #header>
             <span>存储操作</span>
           </template>
-          
+
           <div class="action-buttons">
-            <el-button 
-              type="warning" 
+            <el-button
+              type="warning"
               @click="performCleanup"
               :loading="cleanupLoading"
               :disabled="storageInfo.totalSessions <= 5"
@@ -234,18 +315,18 @@
               <el-icon><Delete /></el-icon>
               清理旧会话
             </el-button>
-            
-            <el-button 
-              type="info" 
+
+            <el-button
+              type="info"
               @click="compressData"
               :loading="compressLoading"
             >
               <el-icon><FolderOpened /></el-icon>
               压缩数据
             </el-button>
-            
-            <el-button 
-              type="success" 
+
+            <el-button
+              type="success"
               @click="performHealthCheck"
               :loading="healthCheckLoading"
             >
@@ -253,7 +334,7 @@
               健康检查
             </el-button>
           </div>
-          
+
           <!-- 清理选项 -->
           <el-collapse v-model="activeCollapse" class="cleanup-options">
             <el-collapse-item title="清理选项" name="cleanup">
@@ -265,20 +346,20 @@
                     <el-option label="按大小" value="size-based" />
                   </el-select>
                 </el-form-item>
-                
+
                 <el-form-item label="最大会话数">
-                  <el-input-number 
-                    v-model="cleanupOptions.maxSessions" 
-                    :min="5" 
-                    :max="100" 
+                  <el-input-number
+                    v-model="cleanupOptions.maxSessions"
+                    :min="5"
+                    :max="100"
                   />
                 </el-form-item>
-                
+
                 <el-form-item label="保留天数">
-                  <el-input-number 
-                    v-model="cleanupOptions.maxAgeDays" 
-                    :min="1" 
-                    :max="365" 
+                  <el-input-number
+                    v-model="cleanupOptions.maxAgeDays"
+                    :min="1"
+                    :max="365"
                   />
                 </el-form-item>
               </el-form>
@@ -291,7 +372,7 @@
           <template #header>
             <span>操作结果</span>
           </template>
-          
+
           <div class="result-content">
             <el-alert
               :title="lastOperationResult.title"
@@ -300,7 +381,7 @@
               show-icon
               :closable="false"
             />
-            
+
             <div v-if="lastOperationResult.details" class="result-details">
               <h4>详细信息:</h4>
               <ul>
@@ -312,7 +393,7 @@
           </div>
         </el-card>
       </div>
-      
+
       <template #footer>
         <span class="dialog-footer">
           <el-button @click="storageDialogVisible = false">关闭</el-button>
@@ -321,7 +402,7 @@
     </el-dialog>
 
     <!-- 消息搜索组件 -->
-    <MessageSearch 
+    <MessageSearch
       v-model="searchDialogVisible"
       @jump-to-message="handleScrollToMessage"
     />
@@ -331,7 +412,7 @@
 <script setup>
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { 
+import {
   ChatDotSquare, ArrowDown, Download, Upload, Setting, Connection,
   Refresh, Burger, Close, Search, Warning, FolderOpened, Delete
 } from '@element-plus/icons-vue'
@@ -380,6 +461,19 @@ const connectionStatusText = computed(() => {
 })
 
 const chatStats = computed(() => chatStore.getSessionStats)
+const currentSessionName = computed(() => chatStore.currentSession?.title || '未命名诊断')
+const activeMissionLine = computed(() => {
+  if (chatStore.isStreaming) return 'AI 正在读取事件、日志和工具结果'
+  if (chatStore.hasMessages) return `当前会话：${currentSessionName.value}`
+  return '选择一个任务，开始一次可审计的运维诊断'
+})
+const toolBusCount = computed(() => chatSettings.value.enableTools ? 21 : 0)
+const riskyOpsCount = computed(() => (chatStore.toolCalls || []).filter((item) => item?.risk === 'high').length)
+const confidenceScore = computed(() => {
+  if (!chatStore.isConnected) return '0%'
+  if (chatStore.isStreaming) return '...'
+  return chatStore.hasMessages ? '92%' : 'READY'
+})
 
 // 存储信息
 const storageInfo = ref({
@@ -444,7 +538,7 @@ const handleJumpToMessage = (jumpInfo) => {
     chatStore.switchToSession(jumpInfo.sessionId)
     currentSessionKey.value++
   }
-  
+
   // TODO: 实现跳转到具体消息的滚动功能
   // 这里可以通过 StreamChat 组件暴露的方法来滚动到指定消息
   ElMessage.success('已跳转到指定消息')
@@ -472,7 +566,7 @@ const handleMenuCommand = (command) => {
 
 const clearCurrentChat = async () => {
   if (!chatStore.hasMessages) return
-  
+
   try {
     await ElMessageBox.confirm(
       '确定要清空当前对话吗？此操作不可恢复。',
@@ -483,7 +577,7 @@ const clearCurrentChat = async () => {
         type: 'warning',
       }
     )
-    
+
     chatStore.clearCurrentSession()
     currentSessionKey.value++
     ElMessage.success('当前对话已清空')
@@ -497,22 +591,22 @@ const exportCurrentChat = () => {
     ElMessage.error('没有当前对话可导出')
     return
   }
-  
+
   try {
     const data = chatStore.exportSession(chatStore.currentSessionId)
     if (!data) {
       ElMessage.error('导出失败，会话不存在')
       return
     }
-    
+
     const dataStr = JSON.stringify(data, null, 2)
     const dataBlob = new Blob([dataStr], { type: 'application/json' })
-    
+
     const link = document.createElement('a')
     link.href = URL.createObjectURL(dataBlob)
     link.download = `chat_current_${new Date().toISOString().slice(0, 10)}.json`
     link.click()
-    
+
     URL.revokeObjectURL(link.href)
     ElMessage.success('当前对话已导出')
   } catch (error) {
@@ -528,12 +622,12 @@ const importChatHistory = () => {
 const handleFileImport = (event) => {
   const file = event.target.files[0]
   if (!file) return
-  
+
   const reader = new FileReader()
   reader.onload = (e) => {
     try {
       const chatData = JSON.parse(e.target.result)
-      
+
       if (chatStore.importSessions(chatData)) {
         ElMessage.success('对话导入成功')
         currentSessionKey.value++
@@ -545,9 +639,9 @@ const handleFileImport = (event) => {
       ElMessage.error('导入对话失败，请检查文件格式')
     }
   }
-  
+
   reader.readAsText(file)
-  
+
   // 清空input值，允许重复选择同一文件
   event.target.value = ''
 }
@@ -561,10 +655,10 @@ const saveSettings = () => {
   // 保存到localStorage
   localStorage.setItem('chatSettings', JSON.stringify(chatSettings.value))
   settingsDialogVisible.value = false
-  
+
   // 应用侧栏设置
   sidebarVisible.value = chatSettings.value.showSidebar
-  
+
   if (settingsDialogVisible.value === false) {
     ElMessage.success('设置已保存')
   }
@@ -617,15 +711,15 @@ const performCleanup = async () => {
   try {
     cleanupLoading.value = true
     lastOperationResult.value = null
-    
+
     const options = {
       maxSessions: cleanupOptions.value.maxSessions,
       maxAge: cleanupOptions.value.maxAgeDays * 24 * 60 * 60 * 1000,
       strategy: cleanupOptions.value.strategy
     }
-    
+
     const result = await chatStore.cleanupOldSessions(options)
-    
+
     if (result.success) {
       lastOperationResult.value = {
         title: '清理完成',
@@ -637,7 +731,7 @@ const performCleanup = async () => {
           `清理时间: ${new Date().toLocaleString()}`
         ]
       }
-      
+
       ElMessage.success(`清理完成，删除了 ${result.removedCount} 个旧会话`)
       await refreshStorageInfo()
     } else {
@@ -661,9 +755,9 @@ const compressData = async () => {
   try {
     compressLoading.value = true
     lastOperationResult.value = null
-    
+
     const result = await chatStore.compressStorageData()
-    
+
     if (result.success) {
       lastOperationResult.value = {
         title: '压缩完成',
@@ -675,7 +769,7 @@ const compressData = async () => {
           `压缩时间: ${new Date().toLocaleString()}`
         ]
       }
-      
+
       ElMessage.success(`数据压缩完成，节省了 ${result.formattedSavedBytes}`)
       await refreshStorageInfo()
     } else {
@@ -699,13 +793,13 @@ const performHealthCheck = async () => {
   try {
     healthCheckLoading.value = true
     lastOperationResult.value = null
-    
+
     const result = await chatStore.performStorageHealthCheck()
-    
+
     if (result.success) {
-      const healthLevel = result.healthScore >= 90 ? 'success' : 
+      const healthLevel = result.healthScore >= 90 ? 'success' :
                          result.healthScore >= 70 ? 'warning' : 'error'
-      
+
       lastOperationResult.value = {
         title: `健康检查完成 (评分: ${result.healthScore}/100)`,
         type: healthLevel,
@@ -720,7 +814,7 @@ const performHealthCheck = async () => {
           ...result.recommendations.map(rec => `建议: ${rec}`)
         ]
       }
-      
+
       ElMessage.success(`健康检查完成，评分: ${result.healthScore}/100`)
       await refreshStorageInfo()
     } else {
@@ -782,17 +876,17 @@ const handleScrollToMessage = (messageId) => {
 onMounted(async () => {
   // 加载设置
   loadSettings()
-  
+
   // 加载聊天历史
   try {
     await chatStore.loadFromStorage()
-    
+
     // 等待数据完全更新
     await nextTick()
-    
+
     // 强制重新渲染StreamChat以显示加载的消息
     currentSessionKey.value++
-    
+
   } catch (error) {
     console.error('聊天历史加载失败:', error)
     ElMessage.error('加载聊天历史失败，已创建新对话')
@@ -809,7 +903,7 @@ watch(() => chatStore.messages.length, () => {
 watch(chatSettings, (newSettings) => {
   // 实时保存设置
   localStorage.setItem('chatSettings', JSON.stringify(newSettings))
-  
+
   // 应用侧栏设置
   if (newSettings.showSidebar !== sidebarVisible.value) {
     sidebarVisible.value = newSettings.showSidebar
@@ -1071,7 +1165,7 @@ watch(chatSettings, (newSettings) => {
   .history-sidebar {
     width: 300px !important;
   }
-  
+
   .sidebar-content {
     width: 300px;
   }
@@ -1084,25 +1178,25 @@ watch(chatSettings, (newSettings) => {
     gap: 12px;
     align-items: stretch;
   }
-  
+
   .header-left {
     flex-direction: column;
     gap: 8px;
     align-items: flex-start;
   }
-  
+
   .chat-status {
     justify-content: flex-start;
   }
-  
+
   .header-actions {
     justify-content: center;
   }
-  
+
   .page-title {
     font-size: 18px;
   }
-  
+
   .history-sidebar {
     position: fixed;
     top: 0;
@@ -1111,11 +1205,11 @@ watch(chatSettings, (newSettings) => {
     z-index: 1000;
     width: 280px !important;
   }
-  
+
   .sidebar-content {
     width: 280px;
   }
-  
+
   .chat-main {
     margin-left: 0;
   }
@@ -1125,14 +1219,498 @@ watch(chatSettings, (newSettings) => {
   .chat-header {
     padding: 8px 12px;
   }
-  
+
   .page-title {
     font-size: 16px;
   }
-  
+
   .chat-status {
     flex-direction: column;
     gap: 4px;
   }
 }
-</style> 
+
+/* Cockpit redesign overrides */
+.chat-cockpit-page {
+  --cockpit-bg: #070b0e;
+  --cockpit-panel: #0e1418;
+  --cockpit-panel-2: #111a1f;
+  --cockpit-border: #26343b;
+  --cockpit-border-strong: #31505a;
+  --cockpit-text: #edf7f7;
+  --cockpit-muted: #8ea0a8;
+  --cockpit-cyan: #35d9f4;
+  --cockpit-green: #4ee6a0;
+  --cockpit-amber: #ffbe55;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 14px;
+  padding: 0;
+  background:
+    linear-gradient(180deg, rgba(53, 217, 244, 0.06), transparent 38%),
+    radial-gradient(circle at 84% 18%, rgba(78, 230, 160, 0.08), transparent 28%),
+    var(--cockpit-bg) !important;
+  color: var(--cockpit-text);
+}
+
+.chat-command-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 92px;
+  padding: 16px 18px;
+  border: 1px solid var(--cockpit-border);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(53, 217, 244, 0.08), rgba(17, 26, 31, 0.94) 40%),
+    var(--cockpit-panel);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.command-copy {
+  min-width: 0;
+}
+
+.eyebrow {
+  margin: 0 0 5px;
+  color: var(--cockpit-cyan);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.command-copy h1 {
+  margin: 0 0 5px;
+  color: var(--cockpit-text);
+  font-size: 25px;
+  line-height: 1.15;
+  letter-spacing: 0;
+}
+
+.command-copy span,
+.mission-head span {
+  display: block;
+  color: var(--cockpit-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.command-status {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.command-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding-right: 6px;
+  margin-right: 2px;
+  border-right: 1px solid var(--cockpit-border);
+}
+
+.command-actions :deep(.el-button) {
+  border-color: var(--cockpit-border) !important;
+  background: #0a1114 !important;
+  color: var(--cockpit-cyan) !important;
+}
+
+.command-actions :deep(.el-button:hover) {
+  border-color: var(--cockpit-cyan) !important;
+  background: rgba(53, 217, 244, 0.12) !important;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--cockpit-border);
+  border-radius: 999px;
+  background: rgba(8, 13, 16, 0.82);
+  color: #bed0d6;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.status-pill.live {
+  border-color: rgba(78, 230, 160, 0.35);
+  color: var(--cockpit-green);
+}
+
+.status-pill.warning {
+  border-color: rgba(255, 190, 85, 0.45);
+  color: var(--cockpit-amber);
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  border-radius: 999px;
+  background: var(--cockpit-green);
+  box-shadow: 0 0 12px rgba(78, 230, 160, 0.85);
+}
+
+.status-dot.cyan {
+  background: var(--cockpit-cyan);
+  box-shadow: 0 0 12px rgba(53, 217, 244, 0.85);
+}
+
+.status-dot.amber {
+  background: var(--cockpit-amber);
+  box-shadow: 0 0 12px rgba(255, 190, 85, 0.75);
+}
+
+.chat-cockpit-page .cockpit-grid {
+  display: grid !important;
+  grid-template-columns: 280px minmax(420px, 1fr) 300px;
+  gap: 14px;
+  min-height: 0;
+  overflow: hidden;
+  border: 0 !important;
+  background: transparent !important;
+}
+
+.chat-cockpit-page .cockpit-grid.history-collapsed {
+  grid-template-columns: minmax(420px, 1fr) 300px;
+}
+
+.chat-cockpit-page .history-sidebar.is-hidden {
+  display: none !important;
+}
+
+.chat-cockpit-page .cockpit-panel {
+  min-height: 0;
+  border: 1px solid var(--cockpit-border) !important;
+  border-radius: 8px !important;
+  background: rgba(14, 20, 24, 0.96) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  overflow: hidden;
+}
+
+.chat-cockpit-page .history-sidebar {
+  width: auto !important;
+  border-right: 1px solid var(--cockpit-border) !important;
+}
+
+.chat-cockpit-page .sidebar-content {
+  width: 280px !important;
+  height: 100%;
+}
+
+.chat-cockpit-page .chat-main {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  padding: 0 !important;
+}
+
+.mission-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--cockpit-border);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0));
+}
+
+.mission-head h2,
+.context-head h3,
+.context-card h4 {
+  margin: 0;
+  color: var(--cockpit-text);
+  letter-spacing: 0;
+}
+
+.mission-head h2 {
+  margin-bottom: 4px;
+  font-size: 18px;
+}
+
+.mission-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(72px, 1fr));
+  gap: 8px;
+  flex: 0 0 250px;
+}
+
+.mission-stat {
+  min-height: 50px;
+  padding: 8px 10px;
+  border: 1px solid var(--cockpit-border);
+  border-radius: 8px;
+  background: rgba(7, 11, 14, 0.76);
+}
+
+.mission-stat strong {
+  display: block;
+  color: var(--cockpit-cyan);
+  font-size: 18px;
+  line-height: 1.1;
+}
+
+.mission-stat span {
+  margin-top: 4px;
+  color: var(--cockpit-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.chat-cockpit-page .stream-chat-container {
+  min-height: 0;
+  height: 100%;
+}
+
+.context-sidebar {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.context-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+  border-bottom: 1px solid var(--cockpit-border);
+}
+
+.context-head h3 {
+  font-size: 15px;
+}
+
+.context-head :deep(.el-button) {
+  border-color: var(--cockpit-border);
+  background: #0a1114;
+  color: var(--cockpit-cyan);
+}
+
+.context-body {
+  min-height: 0;
+  overflow: auto;
+  padding: 14px;
+}
+
+.context-card {
+  padding: 14px;
+  border: 1px solid var(--cockpit-border);
+  border-radius: 8px;
+  background: rgba(7, 11, 14, 0.62);
+}
+
+.context-card + .context-card {
+  margin-top: 12px;
+}
+
+.context-card h4 {
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.mini-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.mini-tile {
+  min-width: 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(17, 26, 31, 0.9);
+  border: 1px solid rgba(49, 80, 90, 0.55);
+}
+
+.mini-tile span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--cockpit-muted);
+  font-size: 11px;
+}
+
+.mini-tile strong {
+  display: block;
+  overflow: hidden;
+  color: var(--cockpit-text);
+  font-size: 13px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runbook-stack {
+  display: grid;
+  gap: 9px;
+}
+
+.runbook-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 32px;
+  color: #c6d6dc;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.quick-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.quick-actions button {
+  width: 100%;
+  height: 34px;
+  border: 1px solid var(--cockpit-border-strong);
+  border-radius: 8px;
+  background: rgba(53, 217, 244, 0.08);
+  color: var(--cockpit-cyan);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.quick-actions button:hover {
+  border-color: var(--cockpit-cyan);
+  background: rgba(53, 217, 244, 0.14);
+}
+
+.chat-cockpit-page :deep(.chat-history) {
+  background: transparent;
+  color: var(--cockpit-text);
+}
+
+.chat-cockpit-page :deep(.history-header-card),
+.chat-cockpit-page :deep(.search-section-card),
+.chat-cockpit-page :deep(.session-card) {
+  border-color: var(--cockpit-border) !important;
+  border-radius: 8px !important;
+  background: rgba(7, 11, 14, 0.55) !important;
+  color: var(--cockpit-text);
+  box-shadow: none !important;
+}
+
+.chat-cockpit-page :deep(.session-card-active) {
+  border-color: rgba(53, 217, 244, 0.72) !important;
+  background: rgba(53, 217, 244, 0.12) !important;
+}
+
+.chat-cockpit-page :deep(.session-title),
+.chat-cockpit-page :deep(.history-title h3),
+.chat-cockpit-page :deep(.storage-info) {
+  color: var(--cockpit-text) !important;
+}
+
+.chat-cockpit-page :deep(.session-meta),
+.chat-cockpit-page :deep(.history-title p),
+.chat-cockpit-page :deep(.el-empty__description p) {
+  color: var(--cockpit-muted) !important;
+}
+
+.chat-cockpit-page :deep(.el-input__wrapper) {
+  border-color: var(--cockpit-border) !important;
+  background: #0a1114 !important;
+  box-shadow: none !important;
+}
+
+.chat-cockpit-page :deep(.el-input__inner) {
+  color: var(--cockpit-text) !important;
+}
+
+@media (max-width: 1280px) {
+  .chat-cockpit-page .cockpit-grid {
+    grid-template-columns: 220px minmax(0, 1fr) 230px;
+  }
+
+  .chat-cockpit-page .sidebar-content {
+    width: 220px !important;
+  }
+
+  .mission-stats {
+    flex-basis: 218px;
+  }
+
+  .context-body {
+    padding: 12px;
+  }
+
+  .context-card {
+    padding: 12px;
+  }
+
+  .mini-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 940px) {
+  .chat-cockpit-page .cockpit-grid,
+  .chat-cockpit-page .cockpit-grid.history-collapsed {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .chat-cockpit-page .history-sidebar {
+    position: fixed;
+    inset: 76px auto 18px 88px;
+    z-index: 40;
+    display: block !important;
+    width: 280px !important;
+    max-width: calc(100vw - 108px);
+  }
+
+  .chat-cockpit-page .history-sidebar.is-hidden {
+    display: none !important;
+  }
+
+  .context-sidebar {
+    display: none;
+  }
+
+  .mission-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .mission-stats {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+}
+
+@media (max-width: 760px) {
+  .chat-cockpit-page {
+    gap: 10px;
+  }
+
+  .chat-command-strip {
+    align-items: flex-start;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .command-status {
+    justify-content: flex-start;
+  }
+
+  .command-actions {
+    width: 100%;
+    padding-right: 0;
+    margin-right: 0;
+    border-right: 0;
+  }
+
+  .mission-stats {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

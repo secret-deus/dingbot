@@ -4,15 +4,20 @@ MCP配置获取API端点
 """
 
 from typing import Dict, Any, List, Optional
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 from loguru import logger
 import json
 import os
 import traceback
 from pathlib import Path
+from ....security.auth import require_permission
 
-router = APIRouter(prefix="/mcp/config", tags=["MCP配置"])
+router = APIRouter(
+    prefix="/mcp/config",
+    tags=["MCP配置"],
+    dependencies=[Depends(require_permission("mcp:read"))],
+)
 
 # 响应模型
 class MCPConfigResponse(BaseModel):
@@ -27,6 +32,17 @@ class MCPConfigResponse(BaseModel):
     logging: Optional[Dict[str, Any]] = Field(None, description="日志配置")
     source_file: str = Field(..., description="配置文件路径")
 
+
+def resolve_allowed_config_path(path: str) -> Path:
+    allowed_paths = {
+        Path("config/mcp_config.json").resolve(),
+        Path("backend/config/mcp_config.json").resolve(),
+    }
+    candidate = Path(path).resolve()
+    if candidate not in allowed_paths:
+        raise HTTPException(status_code=403, detail="不允许读取该配置文件路径")
+    return candidate
+
 @router.get("/current", response_model=MCPConfigResponse)
 async def get_current_mcp_config():
     """获取当前MCP配置"""
@@ -36,11 +52,11 @@ async def get_current_mcp_config():
             "config/mcp_config.json",
             "backend/config/mcp_config.json"
         ]
-        
+
         # 检查哪个配置文件存在并且有内容
         config_data = None
         config_path = None
-        
+
         for path in config_paths:
             if os.path.exists(path):
                 try:
@@ -54,7 +70,7 @@ async def get_current_mcp_config():
                 except Exception as e:
                     logger.warning(f"⚠️ 读取配置文件 {path} 失败: {str(e)}")
                     continue
-        
+
         # 如果没有找到有效的配置文件，返回默认配置
         if not config_data:
             logger.warning("⚠️ 未找到有效的配置文件，返回默认配置")
@@ -86,23 +102,23 @@ async def get_current_mcp_config():
                 }
             }
             config_path = "config/mcp_config.json"
-        
+
         # 确保配置数据包含所有必需字段
         if "version" not in config_data:
             config_data["version"] = "1.0"
-        
+
         if "name" not in config_data:
             config_data["name"] = "MCP配置"
-        
+
         if "servers" not in config_data:
             config_data["servers"] = []
-        
+
         if "tools" not in config_data:
             config_data["tools"] = []
-        
+
         # 添加源文件路径
         config_data["source_file"] = config_path
-        
+
         return config_data
     except Exception as e:
         logger.error(f"❌ 获取MCP配置失败: {e}")
@@ -113,19 +129,22 @@ async def get_current_mcp_config():
 async def get_mcp_config_file(path: str):
     """从指定路径获取MCP配置文件"""
     try:
-        if not os.path.exists(path):
+        config_path = resolve_allowed_config_path(path)
+        if not config_path.exists():
             raise HTTPException(status_code=404, detail=f"配置文件不存在: {path}")
-        
-        with open(path, 'r', encoding='utf-8') as f:
+
+        with config_path.open('r', encoding='utf-8') as f:
             content = f.read().strip()
             if not content:
                 raise HTTPException(status_code=400, detail=f"配置文件为空: {path}")
-            
+
             config_data = json.loads(content)
             return config_data
     except json.JSONDecodeError as e:
         logger.error(f"❌ 解析配置文件失败: {e}")
         raise HTTPException(status_code=400, detail=f"配置文件格式错误: {str(e)}")
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"❌ 读取配置文件失败: {e}")
         logger.debug(traceback.format_exc())

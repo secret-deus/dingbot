@@ -1,0 +1,52 @@
+{
+  "version": "1.0",
+  "default_skill_id": "full",
+  "skills": [
+    {
+      "id": "full",
+      "display_name": "全量工具",
+      "description": "不限制 MCP 工具。仅用于本地开发或可信用户。",
+      "allowed_tool_names": [],
+      "allowed_prefixes": []
+    },
+    {
+      "id": "k8s_readonly",
+      "display_name": "K8s 只读",
+      "description": "仅允许查询、描述、指标和报告类 K8s 工具。",
+      "allowed_tool_names": [],
+      "allowed_prefixes": [
+        "k8s-get-",
+        "k8s-describe-",
+        "k8s-list-",
+        "k8s-cluster-",
+        "k8s-resource-metrics-",
+        "k8s-prometheus-",
+        "k8s-relation-",
+        "k8s-metrics-",
+        "k8s-update-knowledge-graph-metrics",
+        "k8s-resource-analysis-report",
+        "k8s-resource-monitor"
+      ]
+    },
+    {
+      "id": "ops_readonly",
+      "display_name": "运维只读",
+      "description": "允许 K8s 只读工具和 ECS 查询/巡检工具。",
+      "allowed_tool_names": [],
+      "allowed_prefixes": [
+        "k8s-get-",
+        "k8s-describe-",
+        "k8s-list-",
+        "k8s-cluster-",
+        "k8s-resource-metrics-",
+        "k8s-prometheus-",
+        "k8s-relation-",
+        "k8s-metrics-",
+        "k8s-resource-analysis-report",
+        "ecs-list-",
+        "ecs-describe-",
+        "ecs-inspect"
+      ]
+    }
+  ]
+}

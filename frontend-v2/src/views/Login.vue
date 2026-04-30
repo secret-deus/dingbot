@@ -1,45 +1,86 @@
 <template>
   <div class="login-container">
-    <div class="login-card">
-      <div class="login-header">
-        <h1>钉钉K8s运维机器人</h1>
-        <p>请输入访问密码</p>
+    <section class="login-stage">
+      <div class="brand-panel">
+        <div class="brand-mark">DO</div>
+        <p class="eyebrow">DINGOPS COPILOT</p>
+        <h1>云原生运维指挥台</h1>
+        <p class="subtitle">统一登录、权限控制、操作留痕和只读诊断入口。</p>
+
+        <div class="signal-grid">
+          <div>
+            <span class="signal-dot"></span>
+            <strong>IAM</strong>
+            <small>角色权限</small>
+          </div>
+          <div>
+            <span class="signal-dot success"></span>
+            <strong>AUDIT</strong>
+            <small>全链路日志</small>
+          </div>
+          <div>
+            <span class="signal-dot cyan"></span>
+            <strong>MCP</strong>
+            <small>本地工具</small>
+          </div>
+        </div>
       </div>
-      
-      <el-form @submit.prevent="handleLogin" class="login-form">
-        <el-form-item>
-          <el-input
-            v-model="password"
-            type="password"
-            placeholder="请输入访问密码"
-            size="large"
-            show-password
-            @keyup.enter="handleLogin"
-            :disabled="loading"
-          >
-            <template #prefix>
-              <el-icon><Lock /></el-icon>
-            </template>
-          </el-input>
-        </el-form-item>
-        
-        <el-form-item>
-          <el-button 
-            type="primary" 
-            size="large" 
-            style="width: 100%"
-            @click="handleLogin"
-            :loading="loading"
-          >
-            登录
-          </el-button>
-        </el-form-item>
-      </el-form>
-      
-      <div class="login-footer">
-        <p>© 2024 钉钉K8s运维机器人系统</p>
+
+      <div class="login-card">
+        <div class="login-header">
+          <p>SECURE ACCESS</p>
+          <h2>登录控制台</h2>
+        </div>
+
+        <el-form @submit.prevent="handleLogin" class="login-form">
+          <el-form-item>
+            <el-input
+              v-model="username"
+              placeholder="用户名"
+              size="large"
+              :disabled="loading"
+            >
+              <template #prefix>
+                <el-icon><User /></el-icon>
+              </template>
+            </el-input>
+          </el-form-item>
+
+          <el-form-item>
+            <el-input
+              v-model="password"
+              type="password"
+              placeholder="访问密码"
+              size="large"
+              show-password
+              @keyup.enter="handleLogin"
+              :disabled="loading"
+            >
+              <template #prefix>
+                <el-icon><Lock /></el-icon>
+              </template>
+            </el-input>
+          </el-form-item>
+
+          <el-form-item>
+            <el-button
+              type="primary"
+              size="large"
+              class="login-button"
+              @click="handleLogin"
+              :loading="loading"
+            >
+              进入指挥台
+            </el-button>
+          </el-form-item>
+        </el-form>
+
+        <div class="login-footer">
+          <span>默认管理员：admin</span>
+          <span>本地签名会话</span>
+        </div>
       </div>
-    </div>
+    </section>
   </div>
 </template>
 
@@ -47,41 +88,38 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Lock } from '@element-plus/icons-vue'
+import { Lock, User } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
 const authStore = useAuthStore()
+const username = ref('admin')
 const password = ref('')
 const loading = ref(false)
 
 const handleLogin = async () => {
+  if (!username.value.trim()) {
+    ElMessage.warning('请输入用户名')
+    return
+  }
   if (!password.value.trim()) {
     ElMessage.warning('请输入访问密码')
     return
   }
-  
+
   loading.value = true
-  
   try {
-    // 模拟登录延迟
-    await new Promise(resolve => setTimeout(resolve, 500))
-    
-    // 使用store进行登录
-    const success = authStore.login(password.value)
-    
-    if (success) {
-      ElMessage.success('登录成功')
-      
-      // 跳转到首页或之前访问的页面
-      const redirect = router.currentRoute.value.query.redirect || '/dashboard'
-      await router.replace(redirect)
-    } else {
-      ElMessage.error('密码错误，请重新输入')
-      password.value = ''
-    }
+    await authStore.login({
+      username: username.value.trim(),
+      password: password.value
+    })
+    ElMessage.success('登录成功')
+    const redirect = router.currentRoute.value.query.redirect || '/dashboard'
+    await router.replace(redirect)
   } catch (error) {
-    ElMessage.error('登录失败，请重试')
+    const message = error?.response?.data?.error?.message || error?.response?.data?.detail || error?.message
+    ElMessage.error(message || '登录失败，请检查用户名和密码')
+    password.value = ''
   } finally {
     loading.value = false
   }
@@ -91,64 +129,205 @@ const handleLogin = async () => {
 <style scoped>
 .login-container {
   min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 18% 18%, rgba(56, 189, 248, 0.12), transparent 28%),
+    linear-gradient(180deg, #0b1220 0%, #080c14 100%);
+  color: #e6edf7;
+}
+
+.login-stage {
+  width: min(1040px, 100%);
+  min-height: 560px;
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  border: 1px solid #25324a;
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(13, 22, 38, 0.88);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.34);
+}
+
+.brand-panel {
+  padding: 52px;
   display: flex;
-  align-items: center;
+  flex-direction: column;
   justify-content: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  padding: 20px;
+  border-right: 1px solid rgba(148, 163, 184, 0.18);
+  background:
+    linear-gradient(145deg, rgba(17, 27, 45, 0.72), rgba(8, 12, 20, 0.92)),
+    #0d1626;
+}
+
+.brand-mark {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(56, 189, 248, 0.34);
+  border-radius: 8px;
+  color: #38bdf8;
+  font-weight: 900;
+  background: #0f1e31;
+  box-shadow: inset 0 0 22px rgba(56, 189, 248, 0.12);
+}
+
+.eyebrow,
+.login-header p {
+  margin: 28px 0 10px;
+  color: #8fa0b8;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  max-width: 540px;
+  font-size: 48px;
+  line-height: 1.05;
+  font-weight: 900;
+}
+
+.subtitle {
+  max-width: 460px;
+  margin-top: 18px;
+  color: #a9b7cc;
+  font-size: 16px;
+  line-height: 1.8;
+}
+
+.signal-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 44px;
+}
+
+.signal-grid div {
+  min-height: 96px;
+  padding: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  background: rgba(8, 17, 31, 0.74);
+}
+
+.signal-dot {
+  width: 9px;
+  height: 9px;
+  display: block;
+  margin-bottom: 14px;
+  border-radius: 999px;
+  background: #f59e0b;
+}
+
+.signal-dot.success {
+  background: #34d399;
+}
+
+.signal-dot.cyan {
+  background: #38bdf8;
+}
+
+.signal-grid strong,
+.signal-grid small {
+  display: block;
+}
+
+.signal-grid strong {
+  font-size: 18px;
+}
+
+.signal-grid small {
+  margin-top: 6px;
+  color: #8fa0b8;
 }
 
 .login-card {
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-  padding: 40px;
-  width: 100%;
-  max-width: 400px;
-  backdrop-filter: blur(10px);
+  padding: 52px 40px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  background: rgba(8, 12, 20, 0.82);
 }
 
 .login-header {
-  text-align: center;
-  margin-bottom: 30px;
-}
-
-.login-header h1 {
-  color: #303133;
-  font-size: 24px;
-  font-weight: 600;
-  margin: 0 0 8px 0;
+  margin-bottom: 28px;
 }
 
 .login-header p {
-  color: #909399;
-  font-size: 14px;
-  margin: 0;
+  margin-top: 0;
 }
 
-.login-form {
-  margin-bottom: 20px;
+.login-header h2 {
+  font-size: 28px;
+  font-weight: 900;
+}
+
+.login-form :deep(.el-input__wrapper) {
+  height: 46px;
+  border: 1px solid #25324a;
+  border-radius: 8px;
+  background: #08111f;
+  box-shadow: none;
+}
+
+.login-form :deep(.el-input__inner) {
+  color: #e6edf7;
+}
+
+.login-button {
+  width: 100%;
+  height: 46px;
+  border-radius: 8px;
+  border-color: rgba(56, 189, 248, 0.44);
+  background: #132238;
+  color: #7dd3fc;
+  font-weight: 900;
 }
 
 .login-footer {
-  text-align: center;
-  color: #909399;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  color: #607089;
   font-size: 12px;
 }
 
-.login-footer p {
-  margin: 0;
+@media (max-width: 820px) {
+  .login-stage {
+    grid-template-columns: 1fr;
+  }
+
+  .brand-panel {
+    padding: 32px;
+    border-right: none;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  }
+
+  h1 {
+    font-size: 34px;
+  }
+
+  .signal-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
-/* 响应式设计 */
-@media (max-width: 480px) {
-  .login-card {
-    padding: 30px 20px;
-    margin: 0 10px;
+@media (max-width: 520px) {
+  .login-container {
+    padding: 12px;
   }
-  
-  .login-header h1 {
-    font-size: 20px;
+
+  .login-card {
+    padding: 28px 20px;
   }
 }
 </style>

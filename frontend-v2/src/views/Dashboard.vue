@@ -1,677 +1,1199 @@
 <template>
-  <div class="dashboard">
-    <div class="dashboard-header">
-      <h1 class="page-title">系统仪表板</h1>
-      <div class="actions">
-        <el-button type="primary" @click="refreshData" :loading="loading">
-        <el-icon><Refresh /></el-icon>
-        刷新数据
-        </el-button>
-        <el-button type="success" @click="onRunInspection" :loading="inspectionLoading">
-          一键巡检
-        </el-button>
-        <div class="resource-metrics-group">
-          <el-select v-model="selectedTimePeriod" placeholder="计算周期" style="width: 120px; margin-right: 8px;">
-            <el-option label="14天" value="14d" />
-            <el-option label="1天" value="1d" />
-          </el-select>
-          <el-button type="warning" @click="onUpdateResourceMetrics" :loading="resourceUpdateLoading">
-            <el-icon><DataAnalysis /></el-icon>
-            更新资源指标
-          </el-button>
+  <div class="ops-page">
+    <header class="ops-topbar">
+      <div class="title-block">
+        <div class="title-copy">
+          <div class="title-kicker">DINGOPS COPILOT</div>
+          <h1>云原生运维指挥台</h1>
         </div>
-      </div>
-    </div>
-
-    <!-- 状态卡片网格 -->
-    <div class="grid grid-4 mb-20">
-      <!-- 系统状态 -->
-      <div class="card">
-        <div class="card-header">
-          <h3 class="card-title">系统状态</h3>
-          <span :class="['status-indicator', systemStatus.healthy ? 'online' : 'offline']">
-            {{ systemStatus.healthy ? '运行中' : '异常' }}
-          </span>
-        </div>
-        <div class="status-details">
-          <div class="status-item">
-            <span class="label">MCP客户端:</span>
-            <span :class="['value', systemStatus.mcp_client ? 'success' : 'error']">
-              {{ systemStatus.mcp_client ? '已连接' : '未连接' }}
-            </span>
-          </div>
-          <div class="status-item">
-            <span class="label">LLM处理器:</span>
-            <span :class="['value', systemStatus.llm_processor ? 'success' : 'error']">
-              {{ systemStatus.llm_processor ? '已就绪' : '未就绪' }}
-            </span>
-          </div>
-          <div class="status-item">
-            <span class="label">钉钉机器人:</span>
-            <span :class="['value', systemStatus.dingtalk_bot ? 'success' : 'error']">
-              {{ systemStatus.dingtalk_bot ? '已配置' : '未配置' }}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <!-- 工具统计 -->
-      <div class="card">
-        <div class="card-header">
-          <h3 class="card-title">可用工具</h3>
-          <span class="badge">{{ toolsCount }}</span>
-        </div>
-        <div class="metric-value">
-          <span class="number">{{ toolsCount }}</span>
-          <span class="unit">个工具</span>
-        </div>
-        <div class="metric-trend">
-          <span class="trend-text">MCP工具集成正常</span>
-        </div>
-      </div>
-
-      <!-- API版本 -->
-      <div class="card">
-        <div class="card-header">
-          <h3 class="card-title">API版本</h3>
-          <span class="badge info">v2.0</span>
-        </div>
-        <div class="version-info">
-          <div class="version-item">
-            <span class="label">当前版本:</span>
-            <span class="value">{{ apiVersion }}</span>
-          </div>
-          <div class="version-item">
-            <span class="label">兼容性:</span>
-            <span class="value">{{ compatibility }}</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- 最后更新时间 -->
-      <div class="card">
-        <div class="card-header">
-          <h3 class="card-title">最后更新</h3>
-        </div>
-        <div class="time-info">
-          <div class="time-value">{{ formatTime(lastUpdateTime) }}</div>
-          <div class="time-relative">{{ timeAgo(lastUpdateTime) }}</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 详细信息面板 -->
-    <div class="grid grid-2">
-      <!-- 工具列表 -->
-      <div class="card">
-        <div class="card-header">
-          <h3 class="card-title">工具列表</h3>
-          <div class="header-actions">
-            <el-button size="small" @click="loadTools" :loading="loadingTools">
-              <el-icon><Refresh /></el-icon>
-              刷新
-            </el-button>
-            <el-button size="small" type="primary" @click="refreshTools" :loading="refreshingTools">
-              <el-icon><RefreshRight /></el-icon>
-              重新加载
-            </el-button>
-          </div>
-        </div>
-        <div class="tools-list" v-if="tools.length > 0">
-          <div 
-            v-for="tool in tools" 
-            :key="tool.name" 
-            class="tool-item"
+        <div class="env-switch" aria-label="环境">
+          <button
+            v-for="env in overview.environments"
+            :key="env"
+            type="button"
+            :class="{ selected: env === overview.environment }"
           >
-            <div class="tool-info">
-              <div class="tool-name">{{ tool.name }}</div>
-              <div class="tool-description">{{ tool.description }}</div>
+            {{ env }}
+          </button>
+        </div>
+      </div>
+
+      <div class="top-actions">
+        <span class="status-pill">
+          <span :class="['dot', healthClass]" />
+          {{ overview.mode }}
+        </span>
+        <span :class="['status-pill', dataSourceClass]">{{ sourceLabel }}</span>
+        <el-button class="refresh-btn" :loading="loading" @click="loadOverview">
+          <el-icon><Refresh /></el-icon>
+          刷新
+        </el-button>
+      </div>
+    </header>
+
+    <div v-if="lastError" class="fallback-banner">
+      后端标准接口暂不可用，当前展示本地 fallback 数据。原因：{{ lastError }}
+    </div>
+
+    <main class="ops-grid">
+      <section id="command-section" class="ops-panel command-panel">
+        <div class="panel-header">
+          <div>
+            <h2>Command Center</h2>
+            <p>自然语言诊断入口，保留证据轨迹与风险确认状态。</p>
+          </div>
+          <button type="button" class="ghost-btn" @click="openChat">打开完整对话</button>
+        </div>
+
+        <div class="command-body">
+          <div class="chat-stream">
+            <div
+              v-for="message in overview.messages"
+              :key="message.id"
+              :class="['message', message.role]"
+            >
+              <div class="meta">
+                <span>{{ message.actor }}</span>
+                <span>{{ message.time }}</span>
+              </div>
+              <div class="bubble">
+                <div v-if="message.role === 'assistant'" class="answer-head">
+                  <span>{{ message.title }}</span>
+                  <span class="confidence">{{ message.confidence }}</span>
+                </div>
+                <p>{{ message.content }}</p>
+                <div v-if="message.findings?.length" class="finding-grid">
+                  <div v-for="finding in message.findings" :key="finding.label" class="finding">
+                    <b>{{ finding.value }}</b>
+                    <span>{{ finding.label }}</span>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div class="tool-meta">
-              <span class="tool-category">{{ tool.category || 'general' }}</span>
+
+            <form class="composer" @submit.prevent="submitCommand">
+              <input
+                v-model="commandDraft"
+                type="text"
+                autocomplete="off"
+                placeholder="输入诊断命令，例如：排查 prod 支付服务 5xx 飙升"
+              >
+              <button type="submit">发送</button>
+            </form>
+          </div>
+
+          <aside id="audit-section" class="tool-trace">
+            <div class="section-label">Tool Trace</div>
+            <div v-for="trace in overview.toolTraces" :key="trace.id" class="trace-item">
+              <div class="trace-top">
+                <strong>{{ trace.name }}</strong>
+                <span :class="['tag', trace.state]">{{ trace.stateText }}</span>
+              </div>
+              <p>{{ trace.description }}</p>
+              <code>{{ trace.evidence }}</code>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <aside class="context-stack">
+        <section id="topology-section" class="ops-panel">
+          <div class="panel-header compact">
+            <div>
+              <h2>Live Context</h2>
+              <p>{{ overview.contextNote }}</p>
             </div>
           </div>
-        </div>
-        <div v-else class="empty-state">
-          <div class="empty-state-text">暂无可用工具</div>
-        </div>
-      </div>
+          <div class="metrics-grid">
+            <article
+              v-for="metric in overview.metrics"
+              :key="metric.label"
+              :class="['metric-card', metric.tone]"
+            >
+              <span>{{ metric.label }}</span>
+              <strong>{{ metric.value }}</strong>
+              <p>{{ metric.detail }}</p>
+            </article>
+          </div>
+          <div class="runtime-strip">
+            <div class="runtime-head">
+              <span>Local MCP Runtime</span>
+              <strong>{{ overview.mcpRuntime.transport }}</strong>
+            </div>
+            <div class="runtime-stats">
+              <div>
+                <b>{{ overview.mcpRuntime.status }}</b>
+                <span>status</span>
+              </div>
+              <div>
+                <b>{{ overview.mcpRuntime.toolCount }}</b>
+                <span>tools</span>
+              </div>
+              <div>
+                <b>{{ overview.mcpRuntime.remoteConnections }}</b>
+                <span>remote</span>
+              </div>
+            </div>
+            <div class="provider-grid">
+              <div
+                v-for="provider in overview.mcpRuntime.providers"
+                :key="provider.id"
+                class="provider-pill"
+              >
+                <span>{{ provider.id }}</span>
+                <strong>{{ provider.toolCount }}</strong>
+              </div>
+            </div>
+          </div>
+        </section>
 
-      <!-- 系统日志 -->
-      <div class="card">
-        <div class="card-header">
-          <h3 class="card-title">系统日志</h3>
-          <el-button size="small" @click="clearLogs">清空</el-button>
-        </div>
-        <div class="logs-container">
-          <div 
-            v-for="(log, index) in systemLogs" 
-            :key="index"
-            :class="['log-item', log.level]"
-          >
-            <span class="log-time">{{ formatLogTime(log.time) }}</span>
-            <span class="log-level">{{ log.level.toUpperCase() }}</span>
-            <span class="log-message">{{ log.message }}</span>
+        <section class="ops-panel">
+          <div class="panel-header compact">
+            <div>
+              <h2>Topology</h2>
+              <p>工作负载、节点、实例和告警的关联。</p>
+            </div>
+          </div>
+          <div class="topology-map">
+            <span
+              v-for="edge in overview.topology.edges"
+              :key="edge.id"
+              class="edge"
+              :style="edgeStyle(edge)"
+            />
+            <div
+              v-for="node in overview.topology.nodes"
+              :key="node.id"
+              :class="['topology-node', node.tone]"
+              :style="{ left: `${node.x}%`, top: `${node.y}%` }"
+            >
+              {{ node.name }}
+              <span>{{ node.meta }}</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="ops-panel">
+          <div class="panel-header compact">
+            <div>
+              <h2>Risk Radar</h2>
+              <p>高危动作、缺失信号与待确认项。</p>
+            </div>
+          </div>
+          <div class="risk-list">
+            <div v-for="risk in overview.risks" :key="risk.id" class="risk-row">
+              <span :class="['severity', risk.level]" />
+              <div>
+                <strong>{{ risk.title }}</strong>
+                <p>{{ risk.description }}</p>
+              </div>
+              <span class="risk-state">{{ risk.state }}</span>
+            </div>
+          </div>
+        </section>
+      </aside>
+
+      <section id="incident-section" class="ops-panel timeline-panel">
+        <div class="timeline-column">
+          <div class="panel-header compact">
+            <div>
+              <h2>Incident Timeline</h2>
+              <p>告警、钉钉协同与手动取证的顺序。</p>
+            </div>
+          </div>
+          <div class="timeline-list">
+            <div v-for="item in overview.timeline" :key="item.id" class="timeline-item">
+              <span>{{ item.time }}</span>
+              <div>
+                <strong>{{ item.title }}</strong>
+                <p>{{ item.description }}</p>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
-    </div>
-    <!-- 巡检结果对话框 -->
-    <el-dialog v-model="inspectionDialogVisible" title="巡检结果" width="800px">
-      <div v-html="inspectionMarkdown"></div>
-      <template #footer>
-        <el-button type="primary" @click="inspectionDialogVisible = false">关闭</el-button>
-      </template>
-    </el-dialog>
+
+        <div class="timeline-column">
+          <div class="panel-header compact">
+            <div>
+              <h2>Automation Queue</h2>
+              <p>只读、需确认、已审计的自动化动作。</p>
+            </div>
+          </div>
+          <div class="queue-list">
+            <div v-for="task in overview.automationQueue" :key="task.id" class="queue-item">
+              <div>
+                <strong>{{ task.name }}</strong>
+                <p>{{ task.target }}</p>
+              </div>
+              <span :class="['tag', task.state]">{{ task.stateText }}</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Refresh, RefreshRight, DataAnalysis } from '@element-plus/icons-vue'
+import { Refresh } from '@element-plus/icons-vue'
 import { api } from '@/api/client'
-import { renderMarkdown } from '@/utils/markdown'
 
-// 响应式数据
+const router = useRouter()
 const loading = ref(false)
-const systemStatus = ref({
-  healthy: false,
-  mcp_client: false,
-  llm_processor: false,
-  dingtalk_bot: false,
-  tools_count: 0
+const lastError = ref('')
+const dataSource = ref('fallback')
+const commandDraft = ref('')
+const overview = ref(createFallbackOverview())
+
+const sourceLabel = computed(() => (dataSource.value === 'live' ? '实时接口' : '本地 fallback'))
+const dataSourceClass = computed(() => (dataSource.value === 'live' ? 'live' : 'fallback'))
+const healthClass = computed(() => {
+  const level = overview.value.healthLevel
+  if (level === 'critical') return 'critical'
+  if (level === 'warning') return 'warning'
+  return 'healthy'
 })
-const tools = ref([])
-const toolsCount = ref(0)
-const loadingTools = ref(false)
-const refreshingTools = ref(false)
-const apiVersion = ref('2.0')
-const compatibility = ref('v1')
-const lastUpdateTime = ref(new Date())
-const systemLogs = ref([
-  { time: new Date(), level: 'info', message: '系统启动完成' },
-  { time: new Date(), level: 'success', message: 'MCP客户端连接成功' },
-  { time: new Date(), level: 'info', message: 'LLM处理器初始化完成' }
-])
 
-let refreshTimer = null
-
-// 巡检数据
-const inspectionLoading = ref(false)
-const inspectionDialogVisible = ref(false)
-const inspectionMarkdown = ref('')
-
-// 资源更新数据
-const resourceUpdateLoading = ref(false)
-const selectedTimePeriod = ref('14d')  // 默认选择14天
-
-// 方法
-const refreshData = async () => {
+const loadOverview = async () => {
   loading.value = true
   try {
-    await Promise.all([
-      loadSystemStatus(),
-      loadTools(),
-      loadApiInfo()
-    ])
-    lastUpdateTime.value = new Date()
-    addLog('info', '数据刷新成功')
+    const { data, meta } = await api.ops.getOverview()
+    overview.value = normalizeOverview(data, meta)
+    dataSource.value = 'live'
+    lastError.value = ''
   } catch (error) {
-    console.error('刷新数据失败:', error)
-    addLog('error', '数据刷新失败')
+    const fallback = createFallbackOverview()
+    overview.value = normalizeOverview(fallback, {
+      generatedAt: new Date().toISOString(),
+      source: 'local-fallback'
+    })
+    dataSource.value = 'fallback'
+    lastError.value = error?.message || '请求失败'
   } finally {
     loading.value = false
   }
 }
 
-const onRunInspection = async () => {
-  inspectionLoading.value = true
-  try {
-    const res = await api.inspection.run({
-      scope: { includeNamespaces: ['default', 'kube-system'], maxDepth: 2 },
-      options: { sendToDingTalk: true, includeAnomalies: true }
-    })
-    const data = res.data
-    inspectionMarkdown.value = renderMarkdown(data.analysisMarkdown)
-    inspectionDialogVisible.value = true
-    addLog('success', '巡检完成')
-  } catch (e) {
-    addLog('error', `巡检失败: ${e?.message || e}`)
-  } finally {
-    inspectionLoading.value = false
-  }
+const openChat = () => {
+  router.push('/chat')
 }
 
-const onUpdateResourceMetrics = async () => {
-  resourceUpdateLoading.value = true
-  try {
-    // 根据选择的时间周期确定参数
-    const isDayMode = selectedTimePeriod.value === '1d'
-    const params = {
-      timePeriod: selectedTimePeriod.value,
-      days: isDayMode ? 1 : 14,  // 1天模式查询1天数据，14天模式查询14天数据
-      maxConcurrent: 5,
-      forceUpdate: false
-    }
-    
-    addLog('info', `开始更新资源指标 (${selectedTimePeriod.value === '14d' ? '14天平均' : '1天近期'})...`)
-    
-    const res = await api.resources.updateMetrics(params)
-    
-    const data = res.data
-    if (data.success) {
-      const message = `资源指标更新完成: 总计 ${data.total_apps} 个应用，成功 ${data.successful_updates} 个，失败 ${data.failed_updates} 个`
-      ElMessage.success(message)
-      addLog('success', message)
-      
-      // 显示摘要信息
-      if (data.details && data.details.summary) {
-        addLog('info', data.details.summary)
-      }
-      
-      // 显示失败资源详情
-      if (data.failed_updates > 0 && data.details && data.details.failed_resources) {
-        addLog('warning', `失败资源详情:`)
-        data.details.failed_resources.forEach((failedResource, index) => {
-          if (index < 5) { // 只显示前5个失败资源
-            addLog('error', `${index + 1}. ${failedResource}`)
-          }
-        })
-        if (data.details.failed_resources.length > 5) {
-          addLog('warning', `... 还有 ${data.details.failed_resources.length - 5} 个失败资源`)
-        }
-      }
-      
-      // 显示资源分析报告
-      if (data.details && data.details.analysis_report) {
-        addLog('info', '📊 资源分析报告已生成')
-        addLog('info', '异常资源和优化建议已通过钉钉发送')
-        
-        // 可以选择显示报告摘要
-        const reportLines = data.details.analysis_report.split('\n')
-        const summaryLines = reportLines.slice(0, 10) // 只显示前10行作为摘要
-        summaryLines.forEach(line => {
-          if (line.trim()) {
-            addLog('info', line.trim())
-          }
-        })
-        
-        if (reportLines.length > 10) {
-          addLog('info', '... (完整报告已发送至钉钉)')
-        }
-      }
-    } else {
-      ElMessage.error(data.message || '资源指标更新失败')
-      addLog('error', data.message || '资源指标更新失败')
-    }
-  } catch (error) {
-    console.error('资源指标更新失败:', error)
-    const errorMessage = error?.response?.data?.detail || error?.message || '资源指标更新失败'
-    ElMessage.error(errorMessage)
-    addLog('error', errorMessage)
-  } finally {
-    resourceUpdateLoading.value = false
-  }
+const submitCommand = () => {
+  const message = commandDraft.value.trim()
+  if (!message) return
+  router.push({ path: '/chat', query: { q: message } })
+  ElMessage.info('已切换到完整对话页继续执行')
 }
 
-const loadSystemStatus = async () => {
-  try {
-    const response = await api.system.getV2Health()
-    const data = response.data
-    console.log('健康检查响应数据:', data)
-    console.log('钉钉机器人状态:', data.components.dingtalk_bot)
-    systemStatus.value = {
-      healthy: data.healthy,
-      mcp_client: data.components.mcp_client,
-      llm_processor: data.components.llm_processor,
-      dingtalk_bot: data.components.dingtalk_bot,
-      tools_count: data.components.tools_available
-    }
-    console.log('更新后的systemStatus:', systemStatus.value)
-    // 统一设置工具数量，避免多处设置造成冲突
-    toolsCount.value = data.components.tools_available || 0
-    console.log('工具数量已更新:', toolsCount.value)
-  } catch (error) {
-    console.error('获取系统状态失败:', error)
-    // 失败时设置默认值
-    toolsCount.value = 0
-    systemStatus.value = {
-      healthy: false,
-      mcp_client: false,
-      llm_processor: false,
-      dingtalk_bot: false,
-      tools_count: 0
-    }
-  }
-}
-
-const loadTools = async () => {
-  loadingTools.value = true
-  try {
-    const response = await api.system.getTools()
-    tools.value = response.data.tools || []
-    toolsCount.value = response.data.total_count || tools.value.length
-    addLog('info', `工具列表已更新，共 ${tools.value.length} 个工具`)
-  } catch (error) {
-    console.error('获取工具列表失败:', error)
-    tools.value = []
-    toolsCount.value = 0
-    addLog('error', '获取工具列表失败')
-  } finally {
-    loadingTools.value = false
-  }
-}
-
-const refreshTools = async () => {
-  refreshingTools.value = true
-  try {
-    const response = await api.system.refreshTools()
-    if (response.data.success) {
-      tools.value = response.data.tools || []
-      toolsCount.value = response.data.tools_count || 0
-      ElMessage.success(response.data.message)
-      addLog('success', `工具列表已重新加载，共 ${toolsCount.value} 个工具`)
-      
-      // 同时更新系统状态
-      await loadSystemStatus()
-    } else {
-      ElMessage.error(response.data.error || '刷新工具列表失败')
-      addLog('error', response.data.error || '刷新工具列表失败')
-    }
-  } catch (error) {
-    console.error('刷新工具列表失败:', error)
-    ElMessage.error('刷新工具列表失败')
-    addLog('error', '刷新工具列表失败')
-  } finally {
-    refreshingTools.value = false
-  }
-}
-
-const loadApiInfo = async () => {
-  try {
-    const response = await api.system.getV2Status()
-    const data = response.data
-    apiVersion.value = data.version
-    compatibility.value = data.compatible_with
-  } catch (error) {
-    console.error('获取API信息失败:', error)
-  }
-}
-
-const addLog = (level, message) => {
-  systemLogs.value.unshift({
-    time: new Date(),
-    level,
-    message
-  })
-  // 保持最多50条日志
-  if (systemLogs.value.length > 50) {
-    systemLogs.value = systemLogs.value.slice(0, 50)
-  }
-}
-
-const clearLogs = () => {
-  systemLogs.value = []
-  ElMessage.success('日志已清空')
-}
-
-const formatTime = (time) => {
-  return time.toLocaleString('zh-CN')
-}
-
-const formatLogTime = (time) => {
-  return time.toLocaleTimeString('zh-CN')
-}
-
-const timeAgo = (time) => {
-  const now = new Date()
-  const diff = now - time
-  const minutes = Math.floor(diff / 60000)
-  if (minutes < 1) return '刚刚'
-  if (minutes < 60) return `${minutes}分钟前`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}小时前`
-  const days = Math.floor(hours / 24)
-  return `${days}天前`
-}
-
-// 生命周期
-onMounted(() => {
-  refreshData()
-  // 每30秒自动刷新
-  refreshTimer = setInterval(refreshData, 30000)
+const edgeStyle = (edge) => ({
+  left: `${edge.left}%`,
+  top: `${edge.top}%`,
+  width: `${edge.width}%`,
+  transform: `rotate(${edge.rotate}deg)`
 })
 
-onUnmounted(() => {
-  if (refreshTimer) {
-    clearInterval(refreshTimer)
+const normalizeOverview = (data, meta = {}) => {
+  const fallback = createFallbackOverview()
+  const source = data || {}
+
+  return {
+    summary: source.summary || fallback.summary,
+    environment: source.environment || source.currentEnvironment || fallback.environment,
+    environments: source.environments || fallback.environments,
+    mode: source.mode || fallback.mode,
+    healthLevel: source.healthLevel || source.health_level || fallback.healthLevel,
+    contextNote: source.contextNote || source.context_note || fallback.contextNote,
+    metrics: normalizeList(source.metrics, fallback.metrics),
+    messages: normalizeList(source.messages || source.commandMessages, fallback.messages),
+    toolTraces: normalizeList(source.toolTraces || source.tool_traces, fallback.toolTraces),
+    mcpRuntime: normalizeMcpRuntime(source.mcpRuntime || source.mcp_runtime, fallback.mcpRuntime),
+    topology: {
+      nodes: normalizeList(source.topology?.nodes, fallback.topology.nodes),
+      edges: normalizeList(source.topology?.edges, fallback.topology.edges)
+    },
+    risks: normalizeList(source.risks, fallback.risks),
+    timeline: normalizeList(source.timeline || source.incidentTimeline, fallback.timeline),
+    automationQueue: normalizeList(
+      source.automationQueue || source.automation_queue,
+      fallback.automationQueue
+    ),
+    meta
   }
+}
+
+const normalizeList = (value, fallback) => (Array.isArray(value) && value.length > 0 ? value : fallback)
+
+const normalizeMcpRuntime = (value, fallback) => {
+  const source = value || {}
+  return {
+    enabled: source.enabled ?? fallback.enabled,
+    transport: source.transport || fallback.transport,
+    status: source.status || fallback.status,
+    toolCount: source.tool_count ?? source.toolCount ?? fallback.toolCount,
+    remoteConnections: source.remote_connections ?? source.remoteConnections ?? fallback.remoteConnections,
+    providers: normalizeList(
+      (source.providers || []).map((provider) => ({
+        id: provider.id,
+        transport: provider.transport || source.transport || 'local',
+        toolCount: provider.tool_count ?? provider.toolCount ?? 0,
+        enabled: provider.enabled ?? true
+      })),
+      fallback.providers
+    )
+  }
+}
+
+function createFallbackOverview() {
+  return {
+    summary: 'prod-cn-hz 环境存在支付链路延迟升高，当前处于只读取证模式。',
+    environment: 'prod-cn-hz',
+    environments: ['prod-cn-hz', 'prod-cn-bj', 'staging'],
+    mode: '只读取证 / 审计开启',
+    healthLevel: 'warning',
+    contextNote: '最近 15 分钟的告警、资源与工具覆盖摘要。',
+    mcpRuntime: {
+      enabled: true,
+      transport: 'local',
+      status: 'connected',
+      toolCount: 21,
+      remoteConnections: 0,
+      providers: [
+        { id: 'builtin-k8s', transport: 'local', toolCount: 18, enabled: true },
+        { id: 'builtin-ecs', transport: 'local', toolCount: 3, enabled: true }
+      ]
+    },
+    metrics: [
+      { label: '活跃事故', value: '3', detail: '1 个 P1，2 个 P2', tone: 'danger' },
+      { label: '工具覆盖', value: '86%', detail: 'K8s/ECS/日志已接入', tone: 'good' },
+      { label: '信号缺口', value: '4', detail: '2 个服务缺少应用指标', tone: 'warning' },
+      { label: '待确认动作', value: '2', detail: '扩容与重启需人工确认', tone: 'neutral' }
+    ],
+    messages: [
+      {
+        id: 'm1',
+        role: 'user',
+        actor: 'SRE',
+        time: '10:42',
+        content: '排查 prod 支付服务 5xx 飙升，先不要执行写操作。'
+      },
+      {
+        id: 'm2',
+        role: 'assistant',
+        actor: 'DingOps Copilot',
+        time: '10:43',
+        title: '初步 RCA',
+        confidence: '82%',
+        content: '5xx 高峰与 checkout-api 发布后 6 分钟重合，两个 Pod CPU throttling 明显，ECS ingress 节点连接数接近阈值。',
+        findings: [
+          { label: '异常 Pod', value: '2' },
+          { label: '关联告警', value: '7' },
+          { label: '建议动作', value: '3' }
+        ]
+      }
+    ],
+    toolTraces: [
+      {
+        id: 't1',
+        name: 'local_mcp_runtime',
+        state: 'green',
+        stateText: '完成',
+        description: '主进程内加载 K8s/ECS provider，不依赖远程 SSE 服务。',
+        evidence: 'transport=local; providers=2; remote_connections=0'
+      },
+      {
+        id: 't2',
+        name: 'ecs_monitor_data',
+        state: 'amber',
+        stateText: '缺采样',
+        description: 'ingress 节点近 5 分钟存在两个采样点缺失。',
+        evidence: 'cn-hangzhou.i-bp*** NetworkIn 92% threshold'
+      },
+      {
+        id: 't3',
+        name: 'dingtalk_audit',
+        state: 'green',
+        stateText: '已记录',
+        description: '当前会话处于只读模式，未触发变更动作。',
+        evidence: 'audit_id=AUD-20260429-1043 readonly=true'
+      }
+    ],
+    topology: {
+      nodes: [
+        { id: 'n1', name: 'DingTalk', meta: 'incident channel', tone: 'green', x: 8, y: 18 },
+        { id: 'n2', name: 'Copilot API', meta: 'v2 envelope', tone: 'blue', x: 38, y: 35 },
+        { id: 'n3', name: 'Local MCP', meta: '21 tools', tone: 'green', x: 66, y: 16 },
+        { id: 'n4', name: 'K8s / ECS', meta: 'in-process', tone: 'green', x: 62, y: 62 }
+      ],
+      edges: [
+        { id: 'e1', left: 24, top: 30, width: 21, rotate: 15 },
+        { id: 'e2', left: 52, top: 36, width: 20, rotate: -20 },
+        { id: 'e3', left: 51, top: 52, width: 18, rotate: 28 }
+      ]
+    },
+    risks: [
+      { id: 'r1', level: 'critical', title: '支付服务重启', description: '会影响 2 个活跃订单队列', state: '需确认' },
+      { id: 'r2', level: 'warning', title: '指标覆盖缺口', description: 'checkout-worker 缺少应用层指标', state: '待补齐' },
+      { id: 'r3', level: 'normal', title: '审计链路', description: '当前只读取证已写入审计轨迹', state: '正常' }
+    ],
+    timeline: [
+      { id: 'i1', time: '10:31', title: 'P1 告警触发', description: '支付链路 5xx 超过 3 分钟阈值。' },
+      { id: 'i2', time: '10:36', title: '发布事件关联', description: 'checkout-api 镜像从 1.42.7 升级到 1.43.0。' },
+      { id: 'i3', time: '10:43', title: '只读取证完成', description: 'Pod、ECS、告警和钉钉上下文已聚合。' }
+    ],
+    automationQueue: [
+      { id: 'a1', name: '生成事故摘要', target: '发送到钉钉 incident 群', state: 'green', stateText: '可执行' },
+      { id: 'a2', name: '扩容 checkout-api', target: 'replicas 6 -> 9', state: 'amber', stateText: '需确认' },
+      { id: 'a3', name: '回滚镜像版本', target: '1.43.0 -> 1.42.7', state: 'red', stateText: '高危' }
+    ]
+  }
+}
+
+onMounted(() => {
+  loadOverview()
 })
 </script>
 
 <style scoped>
-.dashboard {
-  height: 100%;
-  overflow-y: auto;
-  /* 仪表盘整体使用浅灰背景，偏企业风 */
-  background: #f5f7fb;
-  padding: 20px;
+.ops-page {
+  --ops-bg: #080c14;
+  --ops-panel: #111a2b;
+  --ops-panel-2: #151f33;
+  --ops-line: #25324a;
+  --ops-line-soft: rgba(148, 163, 184, 0.18);
+  --ops-text: #e6edf7;
+  --ops-muted: #8fa0b8;
+  --ops-faint: #64748b;
+  --ops-cyan: #38bdf8;
+  --ops-green: #34d399;
+  --ops-amber: #fbbf24;
+  --ops-red: #fb7185;
+  min-height: 100%;
+  padding: 0;
+  background: linear-gradient(180deg, rgba(20, 29, 46, 0.92) 0%, #080c14 280px);
+  color: var(--ops-text);
+  letter-spacing: 0;
 }
 
-/* 通用卡片：白底 + 轻微阴影 */
-.card {
-  border-radius: 14px;
-  padding: 24px;
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
-  transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
-}
-
-.card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.1);
-  border-color: #d1d5db;
-}
-
-.dashboard-header {
-  display: flex;
-  justify-content: space-between;
+.ops-topbar {
+  min-height: 72px;
+  display: grid;
+  grid-template-columns: minmax(360px, 1fr) auto;
+  gap: 20px;
   align-items: center;
-  margin-bottom: 24px;
-  background: #ffffff;
-  padding: 20px 24px;
-  border-radius: 14px;
-  border: 1px solid #e5e7eb;
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
+  padding: 14px 22px;
+  border-bottom: 1px solid var(--ops-line);
+  background: rgba(9, 15, 26, 0.94);
 }
 
-.page-title {
-  color: #111827;
-}
-
-.actions { display: flex; gap: 12px; }
-
-.card-header {
+.title-block {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
+  gap: 14px;
+  min-width: 0;
 }
 
-.header-actions {
+.title-copy {
+  min-width: 0;
+}
+
+.title-kicker,
+.section-label {
+  color: var(--ops-muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.title-block h1,
+.panel-header h2 {
+  margin: 2px 0 0;
+  line-height: 1.2;
+  font-weight: 780;
+}
+
+.title-block h1 {
+  font-size: 22px;
+}
+
+.panel-header p,
+.metric-card p,
+.risk-row p,
+.timeline-item p,
+.queue-item p,
+.trace-item p {
+  margin: 4px 0 0;
+  color: var(--ops-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.top-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.env-switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid var(--ops-line);
+  border-radius: 8px;
+  background: #0c1525;
+}
+
+.env-switch button,
+.ghost-btn,
+.composer button {
+  border: 0;
+  border-radius: 7px;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.env-switch button {
+  min-height: 32px;
+  padding: 0 10px;
+  color: var(--ops-muted);
+  background: transparent;
+  font-size: 12px;
+}
+
+.env-switch button.selected {
+  color: var(--ops-text);
+  background: #182841;
+  box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.28);
+}
+
+.status-pill {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 11px;
+  border: 1px solid var(--ops-line);
+  border-radius: 8px;
+  background: #0d1728;
+  color: var(--ops-muted);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.status-pill.live {
+  color: var(--ops-green);
+  border-color: rgba(52, 211, 153, 0.24);
+}
+
+.status-pill.fallback {
+  color: var(--ops-amber);
+  border-color: rgba(251, 191, 36, 0.28);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ops-green);
+}
+
+.dot.warning {
+  background: var(--ops-amber);
+}
+
+.dot.critical {
+  background: var(--ops-red);
+}
+
+.refresh-btn {
+  --el-button-bg-color: #132238;
+  --el-button-border-color: var(--ops-line);
+  --el-button-text-color: var(--ops-text);
+  --el-button-hover-bg-color: #1b2e4a;
+  --el-button-hover-border-color: rgba(56, 189, 248, 0.34);
+  --el-button-hover-text-color: var(--ops-text);
+  border-radius: 8px;
+  font-weight: 800;
+}
+
+.fallback-banner {
+  margin: 14px 22px 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(251, 191, 36, 0.28);
+  border-radius: 8px;
+  background: rgba(251, 191, 36, 0.08);
+  color: #fde68a;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ops-grid {
+  display: grid;
+  grid-template-columns: minmax(440px, 1.35fr) minmax(330px, 0.86fr);
+  grid-template-areas:
+    "command context"
+    "timeline context";
+  gap: 18px;
+  padding: 18px 22px 24px;
+  align-items: start;
+}
+
+.ops-panel {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--ops-line);
+  border-radius: 8px;
+  background: rgba(17, 26, 43, 0.96);
+  box-shadow: 0 22px 64px rgba(0, 0, 0, 0.28);
+}
+
+.command-panel {
+  grid-area: command;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--ops-line-soft);
+}
+
+.panel-header.compact {
+  padding-bottom: 12px;
+}
+
+.panel-header h2 {
+  font-size: 15px;
+}
+
+.ghost-btn {
+  min-height: 34px;
+  padding: 0 12px;
+  color: var(--ops-text);
+  background: #0c1525;
+  border: 1px solid var(--ops-line);
+  white-space: nowrap;
+}
+
+.command-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 290px;
+  min-height: 620px;
+}
+
+.chat-stream {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+  border-right: 1px solid var(--ops-line-soft);
+}
+
+.message {
+  display: grid;
+  gap: 8px;
+  max-width: 94%;
+}
+
+.message.user {
+  align-self: flex-end;
+}
+
+.meta {
   display: flex;
   gap: 8px;
+  color: var(--ops-faint);
+  font-size: 11px;
+  font-weight: 800;
 }
 
-.page-title {
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--text-primary);
+.bubble {
+  padding: 13px 14px;
+  border: 1px solid var(--ops-line-soft);
+  border-radius: 8px;
+  background: #101a2b;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.message.user .bubble {
+  background: #15324a;
+  border-color: rgba(56, 189, 248, 0.28);
+}
+
+.bubble p {
   margin: 0;
 }
 
-.status-details {
-  margin-top: 16px;
-}
-
-.status-item,
-.version-item {
+.answer-head {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 9px;
   margin-bottom: 8px;
-  font-size: 14px;
+  color: var(--ops-green);
+  font-weight: 800;
 }
 
-.status-item:last-child,
-.version-item:last-child {
-  margin-bottom: 0;
-}
-
-.label {
-  color: var(--text-secondary);
-}
-
-.value.success {
-  color: var(--success-color);
-  font-weight: 500;
-}
-
-.value.error {
-  color: var(--danger-color);
-  font-weight: 500;
-}
-
-.metric-value {
-  margin: 16px 0;
-  text-align: center;
-}
-
-.number {
-  font-size: 32px;
-  font-weight: 600;
-  color: var(--primary-color);
-}
-
-.unit {
-  font-size: 14px;
-  color: var(--text-secondary);
-  margin-left: 8px;
-}
-
-.metric-trend {
-  text-align: center;
-}
-
-.trend-text {
-  font-size: 12px;
-  color: var(--success-color);
-}
-
-.time-info {
-  text-align: center;
-  margin-top: 16px;
-}
-
-.time-value {
-  font-size: 16px;
-  font-weight: 500;
-  color: var(--text-primary);
-  margin-bottom: 4px;
-}
-
-.time-relative {
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.tools-list {
-  max-height: 300px;
-  overflow-y: auto;
-}
-
-.tool-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--border-extra-light);
-}
-
-.tool-item:last-child {
-  border-bottom: none;
-}
-
-.tool-name {
-  font-weight: 500;
-  color: var(--text-primary);
-  margin-bottom: 4px;
-}
-
-.tool-description {
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.tool-category {
+.confidence {
+  margin-left: auto;
+  padding: 4px 8px;
+  border: 1px solid rgba(52, 211, 153, 0.24);
+  border-radius: 999px;
+  color: var(--ops-text);
+  background: rgba(52, 211, 153, 0.1);
   font-size: 11px;
-  padding: 2px 6px;
-  background-color: var(--background-base);
-  color: var(--text-secondary);
-  border-radius: 4px;
 }
 
-.logs-container {
-  max-height: 300px;
-  overflow-y: auto;
-  font-family: 'Consolas', 'Monaco', monospace;
+.finding-grid,
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 
-.log-item {
+.finding-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 12px;
+  gap: 8px;
+}
+
+.finding,
+.metric-card {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--ops-line-soft);
+  border-radius: 8px;
+  background: #0b1424;
+}
+
+.finding b,
+.metric-card strong {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 18px;
+  line-height: 1.1;
+}
+
+.finding span,
+.metric-card span {
+  color: var(--ops-muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  margin-top: auto;
+}
+
+.composer input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid rgba(56, 189, 248, 0.32);
+  border-radius: 8px;
+  outline: none;
+  background: #08111f;
+  color: var(--ops-text);
+}
+
+.composer button {
+  min-width: 84px;
+  color: #06111d;
+  background: var(--ops-cyan);
+}
+
+.tool-trace {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 16px;
+  background: #0d1626;
+}
+
+.trace-item {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--ops-line-soft);
+  border-radius: 8px;
+  background: #111b2d;
+}
+
+.trace-top,
+.queue-item,
+.risk-row {
   display: flex;
   align-items: center;
-  padding: 4px 0;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.trace-top {
   font-size: 12px;
-  border-bottom: 1px solid var(--border-extra-light);
 }
 
-.log-item:last-child {
-  border-bottom: none;
+.trace-item code {
+  display: block;
+  padding: 9px;
+  border: 1px solid var(--ops-line-soft);
+  border-radius: 6px;
+  overflow-wrap: anywhere;
+  background: #080f1c;
+  color: #b9c6d9;
+  font-size: 11px;
+  line-height: 1.55;
 }
 
-.log-time {
-  color: var(--text-secondary);
-  margin-right: 8px;
-  min-width: 80px;
+.tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--ops-line);
+  border-radius: 999px;
+  color: var(--ops-muted);
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
-.log-level {
-  margin-right: 8px;
-  min-width: 50px;
-  font-weight: 500;
+.tag.green {
+  color: var(--ops-green);
+  border-color: rgba(52, 211, 153, 0.25);
+  background: rgba(52, 211, 153, 0.08);
 }
 
-.log-item.info .log-level {
-  color: var(--info-color);
+.tag.amber {
+  color: var(--ops-amber);
+  border-color: rgba(251, 191, 36, 0.28);
+  background: rgba(251, 191, 36, 0.08);
 }
 
-.log-item.success .log-level {
-  color: var(--success-color);
+.tag.red {
+  color: var(--ops-red);
+  border-color: rgba(251, 113, 133, 0.28);
+  background: rgba(251, 113, 133, 0.08);
 }
 
-.log-item.error .log-level {
-  color: var(--danger-color);
+.context-stack {
+  grid-area: context;
+  display: grid;
+  gap: 18px;
 }
 
-.log-message {
-  color: var(--text-primary);
-  flex: 1;
+.metrics-grid {
+  padding: 0 16px 16px;
 }
 
-.resource-metrics-group {
+.runtime-strip {
+  display: grid;
+  gap: 12px;
+  margin: 0 16px 16px;
+  padding: 13px;
+  border: 1px solid rgba(52, 211, 153, 0.22);
+  border-radius: 8px;
+  background: #0a1424;
+}
+
+.runtime-head,
+.runtime-stats,
+.provider-grid,
+.provider-pill {
   display: flex;
   align-items: center;
 }
-</style> 
+
+.runtime-head {
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.runtime-head span,
+.runtime-stats span,
+.provider-pill span {
+  min-width: 0;
+  color: var(--ops-muted);
+  font-size: 11px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.runtime-head strong {
+  color: var(--ops-green);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.runtime-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.runtime-stats div {
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid var(--ops-line-soft);
+  border-radius: 8px;
+  background: #08111f;
+}
+
+.runtime-stats b {
+  display: block;
+  color: var(--ops-text);
+  font-size: 13px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.provider-grid {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.provider-pill {
+  min-height: 30px;
+  gap: 8px;
+  padding: 0 9px;
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.07);
+}
+
+.provider-pill strong {
+  color: var(--ops-cyan);
+  font-size: 12px;
+}
+
+.metric-card.good strong {
+  color: var(--ops-green);
+}
+
+.metric-card.warning strong {
+  color: var(--ops-amber);
+}
+
+.metric-card.danger strong {
+  color: var(--ops-red);
+}
+
+.topology-map {
+  height: 260px;
+  margin: 0 16px 16px;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--ops-line-soft);
+  border-radius: 8px;
+  background:
+    linear-gradient(rgba(148, 163, 184, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.05) 1px, transparent 1px),
+    #0a1323;
+  background-size: 34px 34px;
+}
+
+.topology-node {
+  position: absolute;
+  min-width: 96px;
+  padding: 9px 10px;
+  border: 1px solid var(--ops-line-soft);
+  border-radius: 8px;
+  background: #111b2d;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.topology-node span {
+  display: block;
+  margin-top: 3px;
+  color: var(--ops-muted);
+  font-size: 10px;
+}
+
+.topology-node.blue {
+  border-color: rgba(96, 165, 250, 0.42);
+}
+
+.topology-node.green {
+  border-color: rgba(52, 211, 153, 0.42);
+}
+
+.topology-node.amber {
+  border-color: rgba(251, 191, 36, 0.46);
+}
+
+.topology-node.red {
+  border-color: rgba(251, 113, 133, 0.52);
+}
+
+.edge {
+  position: absolute;
+  height: 1px;
+  background: rgba(96, 165, 250, 0.38);
+  transform-origin: left center;
+}
+
+.risk-list {
+  display: grid;
+  gap: 0;
+  padding: 0 16px 16px;
+}
+
+.risk-row {
+  padding: 10px 0;
+  border-top: 1px solid var(--ops-line-soft);
+}
+
+.risk-row strong,
+.timeline-item strong,
+.queue-item strong {
+  font-size: 12px;
+}
+
+.severity {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 28px;
+  border-radius: 4px;
+  background: var(--ops-green);
+}
+
+.severity.warning {
+  background: var(--ops-amber);
+}
+
+.severity.critical {
+  background: var(--ops-red);
+}
+
+.risk-state {
+  flex: 0 0 auto;
+  color: var(--ops-muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.timeline-panel {
+  grid-area: timeline;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.timeline-column + .timeline-column {
+  border-left: 1px solid var(--ops-line-soft);
+}
+
+.timeline-list,
+.queue-list {
+  display: grid;
+  gap: 10px;
+  padding: 0 18px 18px;
+}
+
+.timeline-item {
+  display: grid;
+  grid-template-columns: 50px minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--ops-line-soft);
+}
+
+.timeline-item > span {
+  color: var(--ops-cyan);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.queue-item {
+  padding: 12px;
+  border: 1px solid var(--ops-line-soft);
+  border-radius: 8px;
+  background: #0c1525;
+}
+
+@media (max-width: 1180px) {
+  .ops-grid {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "command"
+      "context"
+      "timeline";
+  }
+
+  .context-stack {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .ops-topbar {
+    grid-template-columns: 1fr;
+  }
+
+  .title-block {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .top-actions {
+    justify-content: flex-start;
+  }
+
+  .command-body,
+  .timeline-panel,
+  .context-stack {
+    grid-template-columns: 1fr;
+  }
+
+  .chat-stream {
+    border-right: 0;
+    border-bottom: 1px solid var(--ops-line-soft);
+  }
+
+  .timeline-column + .timeline-column {
+    border-left: 0;
+    border-top: 1px solid var(--ops-line-soft);
+  }
+}
+
+@media (max-width: 620px) {
+  .ops-topbar,
+  .ops-grid {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .ops-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .env-switch {
+    width: 100%;
+    overflow-x: auto;
+  }
+
+  .finding-grid,
+  .metrics-grid,
+  .composer {
+    grid-template-columns: 1fr;
+  }
+
+  .message {
+    max-width: 100%;
+  }
+}
+</style>

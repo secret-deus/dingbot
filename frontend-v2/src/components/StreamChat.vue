@@ -6,9 +6,9 @@
         <!-- 欢迎消息（轻量面板） -->
         <div v-if="!chatStore.hasMessages" class="welcome-card">
           <div class="welcome-content">
-            <div class="welcome-icon">🤖</div>
-            <h3>钉钉K8s运维机器人</h3>
-            <p>我是您的智能Kubernetes运维助手，可以帮助您管理集群、查看状态、执行运维操作。请告诉我您需要什么帮助。</p>
+            <div class="welcome-icon">AI</div>
+            <h3>AI Mission Stream 已就绪</h3>
+            <p>输入一个运维目标，我会按只读诊断、证据链、下一步动作组织结果，并保留工具调用轨迹。</p>
             <div class="example-questions">
               <h4>试试这些问题：</h4>
               <div class="question-chips">
@@ -29,8 +29,8 @@
         </div>
 
         <!-- 消息列表 - 卡片式布局 -->
-        <div 
-          v-for="message in chatStore.messages" 
+        <div
+          v-for="message in chatStore.messages"
           :key="message.id"
           :id="`message-${message.id}`"
           :class="['message-card', `message-card-${message.type}`]"
@@ -64,11 +64,11 @@
               </div>
               <span class="meta-time">{{ formatTime(message.timestamp) }}</span>
             </div>
-            
+
             <!-- 工具调用状态卡片 - 折叠式设计 -->
             <div v-if="getMessageToolCalls(message.id).length > 0" class="tool-calls-card">
               <div
-                v-for="toolCall in getMessageToolCalls(message.id)" 
+                v-for="toolCall in getMessageToolCalls(message.id)"
                 :key="toolCall.id"
                 class="tool-call-card-wrapper"
               >
@@ -86,7 +86,7 @@
                       <Close v-else-if="toolCall.status === 'error'" />
                     </el-icon>
                     <span class="tool-name">{{ getToolDisplayName(toolCall.tool) }}</span>
-                    <el-tag 
+                    <el-tag
                       :type="toolCall.status === 'success' ? 'success' : toolCall.status === 'error' ? 'danger' : 'info'"
                       size="small"
                       effect="plain"
@@ -101,7 +101,7 @@
                       <ArrowRight />
                     </el-icon>
                   </div>
-                  
+
                   <!-- 详细信息：可折叠 -->
                   <el-collapse-transition>
                     <div v-show="isToolCallExpanded(message.id, toolCall.id)" class="tool-call-details">
@@ -110,7 +110,7 @@
                         <div class="tool-detail-label">参数</div>
                         <pre class="tool-detail-content">{{ JSON.stringify(toolCall.parameters, null, 2) }}</pre>
                       </div>
-                      
+
                       <!-- 结果信息 -->
                       <div v-if="toolCall.result" class="tool-detail-section">
                         <div class="tool-detail-label">结果</div>
@@ -119,7 +119,7 @@
                           <div v-else>{{ toolCall.result }}</div>
                         </div>
                       </div>
-                      
+
                       <!-- 错误信息 -->
                       <div v-if="toolCall.status === 'error' && toolCall.error" class="tool-detail-section">
                         <div class="tool-detail-label">错误</div>
@@ -130,16 +130,16 @@
                 </div>
               </div>
             </div>
-            
+
             <!-- 消息内容（带打字机效果） -->
             <div class="card-content assistant-content" @click="handleMarkdownClicks">
-              <div 
-                v-if="message.status === 'streaming'" 
+              <div
+                v-if="message.status === 'streaming'"
                 class="typing-text markdown-content"
                 v-html="formatMessageContent(filterToolCallMessages(message.content), true)"
               ></div>
-              <div 
-                v-else 
+              <div
+                v-else
                 class="markdown-content"
                 v-html="formatMessageContent(filterToolCallMessages(message.content), false)"
               ></div>
@@ -153,8 +153,8 @@
                 <span class="loading-text">AI正在思考中...</span>
               </div>
               <!-- 打字时的转圈动画 -->
-              <div 
-                v-else-if="message.status === 'streaming'" 
+              <div
+                v-else-if="message.status === 'streaming'"
                 class="typing-spinner-wrapper"
               >
                 <div class="typing-spinner"></div>
@@ -174,9 +174,9 @@
             :closable="false"
           >
             <template #default>
-              <el-button 
-                size="small" 
-                type="primary" 
+              <el-button
+                size="small"
+                type="primary"
                 @click="reconnect"
                 :loading="reconnecting"
               >
@@ -196,7 +196,7 @@
             v-model="inputMessage"
             type="textarea"
             :rows="inputRows"
-            placeholder="请输入您的问题或需求... (Ctrl + Enter 发送)"
+            placeholder="输入运维问题，例如：检查 checkout 服务 5xx 的根因，只读模式，输出证据和钉钉摘要..."
             @keydown="handleKeydown"
             :disabled="!chatStore.canSendMessage"
             class="message-input"
@@ -204,13 +204,13 @@
           />
           <div class="input-actions">
             <div class="input-tips">
-              <el-tag 
-                :type="mcpEnabled ? 'success' : 'info'"
+              <el-tag
+                :type="toolsAllowed ? 'success' : 'info'"
                 size="small"
                 effect="plain"
                 class="status-tag-item"
               >
-                🛠️ MCP {{ enabledServersCount }}/{{ totalServersCount }}
+                {{ props.enableTools ? `MCP ${enabledServersCount}/${totalServersCount}` : 'Tools Off' }}
               </el-tag>
               <span class="shortcut-tip">Ctrl + Enter 发送</span>
             </div>
@@ -224,22 +224,22 @@
                   :show-arrow="false"
                 >
                   <template #reference>
-                    <el-button 
+                    <el-button
                       size="small"
-                      :type="mcpEnabled ? 'success' : 'info'"
+                      :type="toolsAllowed ? 'success' : 'info'"
                       :icon="Setting"
                     >
-                      MCP ({{ enabledServersCount }}/{{ totalServersCount }})
+                      {{ props.enableTools ? `MCP (${enabledServersCount}/${totalServersCount})` : 'Tools Off' }}
                     </el-button>
                   </template>
-                  
+
                   <div class="mcp-servers-panel">
                     <div class="panel-header">
                       <h4>MCP服务器控制</h4>
                       <span class="panel-subtitle">选择要启用的MCP服务器</span>
                     </div>
-                    
-                    <MCPServerSwitches 
+
+                    <MCPServerSwitches
                       ref="mcpServerSwitches"
                       :auto-load="true"
                       :show-global-controls="true"
@@ -249,17 +249,17 @@
                   </div>
                 </el-popover>
               </div>
-              <el-button 
-                @click="clearChat" 
+              <el-button
+                @click="clearChat"
                 size="small"
                 :disabled="!chatStore.hasMessages"
               >
                 <el-icon><Delete /></el-icon>
                 清空
               </el-button>
-              <el-button 
-                type="primary" 
-                @click="sendMessage" 
+              <el-button
+                type="primary"
+                @click="sendMessage"
                 :loading="chatStore.isStreaming"
                 :disabled="!inputMessage.trim() || !chatStore.canSendMessage"
                 size="small"
@@ -278,15 +278,15 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { 
-  User, Monitor, Loading, Check, Close, Delete, Position, 
+import {
+  User, Monitor, Loading, Check, Close, Delete, Position,
   VideoPause, VideoPlay, InfoFilled, Setting, CircleCheckFilled, CircleCloseFilled, ArrowRight
 } from '@element-plus/icons-vue'
 import { useChatStore } from '@/stores/chat'
 import { api } from '@/api/client'
-import axios from 'axios'
 import { formatMessageContent } from '@/utils/markdown'
 import { loadKatex } from '@/utils/katex'
+import { createChatStreamParser } from '@/shared/stream/chatStream'
 import MCPServerSwitches from './MCPServerSwitches.vue'
 
 // Props
@@ -313,6 +313,7 @@ const mcpServerSwitches = ref(null)
 const enabledServersCount = ref(0)
 const totalServersCount = ref(0)
 const mcpEnabled = computed(() => enabledServersCount.value > 0)
+const toolsAllowed = computed(() => props.enableTools && mcpEnabled.value)
 // 工具调用展开状态管理（每个消息的展开工具ID列表）
 const expandedToolCalls = ref({})
 
@@ -327,10 +328,10 @@ const toggleToolCallExpand = (messageId, toolCallId) => {
   if (!expandedToolCalls.value[messageId]) {
     expandedToolCalls.value[messageId] = []
   }
-  
+
   const expanded = expandedToolCalls.value[messageId]
   const index = expanded.indexOf(toolCallId)
-  
+
   if (index > -1) {
     // 如果已展开，则折叠
     expanded.splice(index, 1)
@@ -355,10 +356,10 @@ const connectionErrorTitle = computed(() => {
 
 // 示例问题
 const exampleQuestions = [
-  '查看所有命名空间的pod状态',
-  '显示default命名空间下运行中的服务',
-  '检查集群节点健康状况',
-  '查看最近的容器日志'
+  '诊断 checkout 服务 5xx，先只读排查',
+  '检查 prod 集群节点压力并列证据',
+  '生成一版钉钉事故摘要',
+  '查看最近 Pod 重启和关键事件'
 ]
 
 // 工具调用相关
@@ -391,7 +392,7 @@ const getToolStatusText = (status) => {
 // 过滤消息内容中的工具调用信息
 const filterToolCallMessages = (content) => {
   if (!content) return content
-  
+
   // 过滤掉工具调用相关的文本信息（支持多种格式）
   const patterns = [
     // 工具调用开始
@@ -413,15 +414,15 @@ const filterToolCallMessages = (content) => {
     // 工具执行失败（简单格式）
     /❌\s*工具执行失败:.*?\n/g,
   ]
-  
+
   let filtered = content
   patterns.forEach(pattern => {
     filtered = filtered.replace(pattern, '')
   })
-  
+
   // 清理多余的连续换行
   filtered = filtered.replace(/\n{3,}/g, '\n\n')
-  
+
   return filtered.trim()
 }
 
@@ -457,14 +458,14 @@ const formatTime = (timestamp) => {
   const diffSec = Math.floor(diffMs / 1000)
   const diffMin = Math.floor(diffSec / 60)
   const diffHour = Math.floor(diffMin / 60)
-  
+
   if (diffSec < 60) return '刚刚'
   if (diffMin < 60) return `${diffMin}分钟前`
   if (diffHour < 24) return `${diffHour}小时前`
-  
-  return time.toLocaleTimeString('zh-CN', { 
-    hour: '2-digit', 
-    minute: '2-digit' 
+
+  return time.toLocaleTimeString('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit'
   })
 }
 
@@ -495,25 +496,16 @@ const sendMessage = async () => {
 const startStreamChat = async (message) => {
   try {
     console.log('开始流式聊天:', message)
-    
+
     // 确保DOM已准备好
     await nextTick()
-    
+
     // 开始流式消息
     const streamMessage = chatStore.startStreamMessage()
     console.log('创建流式消息:', streamMessage)
-    
-    // 使用fetch API发送POST请求（因为EventSource只支持GET）
-    const response = await fetch('/api/v2/chat/stream', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        message,
-        enable_tools: mcpEnabled.value
-      })
-    })
+
+    // 使用统一 API client 发送 POST 流式请求，复用鉴权和 401 会话失效处理。
+    const response = await api.chat.streamChat(message, toolsAllowed.value)
 
     console.log('收到响应:', response.status, response.statusText)
 
@@ -525,55 +517,59 @@ const startStreamChat = async (message) => {
     // 连接状态管理
     chatStore.setConnected(true)
     chatStore.resetRetry()
-    
+
     // 创建ReadableStream读取器处理SSE
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
-    let buffer = ''
-    
+    const parser = createChatStreamParser(handleChatStreamEvent)
+
     try {
       while (true) {
         const { done, value } = await reader.read()
-        
+
         if (done) {
           console.log('流式读取完成')
           break
         }
-        
+
         // 解码数据并累积到缓冲区
-        buffer += decoder.decode(value, { stream: true })
-        
-        // 按SSE消息分割处理（SSE消息以\n结尾）
-        const messages = buffer.split('\n')
-        
-        // 保留最后一个消息（可能不完整）
-        buffer = messages.pop() || ''
-        
-        for (const message of messages) {
-          if (!message) continue
-          console.log('处理SSE消息:', message)
-          await processSSEMessage(message)
-        }
+        await parser.push(decoder.decode(value, { stream: true }))
       }
-      
+
       // 处理缓冲区中剩余的数据
-      if (buffer.trim()) {
-        console.log('处理剩余数据:', buffer)
-        await processSSELine(buffer)
-      }
-      
+      await parser.flush()
+
       // 完成流式消息
       chatStore.finishStreamMessage()
-      
+
     } finally {
       reader.releaseLock()
     }
-    
+
   } catch (error) {
     console.error('启动流式聊天失败:', error)
     chatStore.finishStreamMessage()
     handleStreamError(error)
   }
+}
+
+const handleChatStreamEvent = async (event) => {
+  if (!event) {
+    return
+  }
+
+  if (event.type === 'done') {
+    console.log('收到结束标识')
+    chatStore.finishStreamMessage()
+    return
+  }
+
+  if (event.type === 'legacy_content_update') {
+    await handleContentUpdate(event.rawContent)
+    return
+  }
+
+  await handleStructuredEvent(event)
 }
 
 // 处理SSE消息数据
@@ -592,21 +588,21 @@ const processSSEMessage = async (message) => {
 const processSSELine = async (line) => {
   if (line.startsWith('data: ')) {
     const dataContent = line.slice(6)  // 保留原始空白，后续自行判断
-    
+
     // 检查结束标识
     if (dataContent.trim() === '[DONE]') {
       console.log('收到结束标识')
       chatStore.finishStreamMessage()
       return
     }
-    
+
     // 🔧 检查内容更新指令
     if (dataContent.includes('__UPDATE_CONTENT__:') && dataContent.includes('__END_UPDATE__')) {
       console.log('检测到内容更新指令')
       await handleContentUpdate(dataContent)
       return
     }
-    
+
     // 尝试解析为JSON
     try {
       const jsonData = JSON.parse(dataContent)
@@ -614,34 +610,38 @@ const processSSELine = async (line) => {
       await handleStructuredEvent(jsonData)
     } catch (jsonError) {
       // 不是JSON，当作普通文本处理
-      let chunk = dataContent
-      // 对于纯空白片段：保留一个换行，但不累积多行
-      if (!chunk || chunk.trim() === '') {
-        const prevNL = (chatStore.currentStreamMessage?.content || '').endsWith('\n')
-        if (!prevNL) {
-          chatStore.appendStreamContent('\n')
-        }
-        return
-      }
-      // 防抖：若当前已以换行结束且新片段以换行开始，则合并为一个
-      const prev = chatStore.currentStreamMessage?.content || ''
-      if ((prev.endsWith('\n') || prev.endsWith('\r\n')) && /^\n+/.test(chunk)) {
-        chunk = chunk.replace(/^\n+/, '\n')
-      }
-      // 追加并折叠连续3个以上的换行
-      const combined = prev + chunk
-      const collapsed = combined.replace(/\n{3,}/g, '\n\n')
-      if (collapsed !== combined && chatStore.replaceStreamContent) {
-        chatStore.replaceStreamContent(collapsed)
-      } else {
-        chatStore.appendStreamContent(chunk)
-      }
-      // 延迟滚动以确保DOM已更新
-      setTimeout(() => {
-        scrollToBottom()
-      }, 10)
+      appendStreamTextChunk(dataContent)
     }
   }
+}
+
+const appendStreamTextChunk = (content) => {
+  let chunk = content
+  // 对于纯空白片段：保留一个换行，但不累积多行
+  if (!chunk || chunk.trim() === '') {
+    const prevNL = (chatStore.currentStreamMessage?.content || '').endsWith('\n')
+    if (!prevNL) {
+      chatStore.appendStreamContent('\n')
+    }
+    return
+  }
+  // 防抖：若当前已以换行结束且新片段以换行开始，则合并为一个
+  const prev = chatStore.currentStreamMessage?.content || ''
+  if ((prev.endsWith('\n') || prev.endsWith('\r\n')) && /^\n+/.test(chunk)) {
+    chunk = chunk.replace(/^\n+/, '\n')
+  }
+  // 追加并折叠连续3个以上的换行
+  const combined = prev + chunk
+  const collapsed = combined.replace(/\n{3,}/g, '\n\n')
+  if (collapsed !== combined && chatStore.replaceStreamContent) {
+    chatStore.replaceStreamContent(collapsed)
+  } else {
+    chatStore.appendStreamContent(chunk)
+  }
+  // 延迟滚动以确保DOM已更新
+  setTimeout(() => {
+    scrollToBottom()
+  }, 10)
 }
 
 // 🔧 处理内容更新指令
@@ -650,31 +650,31 @@ const handleContentUpdate = async (dataContent) => {
     // 提取更新指令的JSON部分
     const startMarker = '__UPDATE_CONTENT__:'
     const endMarker = '__END_UPDATE__'
-    
+
     const startIndex = dataContent.indexOf(startMarker) + startMarker.length
     const endIndex = dataContent.indexOf(endMarker)
-    
+
     if (startIndex < startMarker.length || endIndex === -1) {
       console.error('无效的内容更新指令格式')
       return
     }
-    
+
     const updateJson = dataContent.substring(startIndex, endIndex)
     const updateInstruction = JSON.parse(updateJson)
-    
+
     console.log('🔧 处理内容更新:', updateInstruction)
-    
+
     if (updateInstruction.type === 'content_update' && updateInstruction.content) {
       // 用完整恢复的内容替换当前流式消息的内容
       chatStore.replaceStreamContent(updateInstruction.content)
-      
+
       console.log('✅ 内容已更新，原因:', updateInstruction.reason)
       console.log('📝 新内容长度:', updateInstruction.content.length)
-      
+
       // 滚动到底部
       await scrollToBottom()
     }
-    
+
   } catch (error) {
     console.error('处理内容更新指令失败:', error)
   }
@@ -683,36 +683,47 @@ const handleContentUpdate = async (dataContent) => {
 // 处理结构化事件数据
 const handleStructuredEvent = async (data) => {
   console.log('处理结构化事件:', data.type, data)
-  
+
   try {
     switch (data.type) {
+      case 'message_delta':
+        appendStreamTextChunk(data.content || '')
+        break
+
+      case 'final':
+        if (data.content) {
+          appendStreamTextChunk(data.content)
+        }
+        chatStore.finishStreamMessage()
+        break
+
       case 'error':
         // 处理错误
         const errorMessage = data.message || '未知错误'
         const suggestions = data.suggestions || []
-        
+
         await nextTick(() => {
           chatStore.appendStreamContent(`\n\n❌ 错误: ${errorMessage}`)
         })
-        
+
         if (suggestions.length > 0) {
           await nextTick(() => {
             chatStore.appendStreamContent(`\n\n💡 建议:\n${suggestions.map(s => `• ${s}`).join('\n')}`)
           })
         }
-        
+
         // 显示用户友好的错误提示
         ElMessage.error(errorMessage)
         break
-        
+
       case 'tool_call_start':
         // 工具调用开始 - 创建工具调用卡片,状态为calling
-        console.log('工具调用开始:', data.tool_call)
+        console.log('工具调用开始:', data)
         chatStore.addToolCall({
-          tool: data.tool_call.name,
+          id: data.id || data.tool_call?.id,
+          tool: data.tool || data.tool_call?.name,
           status: 'calling',
-          parameters: JSON.parse(data.tool_call.arguments || '{}'),
-          id: data.tool_call.id
+          parameters: data.arguments || {}
         })
         // 初始化展开状态为折叠
         const messageId = chatStore.currentStreamMessage?.id
@@ -720,41 +731,42 @@ const handleStructuredEvent = async (data) => {
           expandedToolCalls.value[messageId] = []
         }
         break
-        
+
       case 'tool_call_update':
+      case 'tool_call_result':
         // 工具调用状态更新 - 更新工具调用卡片的状态和结果
-        console.log('工具调用状态更新:', data.tool_call)
+        console.log('工具调用状态更新:', data)
         const toolCalls = chatStore.toolCalls
-        const toolCall = toolCalls.find(tc => 
-          tc.id === data.tool_call.id || 
-          (tc.tool === data.tool_call.name && tc.messageId === chatStore.currentStreamMessage?.id)
+        const toolCall = toolCalls.find(tc =>
+          tc.id === (data.id || data.tool_call?.id) ||
+          (tc.tool === (data.tool || data.tool_call?.name) && tc.messageId === chatStore.currentStreamMessage?.id)
         )
-        
+
         if (toolCall) {
           chatStore.updateToolCall(toolCall.id, {
-            status: data.tool_call.status,
+            status: data.status || data.tool_call?.status || (data.success === false ? 'error' : 'success'),
             result: data.result || null,
-            duration: data.tool_call.duration || null,
+            duration: data.duration || data.tool_call?.duration || null,
             error: data.error || null
           })
         }
         break
-        
+
       case 'tool_call':
         // 处理工具调用(旧格式,兼容)
         handleToolCall(data)
         break
-        
+
       case 'tool_result':
         // 处理工具结果 - 不再在消息内容中显示，只更新工具调用状态
         // 工具调用状态已通过 tool_call 事件更新，这里不需要额外处理
         break
-        
+
       case 'status':
         // 处理状态更新
         console.log('状态更新:', data.message)
         break
-        
+
       default:
         console.warn('未知的结构化事件类型:', data.type, data)
         // 如果有内容，当作文本处理
@@ -775,49 +787,49 @@ const handleStructuredEvent = async (data) => {
 // 流式事件处理
 const handleStreamEvent = async (data) => {
   console.log('处理事件:', data.type, data)
-  
+
   switch (data.type) {
     case 'start':
       // 开始标记
       console.log('流式聊天开始:', data.message_id)
       break
-      
+
     case 'token':
       // 追加消息内容（后端使用token而不是message）
       console.log('追加消息内容:', data.content)
       chatStore.appendStreamContent(data.content)
       await scrollToBottom()
       break
-      
+
     case 'message':
       // 兼容旧的message事件类型
       console.log('追加消息内容:', data.content)
       chatStore.appendStreamContent(data.content)
       await scrollToBottom()
       break
-      
+
     case 'tool_call':
       // 处理工具调用
       handleToolCall(data)
       break
-      
+
     case 'error':
       // 处理错误
       chatStore.appendStreamContent(`\n\n❌ 错误: ${data.message}`)
       break
-      
+
     case 'complete':
       // 完成流式输出（后端使用complete而不是done）
       console.log('流式输出完成')
       chatStore.finishStreamMessage()
       break
-      
+
     case 'done':
       // 兼容旧的done事件类型
       console.log('流式输出完成')
       chatStore.finishStreamMessage()
       break
-      
+
     default:
       console.warn('未知的流式事件类型:', data.type, data)
   }
@@ -840,11 +852,11 @@ const handleToolCall = (data) => {
   } else {
     // 更新工具调用状态
     const toolCalls = chatStore.toolCalls
-    const toolCall = toolCalls.find(tc => 
-      tc.tool === data.tool && 
+    const toolCall = toolCalls.find(tc =>
+      tc.tool === data.tool &&
       tc.messageId === chatStore.currentStreamMessage?.id
     )
-    
+
     if (toolCall) {
       chatStore.updateToolCall(toolCall.id, {
         status: data.status,
@@ -859,11 +871,11 @@ const handleToolCall = (data) => {
 // 优化的流式错误处理
 const handleStreamError = (error) => {
   console.error('流式聊天连接错误:', error)
-  
+
   // 根据错误类型提供不同的处理
   let errorMessage = '连接中断，请检查网络或重试'
   let shouldRetry = true
-  
+
   if (error.message.includes('HTTP 401')) {
     errorMessage = '认证失败，请检查API密钥配置'
     shouldRetry = false
@@ -883,19 +895,19 @@ const handleStreamError = (error) => {
     errorMessage = '网络连接失败，请检查网络状态'
     shouldRetry = true
   }
-  
+
   chatStore.setConnectionError(errorMessage)
   chatStore.setConnected(false)
   chatStore.cancelStreamMessage()
-  
+
   // 显示用户友好的错误提示
   ElMessage.error(errorMessage)
-  
+
   // 自动重连逻辑（仅在应该重试的情况下）
   if (shouldRetry && chatStore.incrementRetry()) {
     const retryDelay = Math.min(2000 * Math.pow(2, chatStore.retryCount - 1), 30000) // 指数退避，最大30秒
     console.log(`将在 ${retryDelay}ms 后重试 (第 ${chatStore.retryCount} 次)`)
-    
+
     setTimeout(() => {
       console.log('开始自动重连...')
       reconnect()
@@ -911,7 +923,7 @@ const handleStreamError = (error) => {
 // 重连
 const reconnect = async () => {
   reconnecting.value = true
-  
+
   try {
     // 测试API连接
     await api.system.getV2Status()
@@ -943,7 +955,7 @@ const setInputMessage = (message) => {
 const handleServersChanged = (data) => {
   enabledServersCount.value = data.total_enabled
   totalServersCount.value = data.servers.length
-  
+
   if (data.total_enabled > 0) {
     const serverNames = data.servers
       .filter(s => s.enabled)
@@ -959,14 +971,14 @@ const handleServerToggled = async (data) => {
   // 如果需要刷新工具列表
   if (data.should_refresh_tools) {
     console.log('🔄 MCP服务器状态变更，正在刷新工具列表...')
-    
+
     try {
       // 获取最新的工具列表
-      const response = await axios.get('/api/v2/tools')
+      const response = await api.system.getTools()
       const toolsCount = response.data.tools ? response.data.tools.length : 0
-      
+
       console.log(`🛠️ 工具列表已更新，当前可用工具: ${toolsCount} 个`)
-      
+
       // 显示更详细的状态信息
       if (data.enabled) {
         ElMessage.success(`${data.server_info.display_name} 已启用并连接，当前可用工具: ${toolsCount} 个`)
@@ -1004,7 +1016,7 @@ const clearChat = async () => {
         type: 'warning',
       }
     )
-    
+
     chatStore.clearCurrentSession()
     ElMessage.success('当前对话已清空')
   } catch {
@@ -1035,13 +1047,13 @@ const startTypingCursor = () => {
 // 生命周期
 onMounted(() => {
   startTypingCursor()
-  
-  
+
+
   if (props.autoConnect) {
     // 初始化连接状态检查
     reconnect()
   }
-  
+
   // 确保DOM完全加载后再进行操作
   nextTick(() => {
     // 验证DOM元素是否正确挂载
@@ -2298,7 +2310,7 @@ watch(() => chatStore.currentStreamMessage?.content, () => {
     font-size: 11px;
     min-width: 500px; /* 在小屏幕上减少最小宽度 */
   }
-  
+
   .markdown-content th,
   .markdown-content td {
     padding: 6px 8px;
@@ -2397,55 +2409,442 @@ watch(() => chatStore.currentStreamMessage?.content, () => {
   .chat-messages {
     padding: 12px;
   }
-  
+
   .user-message-card,
   .assistant-message-card {
     max-width: 95%;
     max-height: 75vh;
   }
-  
+
   .assistant-message-card .card-content.assistant-content {
     max-height: calc(75vh - 180px);
   }
-  
+
   .welcome-card {
     margin: 20px auto;
     max-width: 95%;
   }
-  
+
   .input-card {
     max-width: 100%;
   }
-  
+
   .input-actions {
     flex-direction: column;
     gap: 8px;
     align-items: stretch;
   }
-  
+
   .input-tips {
     justify-content: center;
     flex-wrap: wrap;
   }
-  
+
   .action-buttons {
     justify-content: center;
     flex-wrap: wrap;
   }
-  
+
   .mcp-toggle {
     order: -1;
     align-self: center;
   }
-  
+
   .card-header {
     flex-wrap: wrap;
     gap: 8px;
   }
-  
+
   .question-chip {
     width: 100%;
     justify-content: flex-start;
+  }
+}
+
+/* Cockpit stream overrides */
+.stream-chat {
+  --stream-bg: #0a0f12;
+  --stream-panel: #10171b;
+  --stream-panel-2: #121d22;
+  --stream-border: #26343b;
+  --stream-border-strong: #31505a;
+  --stream-text: #edf7f7;
+  --stream-muted: #8ea0a8;
+  --stream-cyan: #35d9f4;
+  --stream-green: #4ee6a0;
+  --stream-amber: #ffbe55;
+  height: 100%;
+  min-height: 0;
+  background: var(--stream-bg) !important;
+  color: var(--stream-text);
+}
+
+.chat-messages {
+  min-height: 0;
+  padding: 18px !important;
+  background:
+    linear-gradient(180deg, rgba(53, 217, 244, 0.035), rgba(7, 11, 14, 0) 28%),
+    var(--stream-bg) !important;
+}
+
+.messages-wrapper {
+  width: 100%;
+  max-width: none !important;
+  padding: 0 !important;
+}
+
+.welcome-card {
+  max-width: 760px !important;
+  margin: 18px auto !important;
+  border: 1px solid var(--stream-border) !important;
+  border-radius: 8px !important;
+  background:
+    linear-gradient(135deg, rgba(53, 217, 244, 0.1), rgba(18, 29, 34, 0.96) 34%),
+    var(--stream-panel) !important;
+  box-shadow: none !important;
+}
+
+.welcome-card:hover {
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.welcome-content {
+  padding: 18px !important;
+  text-align: left !important;
+}
+
+.welcome-icon {
+  width: 42px !important;
+  height: 42px !important;
+  margin: 0 0 12px !important;
+  border: 1px solid rgba(53, 217, 244, 0.55);
+  border-radius: 8px !important;
+  background: rgba(53, 217, 244, 0.12) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+  color: var(--stream-cyan);
+  font-size: 14px !important;
+  font-weight: 900;
+}
+
+.welcome-content h3 {
+  margin: 0 0 8px !important;
+  color: var(--stream-text) !important;
+  font-size: 20px !important;
+  letter-spacing: 0 !important;
+}
+
+.welcome-content p {
+  max-width: 620px;
+  margin: 0 0 14px !important;
+  color: var(--stream-muted) !important;
+  font-size: 14px !important;
+  line-height: 1.7 !important;
+}
+
+.example-questions h4 {
+  margin: 0 0 10px !important;
+  color: #c8d8de !important;
+  font-size: 12px !important;
+}
+
+.question-chips {
+  justify-content: flex-start !important;
+  gap: 8px !important;
+}
+
+.question-chip {
+  min-height: 34px !important;
+  border: 1px solid var(--stream-border) !important;
+  border-radius: 8px !important;
+  background: rgba(7, 11, 14, 0.72) !important;
+  color: #c8d8de !important;
+  font-weight: 700 !important;
+}
+
+.question-chip::before {
+  display: none !important;
+}
+
+.question-chip:hover {
+  border-color: var(--stream-cyan) !important;
+  background: rgba(53, 217, 244, 0.12) !important;
+  color: var(--stream-cyan) !important;
+  transform: none !important;
+}
+
+.question-icon {
+  color: var(--stream-cyan) !important;
+}
+
+.message-card {
+  margin-bottom: 14px !important;
+  animation: none !important;
+}
+
+.user-message-card,
+.assistant-message-card {
+  border-radius: 8px !important;
+  box-shadow: none !important;
+}
+
+.user-message-card {
+  max-width: min(76%, 780px) !important;
+  margin-left: auto !important;
+  padding: 13px 14px !important;
+  border: 1px solid rgba(53, 217, 244, 0.32) !important;
+  background: linear-gradient(135deg, rgba(22, 57, 64, 0.95), rgba(12, 24, 28, 0.95)) !important;
+  color: var(--stream-text) !important;
+}
+
+.user-message-card:hover,
+.assistant-message-card:hover,
+.tool-call-card:hover,
+.input-card:hover {
+  transform: none !important;
+}
+
+.assistant-message-card {
+  max-width: min(88%, 980px) !important;
+  padding: 14px !important;
+  border: 1px solid var(--stream-border) !important;
+  background: rgba(16, 23, 27, 0.96) !important;
+  color: var(--stream-text) !important;
+}
+
+.message-meta {
+  margin-bottom: 12px !important;
+  padding-bottom: 10px !important;
+  border-bottom: 1px solid rgba(38, 52, 59, 0.8);
+}
+
+.meta-role {
+  color: var(--stream-cyan) !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+  letter-spacing: 0 !important;
+  text-transform: uppercase;
+}
+
+.meta-time,
+.bubble-meta,
+.shortcut-tip {
+  color: var(--stream-muted) !important;
+}
+
+.card-content,
+.assistant-content {
+  color: var(--stream-text) !important;
+}
+
+.system-content {
+  border: 1px solid rgba(255, 190, 85, 0.34) !important;
+  border-radius: 8px !important;
+  background: rgba(255, 190, 85, 0.08) !important;
+  color: #ffd99a !important;
+}
+
+.tool-calls-card {
+  margin-bottom: 12px !important;
+}
+
+.tool-call-card {
+  border: 1px solid var(--stream-border) !important;
+  border-radius: 8px !important;
+  background: rgba(7, 11, 14, 0.62) !important;
+  box-shadow: none !important;
+}
+
+.tool-call-success {
+  border-color: rgba(78, 230, 160, 0.34) !important;
+  background: rgba(78, 230, 160, 0.08) !important;
+}
+
+.tool-call-calling {
+  border-color: rgba(53, 217, 244, 0.36) !important;
+  background: rgba(53, 217, 244, 0.08) !important;
+}
+
+.tool-call-error {
+  border-color: rgba(248, 113, 113, 0.42) !important;
+  background: rgba(248, 113, 113, 0.08) !important;
+}
+
+.tool-name {
+  color: var(--stream-text) !important;
+  font-weight: 800;
+}
+
+.tool-duration,
+.tool-detail-label {
+  color: var(--stream-muted) !important;
+}
+
+.tool-detail-content {
+  border: 1px solid var(--stream-border) !important;
+  border-radius: 8px !important;
+  background: #070b0e !important;
+  color: #d4e4e8 !important;
+}
+
+.chat-input-container {
+  padding: 10px 13px !important;
+  border-top: 1px solid var(--stream-border) !important;
+  background: rgba(7, 11, 14, 0.96) !important;
+}
+
+.input-card {
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 10px !important;
+  border: 1px solid var(--stream-border-strong) !important;
+  border-radius: 8px !important;
+  background: var(--stream-panel) !important;
+  box-shadow: none !important;
+}
+
+.message-input :deep(.el-textarea__inner) {
+  min-height: 46px !important;
+  border: 1px solid var(--stream-border) !important;
+  border-radius: 8px !important;
+  background: #070b0e !important;
+  box-shadow: none !important;
+  color: var(--stream-text) !important;
+  line-height: 1.55 !important;
+}
+
+.message-input :deep(.el-textarea__inner::placeholder) {
+  color: #5f737b !important;
+}
+
+.input-actions {
+  margin-top: 8px !important;
+}
+
+.status-tag-item {
+  border-color: rgba(53, 217, 244, 0.34) !important;
+  background: rgba(53, 217, 244, 0.08) !important;
+  color: var(--stream-cyan) !important;
+}
+
+.mcp-toggle :deep(.el-button),
+.action-buttons :deep(.el-button) {
+  border-color: var(--stream-border) !important;
+  border-radius: 8px !important;
+  background: #0a1114 !important;
+  color: #c8d8de !important;
+}
+
+.action-buttons :deep(.el-button--primary) {
+  border-color: rgba(53, 217, 244, 0.72) !important;
+  background: rgba(53, 217, 244, 0.16) !important;
+  color: var(--stream-cyan) !important;
+}
+
+.mcp-servers-panel {
+  color: #1f2937;
+}
+
+.loading-text {
+  color: var(--stream-muted) !important;
+}
+
+.markdown-content {
+  color: #d7e7eb !important;
+}
+
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3 {
+  margin: 14px 0 10px !important;
+  padding: 0 0 0 10px !important;
+  border-left: 3px solid var(--stream-cyan) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--stream-text) !important;
+}
+
+.markdown-content h1::before,
+.markdown-content h2::before {
+  display: none !important;
+}
+
+.markdown-content p,
+.markdown-content li {
+  color: #d7e7eb !important;
+}
+
+.markdown-content strong {
+  color: var(--stream-green) !important;
+  font-size: 1em !important;
+}
+
+.markdown-content code {
+  border: 1px solid var(--stream-border) !important;
+  border-radius: 6px !important;
+  background: #070b0e !important;
+  color: var(--stream-cyan) !important;
+}
+
+.markdown-content pre,
+.markdown-content blockquote {
+  border-color: var(--stream-border) !important;
+  border-radius: 8px !important;
+  background: #070b0e !important;
+  color: #d7e7eb !important;
+}
+
+.markdown-content table {
+  border: 1px solid var(--stream-border) !important;
+  border-radius: 8px !important;
+  background: #070b0e !important;
+  box-shadow: none !important;
+}
+
+.markdown-content th {
+  border-color: var(--stream-border) !important;
+  background: rgba(53, 217, 244, 0.12) !important;
+  color: var(--stream-cyan) !important;
+}
+
+.markdown-content td {
+  border-color: var(--stream-border) !important;
+  background: rgba(16, 23, 27, 0.84) !important;
+  color: #d7e7eb !important;
+}
+
+.markdown-content tr:nth-child(even) td,
+.markdown-content tr:last-child td {
+  background: rgba(18, 29, 34, 0.84) !important;
+}
+
+.markdown-content a {
+  color: var(--stream-cyan) !important;
+}
+
+@media (max-width: 1280px) {
+  .question-chip:nth-child(n+3) {
+    display: none !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .chat-messages {
+    padding: 12px !important;
+  }
+
+  .user-message-card,
+  .assistant-message-card {
+    max-width: 100% !important;
+  }
+
+  .welcome-content {
+    padding: 18px !important;
+  }
+
+  .input-actions {
+    align-items: stretch !important;
   }
 }
 </style>

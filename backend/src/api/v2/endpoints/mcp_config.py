@@ -11,16 +11,23 @@ from loguru import logger
 import tempfile
 import os
 import json
+from pathlib import Path
 
 from ....mcp.config_manager import (
-    MCPConfigManager, 
-    MCPConfigTemplate, 
+    MCPConfigManager,
+    MCPConfigTemplate,
     MCPConfigValidationResult,
     get_mcp_config_manager
 )
 from ....mcp.config import MCPServerConfig, MCPToolConfig, MCPConfiguration
+from ....security.auth import require_permission
 
-router = APIRouter(prefix="/mcp/config", tags=["MCP配置"])
+router = APIRouter(
+    prefix="/mcp/config",
+    tags=["MCP配置"],
+    dependencies=[Depends(require_permission("mcp:read"))],
+)
+WRITE_DEPENDENCIES = [Depends(require_permission("mcp:write"))]
 
 # 请求模型
 class ServerCreateRequest(BaseModel):
@@ -93,20 +100,34 @@ def get_config_manager() -> MCPConfigManager:
     """获取配置管理器"""
     return get_mcp_config_manager()
 
+
+def resolve_allowed_config_path(path: str) -> Path:
+    allowed_paths = {
+        Path("config/mcp_config.json").resolve(),
+        Path("backend/config/mcp_config.json").resolve(),
+    }
+    candidate = Path(path).resolve()
+    if candidate not in allowed_paths:
+        raise HTTPException(status_code=403, detail="不允许读取该配置文件路径")
+    return candidate
+
 # 配置概览
 @router.get("/file")
 async def get_config_file(path: str = "config/mcp_config.json"):
     """获取配置文件内容"""
     try:
-        if not os.path.exists(path):
+        config_path = resolve_allowed_config_path(path)
+        if not config_path.exists():
             raise HTTPException(status_code=404, detail=f"配置文件不存在: {path}")
-        
-        with open(path, 'r', encoding='utf-8') as f:
+
+        with config_path.open('r', encoding='utf-8') as f:
             config_data = json.load(f)
-        
+
         return config_data
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="配置文件不是有效的JSON格式")
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"读取配置文件失败: {e}")
         raise HTTPException(status_code=500, detail=f"读取配置文件失败: {str(e)}")
@@ -118,13 +139,13 @@ async def get_config_overview(
     """获取配置概览"""
     try:
         config = config_manager.get_config()
-        
+
         # 统计信息
         total_servers = len(config.servers)
         enabled_servers = sum(1 for s in config.servers if s.enabled)
         total_tools = len(config.tools)
         enabled_tools = sum(1 for t in config.tools if t.enabled)
-        
+
         # 按类别分组工具
         tools_by_category = {}
         for tool in config.tools:
@@ -132,14 +153,14 @@ async def get_config_overview(
             if category not in tools_by_category:
                 tools_by_category[category] = []
             tools_by_category[category].append(tool.name)
-        
+
         # 服务器状态
         server_status = {}
         for server in config.servers:
             if server.enabled:
                 # 这里可以添加实际的连接状态检查
                 server_status[server.name] = "unknown"
-        
+
         return {
             "config_name": config.name,
             "config_description": config.description,
@@ -166,11 +187,11 @@ async def list_servers(
     try:
         config = config_manager.get_config()
         servers = []
-        
+
         for server in config.servers:
             # 计算工具数量
             tools_count = len(server.enabled_tools) if server.enabled_tools else 0
-            
+
             servers.append(ServerResponse(
                 name=server.name,
                 type=server.type,
@@ -178,13 +199,13 @@ async def list_servers(
                 status="unknown",  # 可以添加实际状态检查
                 tools_count=tools_count
             ))
-        
+
         return servers
     except Exception as e:
         logger.error(f"获取服务器列表失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取服务器列表失败: {str(e)}")
 
-@router.post("/servers")
+@router.post("/servers", dependencies=WRITE_DEPENDENCIES)
 async def create_server(
     request: ServerCreateRequest,
     config_manager: MCPConfigManager = Depends(get_config_manager)
@@ -205,26 +226,26 @@ async def create_server(
             enabled_tools=request.enabled_tools,
             auth_token=request.auth_token
         )
-        
+
         # 合并自定义配置
         if request.custom_config:
             for key, value in request.custom_config.items():
                 if hasattr(server_config, key):
                     setattr(server_config, key, value)
-        
+
         success = config_manager.add_server(server_config)
         if success:
             return {"message": f"服务器 {request.name} 创建成功"}
         else:
             raise HTTPException(status_code=400, detail="服务器创建失败")
-            
+
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"创建服务器失败: {e}")
         raise HTTPException(status_code=500, detail=f"创建服务器失败: {str(e)}")
 
-@router.put("/servers/{server_name}")
+@router.put("/servers/{server_name}", dependencies=WRITE_DEPENDENCIES)
 async def update_server(
     server_name: str,
     request: ServerCreateRequest,
@@ -245,20 +266,20 @@ async def update_server(
             enabled_tools=request.enabled_tools,
             auth_token=request.auth_token
         )
-        
+
         success = config_manager.update_server(server_name, server_config)
         if success:
             return {"message": f"服务器 {server_name} 更新成功"}
         else:
             raise HTTPException(status_code=404, detail="服务器不存在")
-            
+
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"更新服务器失败: {e}")
         raise HTTPException(status_code=500, detail=f"更新服务器失败: {str(e)}")
 
-@router.delete("/servers/{server_name}")
+@router.delete("/servers/{server_name}", dependencies=WRITE_DEPENDENCIES)
 async def delete_server(
     server_name: str,
     config_manager: MCPConfigManager = Depends(get_config_manager)
@@ -274,7 +295,7 @@ async def delete_server(
         logger.error(f"删除服务器失败: {e}")
         raise HTTPException(status_code=500, detail=f"删除服务器失败: {str(e)}")
 
-@router.post("/servers/{server_name}/toggle")
+@router.post("/servers/{server_name}/toggle", dependencies=WRITE_DEPENDENCIES)
 async def toggle_server(
     server_name: str,
     config_manager: MCPConfigManager = Depends(get_config_manager)
@@ -299,7 +320,7 @@ async def list_tools(
     try:
         config = config_manager.get_config()
         tools = []
-        
+
         for tool in config.tools:
             # 查找对应的服务器
             server_name = None
@@ -307,7 +328,7 @@ async def list_tools(
                 if server.enabled_tools and tool.name in server.enabled_tools:
                     server_name = server.name
                     break
-            
+
             tools.append(ToolResponse(
                 name=tool.name,
                 description=tool.description,
@@ -316,13 +337,13 @@ async def list_tools(
                 server=server_name,
                 status="configured" if server_name else "no_server"
             ))
-        
+
         return tools
     except Exception as e:
         logger.error(f"获取工具列表失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取工具列表失败: {str(e)}")
 
-@router.post("/tools")
+@router.post("/tools", dependencies=WRITE_DEPENDENCIES)
 async def create_tool(
     request: ToolCreateRequest,
     config_manager: MCPConfigManager = Depends(get_config_manager)
@@ -339,20 +360,20 @@ async def create_tool(
             cache_enabled=request.cache_enabled,
             default_parameters=request.default_parameters
         )
-        
+
         success = config_manager.add_tool(tool_config)
         if success:
             return {"message": f"工具 {request.name} 创建成功"}
         else:
             raise HTTPException(status_code=400, detail="工具创建失败")
-            
+
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"创建工具失败: {e}")
         raise HTTPException(status_code=500, detail=f"创建工具失败: {str(e)}")
 
-@router.post("/tools/{tool_name}/toggle")
+@router.post("/tools/{tool_name}/toggle", dependencies=WRITE_DEPENDENCIES)
 async def toggle_tool(
     tool_name: str,
     config_manager: MCPConfigManager = Depends(get_config_manager)
@@ -392,7 +413,7 @@ async def list_templates(
         logger.error(f"获取模板列表失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取模板列表失败: {str(e)}")
 
-@router.post("/templates/{template_name}/create")
+@router.post("/templates/{template_name}/create", dependencies=WRITE_DEPENDENCIES)
 async def create_from_template(
     template_name: str,
     request: TemplateCreateRequest,
@@ -405,12 +426,12 @@ async def create_from_template(
             request.server_name,
             request.custom_config
         )
-        
+
         if success:
             return {"message": f"从模板 {template_name} 创建服务器 {request.server_name} 成功"}
         else:
             raise HTTPException(status_code=400, detail="从模板创建服务器失败")
-            
+
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -431,7 +452,7 @@ async def validate_config(
         raise HTTPException(status_code=500, detail=f"配置验证失败: {str(e)}")
 
 # 配置导入导出
-@router.get("/export")
+@router.get("/export", dependencies=WRITE_DEPENDENCIES)
 async def export_config(
     config_manager: MCPConfigManager = Depends(get_config_manager)
 ):
@@ -440,7 +461,7 @@ async def export_config(
         # 创建临时文件
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             temp_file = f.name
-        
+
         success = config_manager.export_config(temp_file)
         if success:
             return FileResponse(
@@ -450,12 +471,12 @@ async def export_config(
             )
         else:
             raise HTTPException(status_code=500, detail="配置导出失败")
-            
+
     except Exception as e:
         logger.error(f"导出配置失败: {e}")
         raise HTTPException(status_code=500, detail=f"导出配置失败: {str(e)}")
 
-@router.post("/import")
+@router.post("/import", dependencies=WRITE_DEPENDENCIES)
 async def import_config(
     file: UploadFile = File(...),
     config_manager: MCPConfigManager = Depends(get_config_manager)
@@ -467,17 +488,17 @@ async def import_config(
             content = await file.read()
             f.write(content)
             temp_file = f.name
-        
+
         success = config_manager.import_config(temp_file)
-        
+
         # 清理临时文件
         os.unlink(temp_file)
-        
+
         if success:
             return {"message": "配置导入成功"}
         else:
             raise HTTPException(status_code=400, detail="配置导入失败")
-            
+
     except Exception as e:
         logger.error(f"导入配置失败: {e}")
         raise HTTPException(status_code=500, detail=f"导入配置失败: {str(e)}")
@@ -495,7 +516,7 @@ async def list_backups(
         logger.error(f"获取备份列表失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取备份列表失败: {str(e)}")
 
-@router.post("/backups/{backup_name}/restore")
+@router.post("/backups/{backup_name}/restore", dependencies=WRITE_DEPENDENCIES)
 async def restore_backup(
     backup_name: str,
     config_manager: MCPConfigManager = Depends(get_config_manager)
@@ -512,7 +533,7 @@ async def restore_backup(
         raise HTTPException(status_code=500, detail=f"恢复备份失败: {str(e)}")
 
 # 连接测试
-@router.post("/test/{server_name}")
+@router.post("/test/{server_name}", dependencies=WRITE_DEPENDENCIES)
 async def test_server_connection(
     server_name: str,
     config_manager: MCPConfigManager = Depends(get_config_manager)
@@ -521,13 +542,13 @@ async def test_server_connection(
     try:
         config = config_manager.get_config()
         server = next((s for s in config.servers if s.name == server_name), None)
-        
+
         if not server:
             raise HTTPException(status_code=404, detail="服务器不存在")
-        
+
         # 执行连接测试
         status = await config_manager._test_server_connection(server)
-        
+
         return {
             "server_name": server_name,
             "status": status,
@@ -538,4 +559,4 @@ async def test_server_connection(
         raise
     except Exception as e:
         logger.error(f"测试服务器连接失败: {e}")
-        raise HTTPException(status_code=500, detail=f"测试连接失败: {str(e)}") 
+        raise HTTPException(status_code=500, detail=f"测试连接失败: {str(e)}")

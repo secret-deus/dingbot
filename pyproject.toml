@@ -7,7 +7,8 @@ readme = "README.md"
 packages = [{include = "backend"}]
 
 [tool.poetry.dependencies]
-python = "^3.9"
+# 3.14：pydantic-core 需从源码编译时，PyO3 暂不支持 3.14（仅到 3.13）；crewai 亦要求 <3.14
+python = ">=3.11,<3.14"
 # 核心框架
 fastapi = ">=0.104.1"
 uvicorn = ">=0.24.0"
@@ -22,6 +23,15 @@ websockets = ">=12.0"
 openai = ">=1.40.0"
 # Kubernetes 客户端
 kubernetes = ">=28.1.0"
+# 进程内 K8s 知识图谱等（原 k8s-mcp）
+networkx = "^3.2.1"
+aiofiles = "^23.2.1"
+orjson = "^3.9.0"
+# 进程内 ECS（原 ecs-mcp / 阿里云 SDK）
+alibabacloud_ecs20140526 = "^3.0.0"
+alibabacloud_tea_openapi = "^0.3.13"
+alibabacloud_tea_util = "^0.3.13"
+alibabacloud_credentials = "^0.3.6"
 # 加密和安全
 cryptography = ">=41.0.7"
 # 工具库
@@ -37,6 +47,8 @@ pycryptodome = "^3.23.0"
 watchdog = "^4.0.0"
 # Cron表达式处理
 croniter = "^2.0.0"
+# 多智能体编排（可选，USE_CREWAI=true）。上游 crewai 目前要求 Python <3.14，故仅在 <3.14 环境安装。
+crewai = { version = ">=0.86.0", markers = "python_version < '3.14'" }
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.0"
@@ -69,13 +81,19 @@ clean = "scripts.build:clean"
 "Repository" = "https://github.com/your-org/dingtalk-k8s-robot"
 "Documentation" = "https://github.com/your-org/dingtalk-k8s-robot/blob/main/README.md"
 
+# 若访问 files.pythonhosted.org 频繁超时，可改用国内镜像（自行评估合规性）：
+# [[tool.poetry.source]]
+# name = "tuna"
+# url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+# priority = "primary"
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.black]
 line-length = 88
-target-version = ['py39']
+target-version = ['py311']
 include = '\.pyi?$'
 extend-exclude = '''
 /(
@@ -92,7 +110,7 @@ extend-exclude = '''
 '''
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
-disallow_untyped_defs = true 
+disallow_untyped_defs = true

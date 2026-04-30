@@ -1,103 +1,129 @@
 /**
- * 认证状态管理 Store
+ * 后端用户系统认证 Store
  */
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { computed, ref } from 'vue'
+import { api, AUTH_TOKEN_KEY } from '@/api/client'
+
+const AUTH_USER_KEY = 'auth.user'
+
+const readStoredUser = () => {
+  try {
+    const raw = localStorage.getItem(AUTH_USER_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
 
 export const useAuthStore = defineStore('auth', () => {
-  // 状态
-  const isLoggedIn = ref(false)
-  const loginTime = ref(null)
-  
-  // 常量
-  const AUTH_KEY = 'isAuthenticated'
-  const LOGIN_TIME_KEY = 'loginTime'
-  const LOGIN_EXPIRE_TIME = 24 * 60 * 60 * 1000 // 24小时
-  
-  // 计算属性
-  const isAuthenticated = computed(() => {
-    if (!isLoggedIn.value || !loginTime.value) {
-      return false
+  const token = ref(localStorage.getItem(AUTH_TOKEN_KEY) || '')
+  const user = ref(readStoredUser())
+  const initialized = ref(false)
+  const initializing = ref(false)
+
+  const isAuthenticated = computed(() => Boolean(token.value && user.value))
+  const username = computed(() => user.value?.username || '')
+  const displayName = computed(() => user.value?.display_name || user.value?.username || '管理员')
+  const roles = computed(() => user.value?.roles || [])
+  const permissions = computed(() => user.value?.permissions || [])
+
+  const persistSession = (accessToken, nextUser) => {
+    token.value = accessToken
+    user.value = nextUser
+    if (accessToken) {
+      localStorage.setItem(AUTH_TOKEN_KEY, accessToken)
+    } else {
+      localStorage.removeItem(AUTH_TOKEN_KEY)
     }
-    
-    // 检查是否过期
-    const now = Date.now()
-    if (now - loginTime.value > LOGIN_EXPIRE_TIME) {
-      logout()
-      return false
+    if (nextUser) {
+      localStorage.setItem(AUTH_USER_KEY, JSON.stringify(nextUser))
+    } else {
+      localStorage.removeItem(AUTH_USER_KEY)
     }
-    
-    return true
-  })
-  
-  // 方法
-  const login = (password) => {
-    // 这里可以添加密码验证逻辑
-    const DEFAULT_PASSWORD = import.meta.env.VITE_ACCESS_PASSWORD || 'ding2024'
-    
-    if (password === DEFAULT_PASSWORD) {
-      const now = Date.now()
-      isLoggedIn.value = true
-      loginTime.value = now
-      
-      // 持久化到localStorage
-      localStorage.setItem(AUTH_KEY, 'true')
-      localStorage.setItem(LOGIN_TIME_KEY, now.toString())
-      
-      return true
-    }
-    
-    return false
   }
-  
-  const logout = () => {
-    isLoggedIn.value = false
-    loginTime.value = null
-    
-    // 清除localStorage
-    localStorage.removeItem(AUTH_KEY)
-    localStorage.removeItem(LOGIN_TIME_KEY)
+
+  const clearLegacyAuth = () => {
+    localStorage.removeItem('isAuthenticated')
+    localStorage.removeItem('loginTime')
   }
-  
-  const initAuth = () => {
-    // 从localStorage恢复状态
-    const authValue = localStorage.getItem(AUTH_KEY)
-    const timeValue = localStorage.getItem(LOGIN_TIME_KEY)
-    
-    if (authValue === 'true' && timeValue) {
-      const storedTime = parseInt(timeValue)
-      const now = Date.now()
-      
-      if (now - storedTime <= LOGIN_EXPIRE_TIME) {
-        isLoggedIn.value = true
-        loginTime.value = storedTime
-      } else {
-        // 过期了，清除状态
-        logout()
+
+  const login = async ({ username: nextUsername = 'admin', password }) => {
+    const { data } = await api.auth.login({
+      username: nextUsername,
+      password
+    })
+    persistSession(data.access_token, data.user)
+    clearLegacyAuth()
+    initialized.value = true
+    return data.user
+  }
+
+  const logout = async () => {
+    try {
+      if (token.value) {
+        await api.auth.logout()
       }
+    } finally {
+      persistSession('', null)
+      clearLegacyAuth()
+      initialized.value = true
     }
   }
-  
-  const refreshLoginTime = () => {
-    if (isLoggedIn.value) {
-      const now = Date.now()
-      loginTime.value = now
-      localStorage.setItem(LOGIN_TIME_KEY, now.toString())
+
+  const clearSession = () => {
+    persistSession('', null)
+    clearLegacyAuth()
+    initialized.value = true
+    initializing.value = false
+  }
+
+  const initAuth = async () => {
+    if (initialized.value || initializing.value) {
+      return isAuthenticated.value
+    }
+    initializing.value = true
+    try {
+      if (!token.value) {
+        persistSession('', null)
+        return false
+      }
+      const { data } = await api.auth.me()
+      persistSession(token.value, data.user)
+      return true
+    } catch {
+      clearSession()
+      return false
+    } finally {
+      initialized.value = true
+      initializing.value = false
     }
   }
-  
+
+  const hasPermission = (permission) => {
+    if (!permission) return true
+    return permissions.value.includes('*') || permissions.value.includes(permission)
+  }
+
+  const hasAnyPermission = (items = []) => {
+    return items.some((item) => hasPermission(item))
+  }
+
   return {
-    // 状态
-    isLoggedIn,
-    loginTime,
-    
-    // 计算属性
+    token,
+    user,
+    initialized,
+    initializing,
     isAuthenticated,
-    
-    // 方法
+    username,
+    displayName,
+    roles,
+    permissions,
     login,
     logout,
+    clearSession,
     initAuth,
-    refreshLoginTime
+    hasPermission,
+    hasAnyPermission
   }
 })

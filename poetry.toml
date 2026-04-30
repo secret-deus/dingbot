@@ -1,0 +1,6 @@
+# 项目内 Poetry 行为（缓解慢网/大 wheel 下载超时）
+# 参见 scripts/poetry_install.py
+
+[installer]
+# 降低并行下载数，减轻弱网下连接被重置的概率
+max-workers = 2

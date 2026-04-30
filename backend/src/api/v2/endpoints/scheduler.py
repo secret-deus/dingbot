@@ -10,28 +10,35 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, Field
 from loguru import logger
+from ....security.auth import require_permission
 
 from ....scheduler import (
     # 模型
     ScheduledTask, TaskExecution, TaskStatus, TaskType, NotificationLevel,
     TaskCreateRequest, TaskUpdateRequest, TaskListResponse, TaskExecutionListResponse,
     TaskStatsResponse, TaskRunRequest, TaskRunResponse,
-    
+
     # 管理器
     TaskManager, get_task_manager, initialize_task_manager,
-    
+
     # 执行器
     TaskExecutor, get_task_executor,
-    
+
     # 调度器
     get_scheduler,
-    
+
     # 工具函数
     get_default_task_config, validate_task_config, get_cron_template, get_cron_description,
     CRON_TEMPLATES
 )
 
-router = APIRouter(prefix="/scheduler", tags=["定时任务"])
+router = APIRouter(
+    prefix="/scheduler",
+    tags=["定时任务"],
+    dependencies=[Depends(require_permission("scheduler:read"))],
+)
+WRITE_DEPENDENCIES = [Depends(require_permission("scheduler:write"))]
+RUN_DEPENDENCIES = [Depends(require_permission("scheduler:run"))]
 
 # 依赖注入
 def get_task_manager_instance() -> TaskManager:
@@ -101,17 +108,17 @@ async def get_tasks(
     try:
         # 获取所有任务
         all_tasks = task_manager.list_tasks(enabled_only=enabled_only)
-        
+
         # 按类型过滤
         if task_type:
             all_tasks = [task for task in all_tasks if task.task_type == task_type]
-        
+
         # 分页
         total = len(all_tasks)
         start_idx = (page - 1) * page_size
         end_idx = start_idx + page_size
         tasks = all_tasks[start_idx:end_idx]
-        
+
         return TaskListResponse(
             tasks=tasks,
             total=total,
@@ -119,12 +126,17 @@ async def get_tasks(
             page_size=page_size,
             has_more=end_idx < total
         )
-        
+
     except Exception as e:
         logger.error(f"获取任务列表失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取任务列表失败: {str(e)}")
 
-@router.post("/tasks", response_model=TaskResponse, summary="创建新任务")
+@router.post(
+    "/tasks",
+    response_model=TaskResponse,
+    summary="创建新任务",
+    dependencies=WRITE_DEPENDENCIES,
+)
 async def create_task(
     request: TaskCreateRequest,
     task_manager: TaskManager = Depends(get_task_manager_instance)
@@ -133,9 +145,9 @@ async def create_task(
     try:
         # 创建任务
         task = task_manager.create_task(request)
-        
+
         logger.info(f"创建任务成功: {task.name} (ID: {task.id})")
-        
+
         return TaskResponse(
             id=task.id,
             name=task.name,
@@ -152,7 +164,7 @@ async def create_task(
             last_run_time=task.last_run_time,
             last_execution_id=task.last_execution_id
         )
-        
+
     except ValueError as e:
         logger.error(f"创建任务参数错误: {e}")
         raise HTTPException(status_code=400, detail=str(e))
@@ -170,7 +182,7 @@ async def get_task(
         task = task_manager.get_task(task_id)
         if not task:
             raise HTTPException(status_code=404, detail="任务不存在")
-        
+
         return TaskResponse(
             id=task.id,
             name=task.name,
@@ -187,14 +199,19 @@ async def get_task(
             last_run_time=task.last_run_time,
             last_execution_id=task.last_execution_id
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"获取任务失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取任务失败: {str(e)}")
 
-@router.put("/tasks/{task_id}", response_model=TaskResponse, summary="更新任务")
+@router.put(
+    "/tasks/{task_id}",
+    response_model=TaskResponse,
+    summary="更新任务",
+    dependencies=WRITE_DEPENDENCIES,
+)
 async def update_task(
     task_id: str,
     request: TaskUpdateRequest,
@@ -205,9 +222,9 @@ async def update_task(
         task = task_manager.update_task(task_id, request)
         if not task:
             raise HTTPException(status_code=404, detail="任务不存在")
-        
+
         logger.info(f"更新任务成功: {task.name} (ID: {task_id})")
-        
+
         return TaskResponse(
             id=task.id,
             name=task.name,
@@ -224,7 +241,7 @@ async def update_task(
             last_run_time=task.last_run_time,
             last_execution_id=task.last_execution_id
         )
-        
+
     except ValueError as e:
         logger.error(f"更新任务参数错误: {e}")
         raise HTTPException(status_code=400, detail=str(e))
@@ -234,7 +251,7 @@ async def update_task(
         logger.error(f"更新任务失败: {e}")
         raise HTTPException(status_code=500, detail=f"更新任务失败: {str(e)}")
 
-@router.delete("/tasks/{task_id}", summary="删除任务")
+@router.delete("/tasks/{task_id}", summary="删除任务", dependencies=WRITE_DEPENDENCIES)
 async def delete_task(
     task_id: str,
     task_manager: TaskManager = Depends(get_task_manager_instance)
@@ -244,16 +261,16 @@ async def delete_task(
         success = task_manager.delete_task(task_id)
         if not success:
             raise HTTPException(status_code=404, detail="任务不存在")
-        
+
         logger.info(f"删除任务成功: {task_id}")
-        
+
         return {
             "success": True,
             "message": "任务删除成功",
             "task_id": task_id,
             "timestamp": datetime.now().isoformat()
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -273,16 +290,16 @@ async def get_task_executions(
         task = task_manager.get_task(task_id)
         if not task:
             raise HTTPException(status_code=404, detail="任务不存在")
-        
+
         # 获取执行历史
         all_executions = task_manager.get_execution_history(task_id, limit=0)  # 获取所有记录
-        
+
         # 分页
         total = len(all_executions)
         start_idx = (page - 1) * page_size
         end_idx = start_idx + page_size
         executions = all_executions[start_idx:end_idx]
-        
+
         # 转换为响应模型
         execution_responses = []
         for execution in executions:
@@ -298,7 +315,7 @@ async def get_task_executions(
                 is_retry=execution.is_retry,
                 notification_sent=execution.notification_sent
             ))
-        
+
         return TaskExecutionListResponse(
             executions=executions,  # 使用原始的TaskExecution对象列表
             total=total,
@@ -306,14 +323,19 @@ async def get_task_executions(
             page_size=page_size,
             has_more=end_idx < total
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"获取执行历史失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取执行历史失败: {str(e)}")
 
-@router.post("/tasks/{task_id}/run", response_model=TaskRunResponse, summary="手动执行任务")
+@router.post(
+    "/tasks/{task_id}/run",
+    response_model=TaskRunResponse,
+    summary="手动执行任务",
+    dependencies=RUN_DEPENDENCIES,
+)
 async def run_task(
     task_id: str,
     request: TaskRunRequest = TaskRunRequest(),
@@ -325,25 +347,25 @@ async def run_task(
         task = task_manager.get_task(task_id)
         if not task:
             raise HTTPException(status_code=404, detail="任务不存在")
-        
+
         # 获取调度器
         scheduler = get_scheduler()
         if not scheduler:
             raise HTTPException(status_code=503, detail="任务调度器未启动")
-        
+
         # 手动执行任务
         execution_id = await scheduler.run_task_manually(task_id, force=request.force)
         if not execution_id:
             raise HTTPException(status_code=400, detail="任务执行失败")
-        
+
         logger.info(f"手动执行任务: {task.name} (ID: {task_id})")
-        
+
         return TaskRunResponse(
             execution_id=execution_id,
             message=f"任务 '{task.name}' 已开始执行",
             started_at=datetime.now()
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -359,12 +381,12 @@ async def get_task_stats(
     try:
         # 获取任务统计
         task_stats = task_manager.get_task_stats()
-        
+
         # 获取执行统计
         execution_stats = {}
         if task_executor:
             execution_stats = task_executor.get_execution_stats()
-        
+
         return TaskStatsResponse(
             total_tasks=task_stats.get("total_tasks", 0),
             enabled_tasks=task_stats.get("enabled_tasks", 0),
@@ -375,7 +397,7 @@ async def get_task_stats(
             success_rate=execution_stats.get("success_rate", 0.0),
             average_duration=execution_stats.get("average_execution_time", 0.0)
         )
-        
+
     except Exception as e:
         logger.error(f"获取任务统计失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取任务统计失败: {str(e)}")
@@ -392,16 +414,16 @@ async def get_running_tasks():
                 "count": 0,
                 "message": "任务调度器未启动"
             }
-        
+
         running_tasks = scheduler.get_running_tasks()
-        
+
         return {
             "success": True,
             "running_tasks": running_tasks,
             "count": len(running_tasks),
             "timestamp": datetime.now().isoformat()
         }
-        
+
     except Exception as e:
         logger.error(f"获取运行中任务失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取运行中任务失败: {str(e)}")
@@ -413,10 +435,10 @@ async def get_task_types():
     """获取所有支持的任务类型及其配置模板"""
     try:
         task_types = []
-        
+
         for task_type in TaskType:
             default_config = get_default_task_config(task_type)
-            
+
             task_types.append({
                 "type": task_type.value,
                 "name": {
@@ -433,13 +455,13 @@ async def get_task_types():
                 }.get(task_type.value, ""),
                 "default_config": default_config
             })
-        
+
         return {
             "success": True,
             "task_types": task_types,
             "timestamp": datetime.now().isoformat()
         }
-        
+
     except Exception as e:
         logger.error(f"获取任务类型失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取任务类型失败: {str(e)}")
@@ -449,20 +471,20 @@ async def get_cron_templates():
     """获取常用的Cron表达式模板"""
     try:
         templates = []
-        
+
         for template_name, expression in CRON_TEMPLATES.items():
             templates.append({
                 "name": template_name,
                 "expression": expression,
                 "description": get_cron_description(expression)
             })
-        
+
         return {
             "success": True,
             "templates": templates,
             "timestamp": datetime.now().isoformat()
         }
-        
+
     except Exception as e:
         logger.error(f"获取Cron模板失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取Cron模板失败: {str(e)}")
@@ -473,37 +495,37 @@ async def validate_cron(request: CronValidationRequest):
     try:
         from croniter import croniter
         from datetime import datetime, timedelta
-        
+
         expression = request.expression.strip()
-        
+
         # 验证表达式
         try:
             cron = croniter(expression, datetime.now())
             valid = True
             error_message = None
-            
+
             # 生成接下来的5次执行时间
             next_runs = []
             for _ in range(5):
                 next_run = cron.get_next(datetime)
                 next_runs.append(next_run)
-            
+
             # 生成描述
             description = get_cron_description(expression)
-            
+
         except Exception as e:
             valid = False
             error_message = str(e)
             next_runs = []
             description = "无效的Cron表达式"
-        
+
         return CronValidationResponse(
             valid=valid,
             error_message=error_message,
             next_runs=next_runs,
             description=description
         )
-        
+
     except Exception as e:
         logger.error(f"验证Cron表达式失败: {e}")
         raise HTTPException(status_code=500, detail=f"验证Cron表达式失败: {str(e)}")
@@ -517,7 +539,7 @@ async def validate_task_config_endpoint(
     """验证指定任务类型的配置是否有效"""
     try:
         valid, errors = task_manager.validate_task_config(task_type, config)
-        
+
         return {
             "success": True,
             "valid": valid,
@@ -525,7 +547,7 @@ async def validate_task_config_endpoint(
             "task_type": task_type.value,
             "timestamp": datetime.now().isoformat()
         }
-        
+
     except Exception as e:
         logger.error(f"验证任务配置失败: {e}")
         raise HTTPException(status_code=500, detail=f"验证任务配置失败: {str(e)}")
@@ -538,14 +560,14 @@ async def get_task_config_template(
     """获取指定任务类型的配置模板"""
     try:
         template = task_manager.get_task_template(task_type)
-        
+
         return {
             "success": True,
             "template": template,
             "task_type": task_type.value,
             "timestamp": datetime.now().isoformat()
         }
-        
+
     except Exception as e:
         logger.error(f"获取任务模板失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取任务模板失败: {str(e)}")
@@ -559,7 +581,7 @@ async def get_scheduler_status():
         scheduler = get_scheduler()
         task_manager = get_task_manager()
         task_executor = get_task_executor()
-        
+
         return {
             "success": True,
             "scheduler": {
@@ -576,12 +598,12 @@ async def get_scheduler_status():
             },
             "timestamp": datetime.now().isoformat()
         }
-        
+
     except Exception as e:
         logger.error(f"获取调度器状态失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取调度器状态失败: {str(e)}")
 
-@router.post("/maintenance/cleanup", summary="清理旧数据")
+@router.post("/maintenance/cleanup", summary="清理旧数据", dependencies=WRITE_DEPENDENCIES)
 async def cleanup_old_data(
     keep_days: int = Query(30, ge=1, le=365, description="保留天数"),
     task_manager: TaskManager = Depends(get_task_manager_instance)
@@ -590,25 +612,29 @@ async def cleanup_old_data(
     try:
         # 清理旧备份
         task_manager.cleanup_old_backups(keep_days=keep_days)
-        
+
         # 清理旧历史
         keep_months = max(1, keep_days // 30)
         task_manager.cleanup_old_history(keep_months=keep_months)
-        
+
         logger.info(f"数据清理完成，保留 {keep_days} 天的数据")
-        
+
         return {
             "success": True,
             "message": f"数据清理完成，保留 {keep_days} 天的数据",
             "keep_days": keep_days,
             "timestamp": datetime.now().isoformat()
         }
-        
+
     except Exception as e:
         logger.error(f"数据清理失败: {e}")
         raise HTTPException(status_code=500, detail=f"数据清理失败: {str(e)}")
 
-@router.post("/maintenance/reset-stats", summary="重置执行统计")
+@router.post(
+    "/maintenance/reset-stats",
+    summary="重置执行统计",
+    dependencies=WRITE_DEPENDENCIES,
+)
 async def reset_execution_stats(
     task_executor: Optional[TaskExecutor] = Depends(get_task_executor_instance)
 ):
@@ -616,17 +642,17 @@ async def reset_execution_stats(
     try:
         if not task_executor:
             raise HTTPException(status_code=503, detail="任务执行器未初始化")
-        
+
         task_executor.reset_stats()
-        
+
         logger.info("执行统计已重置")
-        
+
         return {
             "success": True,
             "message": "执行统计已重置",
             "timestamp": datetime.now().isoformat()
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:

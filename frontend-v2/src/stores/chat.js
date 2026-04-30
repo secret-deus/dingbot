@@ -748,7 +748,7 @@ export const useChatStore = defineStore('chat', () => {
 
   // 工具调用管理（保持不变但添加会话同步）
   const addToolCall = (toolCall) => {
-    const toolCallId = `tool_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    const toolCallId = toolCall.id || `tool_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
     const newToolCall = {
       id: toolCallId,
       tool: toolCall.tool,
@@ -1985,4 +1985,3 @@ if (typeof window !== 'undefined') {
     }
   }, 300) // 给足够的时间让所有系统初始化完成
 }
-

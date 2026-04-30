@@ -5,14 +5,14 @@
       <el-icon class="is-loading"><Loading /></el-icon>
       <span>加载MCP服务器...</span>
     </div>
-    
+
     <!-- 错误状态 -->
     <div v-else-if="error" class="error-state">
       <el-icon><Warning /></el-icon>
       <span>{{ error }}</span>
       <el-button size="small" @click="loadServers">重试</el-button>
     </div>
-    
+
     <!-- 服务器开关列表 -->
     <div v-else class="servers-switches">
       <!-- 全局状态显示 -->
@@ -23,33 +23,33 @@
             ({{ connectedCount }} 已连接)
           </span>
         </span>
-        <el-button 
+        <el-button
           v-if="servers.length > 1"
-          size="small" 
+          size="small"
           @click="toggleAll"
           :type="allEnabled ? 'warning' : 'success'"
         >
           {{ allEnabled ? '全部禁用' : '全部启用' }}
         </el-button>
       </div>
-      
+
       <!-- 单个服务器开关 -->
       <div class="server-switches">
-        <div 
-          v-for="server in servers" 
+        <div
+          v-for="server in servers"
           :key="server.name"
           class="server-switch-item"
-          :class="{ 
-            'enabled': server.enabled, 
+          :class="{
+            'enabled': server.enabled,
             'connected': server.connected,
-            'disconnected': server.enabled && !server.connected 
+            'disconnected': server.enabled && !server.connected
           }"
         >
           <div class="server-info">
             <div class="server-name">
               {{ server.display_name }}
-              <el-tag 
-                size="small" 
+              <el-tag
+                size="small"
                 :type="server.connected ? 'success' : (server.enabled ? 'warning' : 'info')"
               >
                 {{ server.connected ? '已连接' : (server.enabled ? '未连接' : '已禁用') }}
@@ -65,7 +65,7 @@
               </span>
             </div>
           </div>
-          
+
           <div class="server-controls">
             <!-- 连接控制按钮 -->
             <div class="connection-controls" v-if="server.enabled">
@@ -103,7 +103,7 @@
                 重连
               </el-button>
             </div>
-            
+
             <!-- 启用/禁用开关 -->
             <el-switch
               v-model="server.enabled"
@@ -116,7 +116,7 @@
           </div>
         </div>
       </div>
-      
+
       <!-- 工具提示 -->
       <div v-if="servers.length > 0" class="mcp-tooltip">
         <el-icon><InfoFilled /></el-icon>
@@ -130,7 +130,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Loading, Warning, InfoFilled, Connection, Close, Refresh } from '@element-plus/icons-vue'
-import axios from 'axios'
+import apiClient from '@/api/client'
 
 // Props
 const props = defineProps({
@@ -163,9 +163,9 @@ const allEnabled = computed(() => servers.value.length > 0 && servers.value.ever
 const loadServers = async () => {
   loading.value = true
   error.value = null
-  
+
   try {
-    const response = await axios.get('/api/v2/mcp/servers/status')
+    const response = await apiClient.get('/v2/mcp/servers/status')
     servers.value = response.data.servers.map(server => ({
       ...server,
       switching: false, // 添加切换状态
@@ -173,7 +173,7 @@ const loadServers = async () => {
       disconnecting: false, // 添加断开状态
       reconnecting: false // 添加重连状态
     }))
-    
+
     emit('servers-changed', {
       servers: servers.value,
       total_enabled: response.data.total_enabled,
@@ -181,7 +181,7 @@ const loadServers = async () => {
     })
   } catch (e) {
     console.error('加载MCP服务器失败:', e)
-    error.value = e.response?.data?.detail || e.message || '加载失败'
+    error.value = e.response?.data?.error?.message || e.response?.data?.detail || e.message || '加载失败'
   } finally {
     loading.value = false
   }
@@ -190,7 +190,7 @@ const loadServers = async () => {
 // 刷新服务器状态（不显示loading）
 const refreshServerStatus = async () => {
   try {
-    const response = await axios.get('/api/v2/mcp/servers/status')
+    const response = await apiClient.get('/v2/mcp/servers/status')
     if (response.data.servers) {
       // 保持当前的状态，只更新服务器数据
       const currentStates = {}
@@ -202,7 +202,7 @@ const refreshServerStatus = async () => {
           reconnecting: server.reconnecting
         }
       })
-      
+
       servers.value = response.data.servers.map(server => ({
         ...server,
         switching: currentStates[server.name]?.switching || false,
@@ -210,7 +210,7 @@ const refreshServerStatus = async () => {
         disconnecting: currentStates[server.name]?.disconnecting || false,
         reconnecting: currentStates[server.name]?.reconnecting || false
       }))
-      
+
       emit('servers-changed', {
         servers: servers.value,
         total_enabled: response.data.total_enabled,
@@ -227,20 +227,20 @@ const refreshServerStatus = async () => {
 const connectServer = async (serverName) => {
   const server = servers.value.find(s => s.name === serverName)
   if (!server) return
-  
+
   server.connecting = true
-  
+
   try {
-    const response = await axios.post(`/api/v2/mcp/servers/${serverName}/connect`)
-    
+    const response = await apiClient.post(`/v2/mcp/servers/${serverName}/connect`)
+
     ElMessage.success(response.data.message)
-    
+
     // 刷新状态
     await refreshServerStatus()
-    
+
   } catch (e) {
     console.error('连接服务器失败:', e)
-    ElMessage.error(e.response?.data?.detail || e.message || '连接失败')
+    ElMessage.error(e.response?.data?.error?.message || e.response?.data?.detail || e.message || '连接失败')
   } finally {
     server.connecting = false
   }
@@ -250,20 +250,20 @@ const connectServer = async (serverName) => {
 const disconnectServer = async (serverName) => {
   const server = servers.value.find(s => s.name === serverName)
   if (!server) return
-  
+
   server.disconnecting = true
-  
+
   try {
-    const response = await axios.post(`/api/v2/mcp/servers/${serverName}/disconnect`)
-    
+    const response = await apiClient.post(`/v2/mcp/servers/${serverName}/disconnect`)
+
     ElMessage.success(response.data.message)
-    
+
     // 刷新状态
     await refreshServerStatus()
-    
+
   } catch (e) {
     console.error('断开连接失败:', e)
-    ElMessage.error(e.response?.data?.detail || e.message || '断开连接失败')
+    ElMessage.error(e.response?.data?.error?.message || e.response?.data?.detail || e.message || '断开连接失败')
   } finally {
     server.disconnecting = false
   }
@@ -273,20 +273,20 @@ const disconnectServer = async (serverName) => {
 const reconnectServer = async (serverName) => {
   const server = servers.value.find(s => s.name === serverName)
   if (!server) return
-  
+
   server.reconnecting = true
-  
+
   try {
-    const response = await axios.post(`/api/v2/mcp/servers/${serverName}/reconnect`)
-    
+    const response = await apiClient.post(`/v2/mcp/servers/${serverName}/reconnect`)
+
     ElMessage.success(response.data.message)
-    
+
     // 刷新状态
     await refreshServerStatus()
-    
+
   } catch (e) {
     console.error('重连服务器失败:', e)
-    ElMessage.error(e.response?.data?.detail || e.message || '重连失败')
+    ElMessage.error(e.response?.data?.error?.message || e.response?.data?.detail || e.message || '重连失败')
   } finally {
     server.reconnecting = false
   }
@@ -295,24 +295,24 @@ const reconnectServer = async (serverName) => {
 const toggleServer = async (serverName, enabled) => {
   const server = servers.value.find(s => s.name === serverName)
   if (!server) return
-  
+
   // 乐观更新：立即更新UI状态
   const originalEnabled = server.enabled
   server.enabled = enabled
   server.switching = true
-  
+
   try {
     // 1. 首先更新配置（启用/禁用）
-    const configResponse = await axios.post(`/api/v2/mcp/config/servers/${serverName}/toggle`)
-    
+    const configResponse = await apiClient.post(`/v2/mcp/config/servers/${serverName}/toggle`)
+
     // 2. 根据启用状态自动连接或断开
     if (enabled) {
       // 启用时自动连接
       console.log(`🔌 服务器 ${serverName} 已启用，正在自动连接...`)
       server.connecting = true
-      
+
       try {
-        const connectResponse = await axios.post(`/api/v2/mcp/servers/${serverName}/connect`)
+        const connectResponse = await apiClient.post(`/v2/mcp/servers/${serverName}/connect`)
         console.log(`✅ 服务器 ${serverName} 自动连接成功`)
       } catch (connectError) {
         console.warn(`⚠️ 服务器 ${serverName} 自动连接失败:`, connectError)
@@ -324,9 +324,9 @@ const toggleServer = async (serverName, enabled) => {
       // 禁用时自动断开
       console.log(`🔌 服务器 ${serverName} 已禁用，正在自动断开连接...`)
       server.disconnecting = true
-      
+
       try {
-        const disconnectResponse = await axios.post(`/api/v2/mcp/servers/${serverName}/disconnect`)
+        const disconnectResponse = await apiClient.post(`/v2/mcp/servers/${serverName}/disconnect`)
         console.log(`✅ 服务器 ${serverName} 自动断开成功`)
       } catch (disconnectError) {
         console.warn(`⚠️ 服务器 ${serverName} 自动断开失败:`, disconnectError)
@@ -335,10 +335,10 @@ const toggleServer = async (serverName, enabled) => {
         server.disconnecting = false
       }
     }
-    
+
     // 3. 刷新服务器状态和工具列表
     await refreshServerStatus()
-    
+
     // 4. 通知父组件刷新工具列表
     emit('server-toggled', {
       server: serverName,
@@ -346,15 +346,15 @@ const toggleServer = async (serverName, enabled) => {
       server_info: server,
       should_refresh_tools: true // 标记需要刷新工具列表
     })
-    
+
     ElMessage.success(`${configResponse.data.message}${enabled ? '并已自动连接' : '并已自动断开'}`)
-    
+
   } catch (e) {
     console.error('切换服务器状态失败:', e)
     // 回滚状态
     server.enabled = originalEnabled
-    ElMessage.error(e.response?.data?.detail || e.message || '操作失败')
-    
+    ElMessage.error(e.response?.data?.error?.message || e.response?.data?.detail || e.message || '操作失败')
+
     // 失败后也刷新一次状态，确保数据一致性
     await refreshServerStatus()
   } finally {
@@ -365,7 +365,7 @@ const toggleServer = async (serverName, enabled) => {
 const toggleAll = async () => {
   const targetState = !allEnabled.value
   const serverStates = {}
-  
+
   // 保存原始状态用于回滚
   const originalStates = {}
   servers.value.forEach(server => {
@@ -375,25 +375,25 @@ const toggleAll = async () => {
     server.enabled = targetState
     server.switching = true
   })
-  
+
   try {
-    const response = await axios.post('/api/v2/mcp/servers/batch-toggle', {
+    const response = await apiClient.post('/v2/mcp/servers/batch-toggle', {
       servers: serverStates
     })
-    
+
     ElMessage.success(`已${targetState ? '启用' : '禁用'}所有MCP服务器`)
-    
+
     // 操作成功后，立即刷新服务器状态以获取最新的连接状态
     await refreshServerStatus()
-    
+
   } catch (e) {
     console.error('批量切换失败:', e)
     // 回滚状态
     servers.value.forEach(server => {
       server.enabled = originalStates[server.name]
     })
-    ElMessage.error(e.response?.data?.detail || e.message || '批量操作失败')
-    
+    ElMessage.error(e.response?.data?.error?.message || e.response?.data?.detail || e.message || '批量操作失败')
+
     // 失败后也刷新一次状态，确保数据一致性
     await refreshServerStatus()
   } finally {
@@ -592,11 +592,11 @@ onMounted(() => {
     align-items: flex-start;
     gap: 8px;
   }
-  
+
   .server-controls {
     align-self: flex-end;
   }
-  
+
   .global-status {
     flex-direction: column;
     align-items: flex-start;

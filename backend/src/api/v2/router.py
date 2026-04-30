@@ -6,11 +6,11 @@ FastAPI v2 API 路由 - 核心业务逻辑
 import asyncio
 import time
 from typing import Dict, Any, List, Optional, AsyncGenerator
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi import APIRouter, HTTPException, Depends, Request, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from starlette.responses import JSONResponse
 from loguru import logger
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 from ...mcp.enhanced_client import EnhancedMCPClient
 from ...llm.processor import EnhancedLLMProcessor
@@ -18,6 +18,26 @@ from ...config.manager import ConfigManager
 from ...mcp.types import MCPStats, MCPException
 from ...utils.error_handler import ErrorHandler, StreamErrorHandler, handle_api_errors
 from ...utils.monitoring import performance_monitor, debug_collector, request_tracking, debug_log
+from .stream_events import (
+    encode_done,
+    encode_sse_event,
+    error_event,
+    final_event,
+    iter_sse_frames,
+    normalize_stream_chunk,
+)
+from .dependencies import (
+    get_mcp_client as resolve_mcp_client,
+    get_llm_processor as resolve_llm_processor,
+    get_runtime_container,
+)
+from .endpoints.ops import router as ops_router
+from .endpoints.auth import router as auth_router
+from .endpoints.users import router as users_router
+from .endpoints.audit import router as audit_router
+from ...app.container import RuntimeContainer
+from ...security.auth import require_permission
+from ...security.redaction import redact
 
 # 路由器
 api_v2_router = APIRouter(prefix="/api/v2")
@@ -29,20 +49,17 @@ class ChatRequest(BaseModel):
     context: Optional[Dict[str, Any]] = Field(default=None, description="上下文信息")
     tools: Optional[List[str]] = Field(default=None, description="指定使用的工具")
     enable_tools: bool = Field(default=True, description="是否启用MCP工具")
-    
-class ConfigUpdateRequest(BaseModel):
-    config_data: Dict[str, Any] = Field(..., description="配置数据")
+    skill_id: Optional[str] = Field(
+        default=None,
+        description="项目内 Skill（config/skills.json），用于限制可调用的 MCP 工具",
+    )
 
-# 获取全局服务实例（从main.py导入）
-def get_mcp_client() -> Optional[EnhancedMCPClient]:
-    from main import mcp_client
-    return mcp_client
+# 获取运行时服务实例
+def get_mcp_client(request: Request) -> Optional[EnhancedMCPClient]:
+    return resolve_mcp_client(request)
 
-def get_llm_processor() -> EnhancedLLMProcessor:
-    from main import llm_processor
-    if not llm_processor:
-        raise HTTPException(status_code=503, detail="LLM处理器未初始化")
-    return llm_processor
+def get_llm_processor(request: Request) -> EnhancedLLMProcessor:
+    return resolve_llm_processor(request)
 
 @api_v2_router.get("/status")
 async def get_v2_status():
@@ -59,24 +76,32 @@ async def get_v2_status():
         logger.error(f"获取v2状态失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取状态失败: {e}")
 
+@api_v2_router.get(
+    "/skills",
+    summary="列出项目内 Skill",
+    tags=["Chat"],
+    dependencies=[Depends(require_permission("chat:read"))],
+)
+async def list_skills():
+    """返回 config/skills.json 中的 Skill 列表（只读）。"""
+    try:
+        from src.skills.registry import get_skill_registry
+
+        reg = get_skill_registry()
+        return {"default_skill_id": reg.default_skill_id, "skills": reg.list_public()}
+    except Exception as e:
+        logger.error(f"列出 Skill 失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @api_v2_router.get("/health")
-async def health_check():
+async def health_check(container: RuntimeContainer = Depends(get_runtime_container)):
     """健康检查接口"""
     try:
         # 安全地获取组件
-        mcp_client = None
-        llm_processor = None
-        
-        try:
-            mcp_client = get_mcp_client()
-        except Exception as e:
-            logger.warning(f"获取MCP客户端失败: {e}")
-        
-        try:
-            llm_processor = get_llm_processor()
-        except Exception as e:
-            logger.warning(f"获取LLM处理器失败: {e}")
-        
+        mcp_client = container.mcp_client
+        llm_processor = container.llm_processor
+
         # 检查各组件状态
         tools_count = 0
         if mcp_client:
@@ -85,7 +110,7 @@ async def health_check():
                 tools_count = len(tools)
             except Exception as e:
                 logger.warning(f"获取工具列表失败: {e}")
-        
+
         # 检查钉钉机器人状态（通过环境变量）
         dingtalk_bot_status = False
         try:
@@ -95,7 +120,7 @@ async def health_check():
             logger.info(f"钉钉机器人状态: {dingtalk_bot_status}")
         except Exception as e:
             logger.warning(f"获取钉钉机器人状态失败: {e}")
-        
+
         return {
             "healthy": True,
             "components": {
@@ -111,7 +136,7 @@ async def health_check():
         logger.error(f"健康检查失败: {e}")
         raise HTTPException(status_code=500, detail=f"健康检查失败: {e}")
 
-@api_v2_router.post("/chat")
+@api_v2_router.post("/chat", dependencies=[Depends(require_permission("chat:send"))])
 async def chat(
     request: ChatRequest,
     llm_processor: EnhancedLLMProcessor = Depends(get_llm_processor)
@@ -128,40 +153,42 @@ async def chat(
         logger.error(f"聊天处理失败: {e}")
         raise HTTPException(status_code=500, detail=f"聊天处理失败: {e}")
 
-@api_v2_router.post("/chat/stream", summary="流式对话", tags=["Chat"])
+@api_v2_router.post(
+    "/chat/stream",
+    summary="流式对话",
+    tags=["Chat"],
+    dependencies=[Depends(require_permission("chat:send"))],
+)
 async def stream_chat(
     request: ChatRequest,
     mcp_client: Optional[EnhancedMCPClient] = Depends(get_mcp_client),
     llm_processor: EnhancedLLMProcessor = Depends(get_llm_processor)
 ):
     """优化的流式对话接口"""
-    import json
-    import time
-    
     try:
         logger.info(f"开始流式对话处理，消息长度: {len(request.message)}")
-        
+
         # 验证消息不为空
         if not request.message or not request.message.strip():
-            error_data = {
-                "type": "error",
-                "message": "消息内容不能为空",
-                "error_code": "EMPTY_MESSAGE",
-                "timestamp": time.time(),
-                "suggestions": [
+            empty_message_error = error_event(
+                "消息内容不能为空",
+                code="EMPTY_MESSAGE",
+                recoverable=True,
+                suggestions=[
                     "请输入有效的消息内容",
                     "确保消息不只包含空格",
                     "尝试输入一个问题或指令"
-                ]
-            }
-            
+                ],
+            )
+
             async def generate_error():
-                yield f"data: {json.dumps(error_data, ensure_ascii=False)}\n"
-                yield "data: [DONE]\n"
-            
+                yield encode_sse_event(empty_message_error)
+                yield encode_sse_event(final_event())
+                yield encode_done()
+
             return StreamingResponse(
                 generate_error(),
-                media_type="text/plain",
+                media_type="text/event-stream",
                 headers={
                     "Cache-Control": "no-cache",
                     "Connection": "keep-alive",
@@ -172,7 +199,7 @@ async def stream_chat(
                     "X-Content-Type-Options": "nosniff",
                 }
             )
-        
+
         # 验证工具
         if request.tools and mcp_client:
             available_tools = await mcp_client.list_tools()
@@ -180,84 +207,106 @@ async def stream_chat(
             invalid_tools = [tool for tool in request.tools if tool not in available_tool_names]
             if invalid_tools:
                 raise HTTPException(
-                    status_code=400, 
+                    status_code=400,
                     detail=f"工具不存在: {', '.join(invalid_tools)}"
                 )
-        
+
         # 创建优化的流式响应生成器
         async def generate():
             chunk_count = 0
+            tool_call_count = 0
             try:
                 logger.info("开始生成流式响应")
-                
+
                 # 使用stream_chat方法进行流式对话
                 # 只有在前端启用工具且MCP客户端可用时才启用工具
                 enable_tools = request.enable_tools and mcp_client is not None
                 logger.info(f"MCP工具支持: {enable_tools} (前端请求: {request.enable_tools}, MCP客户端: {mcp_client is not None})")
-                
+
+                from src.llm.crew_orchestrator import (
+                    crewai_importable,
+                    run_crew_chat_async,
+                    use_crewai_enabled,
+                )
+
+                if (
+                    use_crewai_enabled()
+                    and enable_tools
+                    and mcp_client
+                    and not crewai_importable()
+                ):
+                    logger.warning(
+                        "USE_CREWAI=true 但 crewai 未安装（常见于 Python 3.14：上游要求 <3.14），已使用 stream_chat"
+                    )
+
+                used_crew = False
+                try:
+                    if (
+                        use_crewai_enabled()
+                        and enable_tools
+                        and mcp_client
+                        and crewai_importable()
+                    ):
+                        text = await run_crew_chat_async(
+                            request.message,
+                            mcp_client,
+                            llm_processor.config,
+                            skill_id=request.skill_id,
+                        )
+                        used_crew = True
+                        step = 400
+                        for i in range(0, len(text), step):
+                            part = text[i : i + step]
+                            if part:
+                                for frame in iter_sse_frames(normalize_stream_chunk(part)):
+                                    yield frame
+                except Exception as crew_err:
+                    logger.error(f"CrewAI 路径失败，回退 stream_chat: {crew_err}", exc_info=True)
+                    used_crew = False
+
+                if used_crew:
+                    yield encode_sse_event(final_event(tool_call_count=tool_call_count))
+                    yield encode_done()
+                    logger.info("流式响应完成（CrewAI）")
+                    return
+
                 async for chunk in llm_processor.stream_chat(
                     request.message,
-                    enable_tools=enable_tools
+                    enable_tools=enable_tools,
+                    skill_id=request.skill_id,
                 ):
                     chunk_count += 1
-                    
-                    # 标准化SSE格式输出
-                    if isinstance(chunk, dict):
-                        # 处理结构化消息(工具状态更新等)
-                        chunk_json = json.dumps(chunk, ensure_ascii=False)
-                        yield f"data: {chunk_json}\n"
-                    elif isinstance(chunk, str):
-                        # 处理换行符：逐字符处理，将换行符转换为空的data行
-                        if '\n' in chunk:
-                            # 逐字符处理，构建正确的SSE格式
-                            current_line = ""
-                            for char in chunk:
-                                if char == '\n':
-                                    # 发送当前行内容（如果有）
-                                    if current_line:
-                                        yield f"data: {current_line}\n"
-                                        current_line = ""
-                                    # 发送空行代表换行符
-                                    yield f"data: \n"
-                                else:
-                                    current_line += char
-                            
-                            # 发送剩余内容（如果有）
-                            if current_line:
-                                yield f"data: {current_line}\n"
-                            
-                            logger.debug(f"输出多行文本块 #{chunk_count}: {chunk.count(chr(10))} 个换行符")
-                        elif chunk:  # 单行非空内容
-                            yield f"data: {chunk}\n"
-                            logger.debug(f"输出文本块 #{chunk_count}: {len(chunk)} 字符")
-                        # 注意：空字符串chunk会被忽略，因为它们通常是无意义的
-                    elif isinstance(chunk, dict):
-                        # 结构化数据转JSON
-                        yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n"
-                        logger.debug(f"输出结构化数据块 #{chunk_count}: {chunk.get('type', 'unknown')}")
-                    else:
-                        # 其他类型转字符串
-                        chunk_str = str(chunk)
-                        if chunk_str.strip():
-                            yield f"data: {chunk_str}\n"
-                            logger.debug(f"输出其他类型块 #{chunk_count}: {type(chunk)}")
-                
+
+                    events = normalize_stream_chunk(chunk)
+                    for event in events:
+                        if event.get("type") == "tool_call_start":
+                            tool_call_count += 1
+                        yield encode_sse_event(event)
+
                 # 明确的结束标识
-                yield "data: [DONE]\n"
+                yield encode_sse_event(final_event(tool_call_count=tool_call_count))
+                yield encode_done()
                 logger.info(f"流式响应完成，共输出 {chunk_count} 个块")
-                
+
             except Exception as e:
                 logger.error(f"流式响应生成失败: {e}", exc_info=True)
-                
+
                 # 使用统一错误处理系统
                 ErrorHandler.log_error(e, context="stream_chat_generation")
                 error_data = ErrorHandler.format_error_response(e, context="流式对话生成")
-                yield f"data: {json.dumps(error_data, ensure_ascii=False)}\n"
-        
+                yield encode_sse_event(error_event(
+                    error_data.get("message") or str(e),
+                    code=error_data.get("error_code") or "STREAM_ERROR",
+                    recoverable=True,
+                    suggestions=error_data.get("suggestions"),
+                ))
+                yield encode_sse_event(final_event(tool_call_count=tool_call_count))
+                yield encode_done()
+
         # 返回优化的StreamingResponse
         return StreamingResponse(
             generate(),
-            media_type="text/plain",
+            media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
@@ -268,14 +317,19 @@ async def stream_chat(
                 "X-Content-Type-Options": "nosniff",  # 防止MIME类型嗅探
             }
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"流式对话初始化失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"对话初始化失败: {e}")
 
-@api_v2_router.get("/tools", summary="获取MCP工具列表", tags=["MCP"])
+@api_v2_router.get(
+    "/tools",
+    summary="获取MCP工具列表",
+    tags=["MCP"],
+    dependencies=[Depends(require_permission("mcp:read"))],
+)
 async def get_v2_tools(mcp_client: Optional[EnhancedMCPClient] = Depends(get_mcp_client)):
     """获取所有可用的MCP工具"""
     try:
@@ -286,7 +340,7 @@ async def get_v2_tools(mcp_client: Optional[EnhancedMCPClient] = Depends(get_mcp
                 "timestamp": time.time(),
                 "message": "MCP客户端未连接"
             }
-        
+
         tools = await mcp_client.list_tools()
         return {
             "tools": [tool.model_dump() for tool in tools],
@@ -300,7 +354,12 @@ async def get_v2_tools(mcp_client: Optional[EnhancedMCPClient] = Depends(get_mcp
         logger.error(f"获取工具失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取工具失败: {e}")
 
-@api_v2_router.post("/tools/refresh", summary="刷新MCP工具列表", tags=["MCP"])
+@api_v2_router.post(
+    "/tools/refresh",
+    summary="刷新MCP工具列表",
+    tags=["MCP"],
+    dependencies=[Depends(require_permission("mcp:write"))],
+)
 async def refresh_v2_tools(mcp_client: Optional[EnhancedMCPClient] = Depends(get_mcp_client)):
     """强制刷新MCP工具列表"""
     try:
@@ -310,17 +369,17 @@ async def refresh_v2_tools(mcp_client: Optional[EnhancedMCPClient] = Depends(get
                 "message": "MCP客户端未连接",
                 "timestamp": time.time()
             }
-        
+
         logger.info("🔄 开始刷新MCP工具列表...")
-        
+
         # 重新连接MCP服务器以刷新工具列表
         await mcp_client.connect()
-        
+
         # 获取刷新后的工具列表
         tools = await mcp_client.list_tools()
-        
+
         logger.info(f"✅ MCP工具列表刷新完成，当前有 {len(tools)} 个工具")
-        
+
         return {
             "success": True,
             "message": f"成功刷新工具列表，当前有 {len(tools)} 个工具",
@@ -348,6 +407,13 @@ class ConfigTestRequest(BaseModel):
     config_type: str  # "llm" or "mcp"
     config_data: Dict[str, Any]
 
+
+class LegacyLLMConfigPutBody(BaseModel):
+    """兼容前端：PUT /config/llm 携带 config_type + config_data。"""
+    model_config = ConfigDict(extra="ignore")
+    config_type: Optional[str] = None
+    config_data: Dict[str, Any] = Field(..., description="完整 LLM 配置 JSON，与 LLMConfiguration 一致")
+
 # 导入配置管理器
 from ...config.manager import config_manager, ConfigValidationError
 
@@ -355,7 +421,11 @@ from ...config.manager import config_manager, ConfigValidationError
 from .endpoints.mcp import router as mcp_router
 from .endpoints.inspection import router as inspection_router
 from .endpoints.mcp_config import router as mcp_config_router
-from .endpoints.mcp_config_update import router as mcp_config_update_router
+from .endpoints.mcp_config_update import (
+    router as mcp_config_update_router,
+    update_mcp_config as persist_full_mcp_config,
+    MCPConfigUpdateRequest as MCPFullConfigUpdateRequest,
+)
 from .endpoints.mcp_config_current import router as mcp_config_current_router
 
 # 导入LLM配置管理端点
@@ -389,23 +459,35 @@ api_v2_router.include_router(alerts_router)
 
 # 注册资源管理路由
 api_v2_router.include_router(resources_router)
+api_v2_router.include_router(ops_router)
+api_v2_router.include_router(auth_router)
+api_v2_router.include_router(users_router)
+api_v2_router.include_router(audit_router)
 
 # 多供应商LLM配置管理API - 简化版本
-@api_v2_router.get("/config/llm/providers", summary="获取LLM配置（简化版）")
+@api_v2_router.get(
+    "/config/llm/providers",
+    summary="获取LLM配置（简化版）",
+    dependencies=[Depends(require_permission("llm:read"))],
+)
 async def get_llm_providers_config():
     """获取LLM配置（从环境变量）"""
     try:
         config_data = await config_manager.get_current_llm_config()
         return {
             "success": True,
-            "data": config_data
+            "data": redact(config_data)
         }
     except Exception as e:
         logger.error(f"获取LLM配置失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取配置失败: {str(e)}")
 
 
-@api_v2_router.post("/config/llm/providers", summary="LLM配置更新（暂不支持）")
+@api_v2_router.post(
+    "/config/llm/providers",
+    summary="LLM配置更新（暂不支持）",
+    dependencies=[Depends(require_permission("llm:write"))],
+)
 async def save_llm_providers_config(config_data: dict):
     """LLM配置更新（暂不支持，返回提示信息）"""
     return {
@@ -415,7 +497,11 @@ async def save_llm_providers_config(config_data: dict):
     }
 
 
-@api_v2_router.get("/config/llm/providers/templates", summary="获取供应商模板（暂不支持）")
+@api_v2_router.get(
+    "/config/llm/providers/templates",
+    summary="获取供应商模板（暂不支持）",
+    dependencies=[Depends(require_permission("llm:read"))],
+)
 async def get_provider_templates():
     """获取供应商模板（暂不支持）"""
     return {
@@ -425,23 +511,15 @@ async def get_provider_templates():
     }
 
 
-@api_v2_router.get("/llm/providers/available", summary="获取可用的LLM供应商列表")
-async def get_available_providers():
+@api_v2_router.get(
+    "/llm/providers/available",
+    summary="获取可用的LLM供应商列表",
+    dependencies=[Depends(require_permission("llm:read"))],
+)
+async def get_available_providers(container: RuntimeContainer = Depends(get_runtime_container)):
     """获取可用的LLM供应商列表"""
     try:
-        import sys
-        main_module = sys.modules.get('main')
-        if not main_module or not hasattr(main_module, 'llm_processor'):
-            return {
-                "success": False,
-                "message": "LLM处理器未初始化",
-                "data": {
-                    "providers": {},
-                    "current_provider": None
-                }
-            }
-        
-        llm_processor = getattr(main_module, 'llm_processor')
+        llm_processor = container.llm_processor
         if not llm_processor:
             return {
                 "success": False,
@@ -451,7 +529,7 @@ async def get_available_providers():
                     "current_provider": None
                 }
             }
-        
+
         # 检查处理器是否有必要的方法
         if not hasattr(llm_processor, 'get_available_providers'):
             logger.error("LLM处理器缺少get_available_providers方法")
@@ -463,14 +541,14 @@ async def get_available_providers():
                     "current_provider": None
                 }
             }
-        
+
         providers = llm_processor.get_available_providers()
         current_provider_id = getattr(llm_processor, 'current_provider_id', None)
-        
+
         return {
             "success": True,
             "data": {
-                "providers": providers,
+                "providers": redact(providers),
                 "current_provider": current_provider_id
             }
         }
@@ -488,7 +566,11 @@ async def get_available_providers():
         }
 
 
-@api_v2_router.post("/llm/providers/switch", summary="切换LLM供应商（暂不支持）")
+@api_v2_router.post(
+    "/llm/providers/switch",
+    summary="切换LLM供应商（暂不支持）",
+    dependencies=[Depends(require_permission("llm:write"))],
+)
 async def switch_llm_provider(request: dict):
     """切换LLM供应商（暂不支持）"""
     return {
@@ -498,30 +580,25 @@ async def switch_llm_provider(request: dict):
     }
 
 
-@api_v2_router.get("/llm/providers/stats", summary="获取供应商统计信息")
-async def get_provider_stats():
+@api_v2_router.get(
+    "/llm/providers/stats",
+    summary="获取供应商统计信息",
+    dependencies=[Depends(require_permission("llm:read"))],
+)
+async def get_provider_stats(container: RuntimeContainer = Depends(get_runtime_container)):
     """获取供应商统计信息"""
     try:
-        import sys
-        main_module = sys.modules.get('main')
-        if not main_module or not hasattr(main_module, 'llm_processor'):
-            return {
-                "success": False,
-                "message": "LLM处理器未初始化",
-                "data": {}
-            }
-        
-        llm_processor = getattr(main_module, 'llm_processor')
+        llm_processor = container.llm_processor
         if not llm_processor:
             return {
                 "success": False,
                 "message": "LLM处理器不可用",
                 "data": {}
             }
-        
+
         return {
             "success": True,
-            "data": getattr(llm_processor, 'provider_stats', {})
+            "data": redact(getattr(llm_processor, 'provider_stats', {}))
         }
     except Exception as e:
         logger.error(f"获取供应商统计信息失败: {e}")
@@ -529,76 +606,77 @@ async def get_provider_stats():
 
 
 # 兼容性API：保留原有的单供应商接口，但内部使用简化逻辑
-@api_v2_router.get("/config/llm", summary="获取LLM配置（兼容性接口）")
+@api_v2_router.get(
+    "/config/llm",
+    summary="获取LLM配置（兼容性接口）",
+    dependencies=[Depends(require_permission("llm:read"))],
+)
 async def get_llm_config():
     """获取LLM配置（向后兼容）"""
     try:
         config_data = await config_manager.get_current_llm_config()
         return {
             "success": True,
-            "data": config_data
+            "data": redact(config_data)
         }
     except Exception as e:
         logger.error(f"获取LLM配置失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取配置失败: {str(e)}")
 
-@api_v2_router.get("/config/llm/runtime")
-async def get_llm_runtime_config():
+@api_v2_router.get(
+    "/config/llm/runtime",
+    dependencies=[Depends(require_permission("llm:read"))],
+)
+async def get_llm_runtime_config(container: RuntimeContainer = Depends(get_runtime_container)):
     """获取运行时实际生效的LLM配置"""
     try:
         # 获取环境变量配置
         saved_config = await config_manager.get_current_llm_config()
-        
+
         # 尝试从运行时获取配置
-        import sys
-        main_module = sys.modules.get('main')
         runtime_config = None
-        
-        if main_module and hasattr(main_module, 'llm_processor'):
-            llm_processor = getattr(main_module, 'llm_processor')
-            if llm_processor and hasattr(llm_processor, 'config'):
-                try:
-                    # 简化版LLM处理器的config是字典类型
-                    config = llm_processor.config
-                    if isinstance(config, dict):
-                        runtime_config = {
-                            'enabled': config.get('enabled', True),
-                            'provider': config.get('provider', 'unknown'),
-                            'model': config.get('model', 'unknown'),
-                            'api_key': "***" + config.get('api_key', '')[-4:] if len(config.get('api_key', '')) > 4 else "***",
-                            'timeout': config.get('timeout', 30),
-                            'temperature': config.get('temperature', 0.7),
-                            'max_tokens': config.get('max_tokens', 2000),
-                        }
-                    else:
-                        # 向后兼容：对象类型配置
-                        runtime_config = {
-                            'enabled': getattr(config, 'enabled', True),
-                            'provider': getattr(config, 'provider', 'unknown'),
-                            'model': getattr(config, 'model', 'unknown'),
-                            'api_key': "***" + getattr(config, 'api_key', '')[-4:] if len(getattr(config, 'api_key', '')) > 4 else "***",
-                            'timeout': getattr(config, 'timeout', 30),
-                            'temperature': getattr(config, 'temperature', 0.7),
-                            'max_tokens': getattr(config, 'max_tokens', 2000),
-                        }
-                except Exception as config_error:
-                    logger.error(f"获取运行时配置时出错: {config_error}")
-                    runtime_config = None
-        
+
+        llm_processor = container.llm_processor
+        if llm_processor and hasattr(llm_processor, 'config'):
+            try:
+                config = llm_processor.config
+                if isinstance(config, dict):
+                    runtime_config = redact({
+                        'enabled': config.get('enabled', True),
+                        'provider': config.get('provider', 'unknown'),
+                        'model': config.get('model', 'unknown'),
+                        'api_key': config.get('api_key', ''),
+                        'timeout': config.get('timeout', 30),
+                        'temperature': config.get('temperature', 0.7),
+                        'max_tokens': config.get('max_tokens', 2000),
+                    })
+                else:
+                    runtime_config = redact({
+                        'enabled': getattr(config, 'enabled', True),
+                        'provider': getattr(config, 'provider', 'unknown'),
+                        'model': getattr(config, 'model', 'unknown'),
+                        'api_key': getattr(config, 'api_key', ''),
+                        'timeout': getattr(config, 'timeout', 30),
+                        'temperature': getattr(config, 'temperature', 0.7),
+                        'max_tokens': getattr(config, 'max_tokens', 2000),
+                    })
+            except Exception as config_error:
+                logger.error(f"获取运行时配置时出错: {config_error}")
+                runtime_config = None
+
         # 隐藏保存配置中的敏感信息
-        if "api_key" in saved_config and saved_config["api_key"]:
-            saved_config["api_key"] = "***" + saved_config["api_key"][-4:] if len(saved_config["api_key"]) > 4 else "***"
-        
+        saved_config = redact(saved_config)
+
         # 检查关键配置字段是否同步
         config_synced = False
         if runtime_config and saved_config:
             # 只比较关键字段
             key_fields = ['enabled', 'provider', 'model', 'timeout', 'temperature', 'max_tokens']
             config_synced = all(
-                runtime_config.get(field) == saved_config.get(field) 
+                runtime_config.get(field) == saved_config.get(field)
                 for field in key_fields
             )
-        
+
         return {
             "success": True,
             "runtime_config": runtime_config,
@@ -610,7 +688,7 @@ async def get_llm_runtime_config():
         logger.error(f"获取LLM运行时配置失败: {e}")
         import traceback
         traceback.print_exc()
-        
+
         return {
             "success": False,
             "message": f"获取运行时配置失败: {str(e)}",
@@ -620,7 +698,10 @@ async def get_llm_runtime_config():
             "timestamp": __import__('time').time()
         }
 
-@api_v2_router.get("/config/mcp")
+@api_v2_router.get(
+    "/config/mcp",
+    dependencies=[Depends(require_permission("mcp:read"))],
+)
 async def get_mcp_config():
     """获取当前MCP配置"""
     try:
@@ -634,47 +715,80 @@ async def get_mcp_config():
         logger.error(f"获取MCP配置失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取配置失败: {e}")
 
-@api_v2_router.put("/config/llm")
-async def update_llm_config(request: ConfigUpdateRequest):
-    """更新LLM配置（暂不支持）"""
+@api_v2_router.put(
+    "/config/llm",
+    dependencies=[Depends(require_permission("llm:write"))],
+)
+async def update_llm_config_compat(
+    body: LegacyLLMConfigPutBody,
+    container: RuntimeContainer = Depends(get_runtime_container),
+):
+    """更新 LLM 配置并重建运行时处理器（与 /api/v2/llm/config/update 行为一致）。"""
+    from ...llm.config import LLMConfiguration
+    from ...llm.config_manager import get_llm_config_manager
+
+    mgr = get_llm_config_manager()
+    try:
+        cfg = LLMConfiguration.model_validate(body.config_data)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"配置验证失败: {e}") from e
+    if not mgr.update_config(cfg):
+        raise HTTPException(status_code=500, detail="保存 LLM 配置失败")
+    await container.recreate_llm_processor()
     return {
-        "success": False,
-        "message": "LLM配置更新功能暂不支持，请直接修改环境变量文件后重启服务。",
-        "roadmap_note": "完整的配置管理功能将在v2.0版本中实现",
-        "timestamp": time.time()
+        "success": True,
+        "message": "LLM 配置已保存并应用到运行时",
+        "timestamp": time.time(),
     }
 
-@api_v2_router.post("/config/llm/reload")
-async def reload_llm_config():
-    """重新加载LLM配置（暂不支持）"""
+
+@api_v2_router.post(
+    "/config/llm/reload",
+    dependencies=[Depends(require_permission("llm:write"))],
+)
+async def reload_llm_config_compat(container: RuntimeContainer = Depends(get_runtime_container)):
+    """从磁盘重新加载 LLM 配置并重建处理器。"""
+    await container.recreate_llm_processor()
     return {
-        "success": False,
-        "message": "配置热重载功能暂不支持，请重启服务以应用新的环境变量配置。",
-        "roadmap_note": "配置热重载功能将在v2.0版本中实现",
-        "timestamp": time.time()
+        "success": True,
+        "message": "已从磁盘重新加载 LLM 配置并重建处理器",
+        "timestamp": time.time(),
     }
 
-@api_v2_router.put("/config/mcp")
-async def update_mcp_config(request: ConfigUpdateRequest):
-    """更新MCP配置（暂不支持）"""
-    return {
-        "success": False,
-        "message": "MCP配置更新功能暂不支持，请直接修改环境变量文件后重启服务。",
-        "roadmap_note": "完整的配置管理功能将在v2.0版本中实现",
-        "timestamp": time.time()
-    }
 
-@api_v2_router.post("/config/test")
+@api_v2_router.put(
+    "/config/mcp",
+    dependencies=[Depends(require_permission("mcp:write"))],
+)
+async def update_mcp_config_compat(
+    request: MCPFullConfigUpdateRequest,
+    background_tasks: BackgroundTasks,
+):
+    """写入 MCP 配置文件并触发客户端热重载（与 POST /api/v2/mcp/config/update 一致）。"""
+    return await persist_full_mcp_config(request, background_tasks)
+
+
+@api_v2_router.post(
+    "/config/test",
+    dependencies=[Depends(require_permission("llm:read"))],
+)
 async def test_config(request: ConfigTestRequest):
-    """测试配置连接性（暂不支持）"""
+    """引导使用专用校验与测试接口，避免重复实现。"""
     return {
         "success": False,
-        "message": "配置测试功能暂不支持。",
-        "roadmap_note": "配置测试功能将在v2.0版本中实现",
-        "timestamp": __import__('time').time()
+        "message": "请使用专用接口：LLM 校验 POST /api/v2/llm/config/validate；MCP 单服务测试 POST /api/v2/mcp/config/test/{server_name}",
+        "config_type": request.config_type,
+        "hints": {
+            "llm_validate": "/api/v2/llm/config/validate",
+            "mcp_test_server": "/api/v2/mcp/config/test/{server_name}",
+        },
+        "timestamp": time.time(),
     }
 
-@api_v2_router.get("/config/providers")
+@api_v2_router.get(
+    "/config/providers",
+    dependencies=[Depends(require_permission("llm:read"))],
+)
 async def get_supported_providers():
     """获取支持的LLM提供商列表"""
     try:
@@ -746,7 +860,7 @@ async def get_supported_providers():
                 }
             ]
         }
-        
+
         return {
             "success": True,
             "data": providers,
@@ -757,7 +871,12 @@ async def get_supported_providers():
         raise HTTPException(status_code=500, detail=f"获取提供商列表失败: {e}")
 
 # 调试和监控端点
-@api_v2_router.get("/debug/performance", summary="获取性能统计", tags=["Debug"])
+@api_v2_router.get(
+    "/debug/performance",
+    summary="获取性能统计",
+    tags=["Debug"],
+    dependencies=[Depends(require_permission("debug:read"))],
+)
 async def get_performance_stats():
     """获取系统性能统计信息"""
     try:
@@ -771,7 +890,12 @@ async def get_performance_stats():
         logger.error(f"获取性能统计失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取性能统计失败: {e}")
 
-@api_v2_router.get("/debug/requests", summary="获取请求历史", tags=["Debug"])
+@api_v2_router.get(
+    "/debug/requests",
+    summary="获取请求历史",
+    tags=["Debug"],
+    dependencies=[Depends(require_permission("debug:read"))],
+)
 async def get_request_history(limit: int = 50):
     """获取请求历史记录"""
     try:
@@ -785,7 +909,12 @@ async def get_request_history(limit: int = 50):
         logger.error(f"获取请求历史失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取请求历史失败: {e}")
 
-@api_v2_router.get("/debug/logs", summary="获取调试日志", tags=["Debug"])
+@api_v2_router.get(
+    "/debug/logs",
+    summary="获取调试日志",
+    tags=["Debug"],
+    dependencies=[Depends(require_permission("debug:read"))],
+)
 async def get_debug_logs(request_id: Optional[str] = None):
     """获取调试日志信息"""
     try:
@@ -799,20 +928,25 @@ async def get_debug_logs(request_id: Optional[str] = None):
         logger.error(f"获取调试日志失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取调试日志失败: {e}")
 
-@api_v2_router.post("/debug/test", summary="测试端点", tags=["Debug"])
+@api_v2_router.post(
+    "/debug/test",
+    summary="测试端点",
+    tags=["Debug"],
+    dependencies=[Depends(require_permission("debug:write"))],
+)
 async def debug_test_endpoint(test_data: Dict[str, Any]):
     """调试测试端点，用于测试各种功能"""
     try:
         # 模拟一些处理时间
         await asyncio.sleep(0.1)
-        
+
         # 记录调试信息
         debug_collector.add_debug_log(
             level="INFO",
             message="调试测试端点被调用",
             context={"test_data": test_data}
         )
-        
+
         return {
             "success": True,
             "message": "调试测试完成",
@@ -824,4 +958,4 @@ async def debug_test_endpoint(test_data: Dict[str, Any]):
         raise HTTPException(status_code=500, detail=f"调试测试失败: {e}")
 
 # 包含MCP配置管理路由
-api_v2_router.include_router(mcp_router) 
+api_v2_router.include_router(mcp_router)

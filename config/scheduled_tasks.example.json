@@ -1,0 +1,7 @@
+{
+  "version": "1.0",
+  "name": "Scheduled tasks example",
+  "description": "Copy to config/scheduled_tasks.json before enabling scheduler tasks.",
+  "updated_at": "2026-04-29T00:00:00+08:00",
+  "tasks": []
+}

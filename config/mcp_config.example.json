@@ -1,0 +1,65 @@
+{
+  "version": "1.0",
+  "name": "MCP configuration example",
+  "description": "K8s and ECS tools run in-process by default; no standalone MCP server is required.",
+  "global_config": {
+    "timeout": 600000,
+    "retry_attempts": 3,
+    "retry_delay": 1000,
+    "max_concurrent_calls": 5,
+    "enable_cache": true,
+    "cache_timeout": 300000
+  },
+  "servers": [
+    {
+      "name": "k8s-mcp",
+      "type": "sse",
+      "implementation": "builtin",
+      "enabled": false,
+      "host": "localhost",
+      "port": 8766,
+      "path": "/events",
+      "timeout": 600,
+      "retry_attempts": 3,
+      "retry_delay": 1,
+      "enabled_tools": [
+        "k8s-get-pods",
+        "k8s-get-services",
+        "k8s-get-deployments",
+        "k8s-get-nodes",
+        "k8s-get-logs",
+        "k8s-describe-pod",
+        "k8s-get-events",
+        "k8s-relation-query",
+        "k8s-cluster-summary",
+        "k8s-resource-analysis-report"
+      ]
+    },
+    {
+      "name": "ecs-sse-server",
+      "type": "sse",
+      "implementation": "builtin",
+      "enabled": false,
+      "host": "localhost",
+      "port": 8002,
+      "path": "/events",
+      "timeout": 600,
+      "retry_attempts": 3,
+      "retry_delay": 1,
+      "enabled_tools": [
+        "ecs-list-instances",
+        "ecs-describe-instance-monitor-data",
+        "ecs-inspect"
+      ]
+    }
+  ],
+  "tools": [],
+  "tool_routing": {},
+  "security": {
+    "readonly_default": true,
+    "audit_enabled": true
+  },
+  "logging": {
+    "level": "INFO"
+  }
+}

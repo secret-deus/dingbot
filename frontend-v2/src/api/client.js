@@ -3,19 +3,59 @@ import { ElMessage } from 'element-plus'
 
 // API基础URL
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
+export const AUTH_TOKEN_KEY = 'auth.accessToken'
+
+export class ApiEnvelopeError extends Error {
+  constructor(message, detail = {}) {
+    super(message)
+    this.name = 'ApiEnvelopeError'
+    this.detail = detail
+  }
+}
+
+const notifyAuthExpired = () => {
+  localStorage.removeItem(AUTH_TOKEN_KEY)
+  localStorage.removeItem('auth.user')
+  window.dispatchEvent(new CustomEvent('auth:expired'))
+}
+
+export const unwrapApiResponse = (response) => {
+  const envelope = response?.data
+
+  if (!envelope || typeof envelope !== 'object' || !Object.prototype.hasOwnProperty.call(envelope, 'success')) {
+    throw new ApiEnvelopeError('接口响应不是标准 envelope 结构', {
+      response: envelope
+    })
+  }
+
+  const { success, data, error, meta } = envelope
+
+  if (success !== true) {
+    const message = error?.message || error?.detail || error || '接口返回失败状态'
+    throw new ApiEnvelopeError(message, {
+      error,
+      meta
+    })
+  }
+
+  return {
+    data,
+    meta: meta || {}
+  }
+}
 
 // 任务管理相关常量
 export const SCHEDULER_CONSTANTS = {
   // 任务状态
   TASK_STATUS: {
     PENDING: 'pending',
-    RUNNING: 'running', 
+    RUNNING: 'running',
     SUCCESS: 'success',
     FAILED: 'failed',
     CANCELLED: 'cancelled',
     TIMEOUT: 'timeout'
   },
-  
+
   // 任务类型
   TASK_TYPES: {
     CLUSTER_CHECK: 'cluster_check',
@@ -23,26 +63,26 @@ export const SCHEDULER_CONSTANTS = {
     HEALTH_MONITOR: 'health_monitor',
     CUSTOM: 'custom'
   },
-  
+
   // 通知级别
   NOTIFICATION_LEVELS: {
     NONE: 'none',
     ERROR: 'error',
     ALL: 'all'
   },
-  
+
   // 默认分页配置
   DEFAULT_PAGE_SIZE: 20,
   MAX_PAGE_SIZE: 100,
-  
+
   // 请求超时配置
   REQUEST_TIMEOUT: 30000,
   LONG_REQUEST_TIMEOUT: 600000, // 10分钟，用于长时间运行的操作
-  
+
   // 重试配置
   DEFAULT_MAX_RETRIES: 3,
   DEFAULT_RETRY_DELAY: 1000,
-  
+
   // 常用Cron表达式
   COMMON_CRON_EXPRESSIONS: {
     EVERY_MINUTE: '* * * * *',
@@ -71,7 +111,10 @@ const apiClient = axios.create({
 // 请求拦截器
 apiClient.interceptors.request.use(
   (config) => {
-    // 可以在这里添加token等认证信息
+    const token = localStorage.getItem(AUTH_TOKEN_KEY)
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
     console.log('API请求:', config.method?.toUpperCase(), config.url)
     return config
   },
@@ -89,45 +132,85 @@ apiClient.interceptors.response.use(
   },
   (error) => {
     console.error('API错误:', error)
-    
+
     // 错误消息处理
     let message = '请求失败'
     if (error.response) {
       const status = error.response.status
       const data = error.response.data
-      
+      const envelopeMessage = data?.error?.message || data?.detail
+
       switch (status) {
         case 400:
-          message = data.detail || '请求参数错误'
+          message = envelopeMessage || '请求参数错误'
           break
         case 401:
-          message = '未授权，请重新登录'
+          message = envelopeMessage || '未授权，请重新登录'
+          notifyAuthExpired()
           break
         case 403:
-          message = '权限不足'
+          message = envelopeMessage || '权限不足'
           break
         case 404:
           message = '请求的资源不存在'
           break
         case 500:
-          message = data.detail || '服务器内部错误'
+          message = envelopeMessage || '服务器内部错误'
           break
         default:
-          message = data.detail || `请求失败 (${status})`
+          message = envelopeMessage || `请求失败 (${status})`
       }
     } else if (error.request) {
       message = '网络连接失败，请检查网络'
     } else {
       message = error.message || '未知错误'
     }
-    
-    ElMessage.error(message)
+
+    if (!error.config?.silent) {
+      ElMessage.error(message)
+    }
     return Promise.reject(error)
   }
 )
 
 // API接口定义
 export const api = {
+  auth: {
+    login: async (credentials) => unwrapApiResponse(
+      await apiClient.post('/v2/auth/login', credentials, { silent: true })
+    ),
+    me: async () => unwrapApiResponse(
+      await apiClient.get('/v2/auth/me', { silent: true })
+    ),
+    logout: async () => unwrapApiResponse(
+      await apiClient.post('/v2/auth/logout', {}, { silent: true })
+    )
+  },
+
+  users: {
+    list: async () => unwrapApiResponse(
+      await apiClient.get('/v2/users')
+    ),
+    create: async (payload) => unwrapApiResponse(
+      await apiClient.post('/v2/users', payload)
+    ),
+    update: async (userId, payload) => unwrapApiResponse(
+      await apiClient.patch(`/v2/users/${userId}`, payload)
+    ),
+    disable: async (userId) => unwrapApiResponse(
+      await apiClient.delete(`/v2/users/${userId}`)
+    ),
+    roles: async () => unwrapApiResponse(
+      await apiClient.get('/v2/users/roles')
+    )
+  },
+
+  audit: {
+    logs: async (params = {}) => unwrapApiResponse(
+      await apiClient.get('/v2/audit/logs', { params })
+    )
+  },
+
   // 系统状态相关
   system: {
     // 获取v1状态
@@ -182,7 +265,7 @@ export const api = {
       force_update: params.forceUpdate || false,
       time_period: params.timePeriod || '14d'  // 新增时间周期参数
     }),
-    
+
     // 获取指标覆盖情况
     getMetricsCoverage: (params = {}) => apiClient.get('/v2/resources/metrics-coverage', {
       params: {
@@ -191,7 +274,7 @@ export const api = {
         show_failed_only: params.showFailedOnly || false
       }
     }),
-    
+
     // 强制触发指标聚合
     forceAggregation: () => apiClient.post('/v2/resources/force-aggregation')
   },
@@ -203,19 +286,39 @@ export const api = {
       message,
       enable_tools: enableTools
     }),
-    // 流式聊天 (返回EventSource)
-    streamChat: (message, enableTools = true) => {
-      const params = new URLSearchParams({
-        message,
-        enable_tools: enableTools
+    // 流式聊天 (返回 fetch Response，调用方自行解析 SSE 文本流)
+    streamChat: async (message, enableTools = true) => {
+      const token = localStorage.getItem(AUTH_TOKEN_KEY)
+      const response = await fetch(`${API_BASE}/v2/chat/stream`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          message,
+          enable_tools: enableTools
+        })
       })
-      return new EventSource(`/api/v2/chat/stream?${params}`)
+
+      if (response.status === 401) {
+        notifyAuthExpired()
+      }
+
+      return response
     }
   },
 
   // 巡检相关
   inspection: {
     run: (payload) => apiClient.post('/v2/inspection/run', payload),
+  },
+
+  // 运维指挥台标准接口
+  ops: {
+    getOverview: async () => unwrapApiResponse(
+      await apiClient.get('/v2/ops/overview', { silent: true })
+    )
   },
 
   // 任务调度管理相关
@@ -227,7 +330,7 @@ export const api = {
       if (params.page_size) queryParams.append('page_size', params.page_size)
       if (params.enabled_only !== undefined) queryParams.append('enabled_only', params.enabled_only)
       if (params.task_type) queryParams.append('task_type', params.task_type)
-      
+
       const url = queryParams.toString() ? `/v2/scheduler/tasks?${queryParams}` : '/v2/scheduler/tasks'
       return apiClient.get(url)
     },
@@ -249,9 +352,9 @@ export const api = {
       const queryParams = new URLSearchParams()
       if (params.page) queryParams.append('page', params.page)
       if (params.page_size) queryParams.append('page_size', params.page_size)
-      
-      const url = queryParams.toString() 
-        ? `/v2/scheduler/tasks/${taskId}/executions?${queryParams}` 
+
+      const url = queryParams.toString()
+        ? `/v2/scheduler/tasks/${taskId}/executions?${queryParams}`
         : `/v2/scheduler/tasks/${taskId}/executions`
       return apiClient.get(url)
     },
@@ -305,13 +408,13 @@ export default apiClient
 // 工具函数
 export const createEventSource = (url, options = {}) => {
   const eventSource = new EventSource(url, options)
-  
+
   // 添加通用错误处理
   eventSource.onerror = (error) => {
     console.error('EventSource错误:', error)
     ElMessage.error('实时连接中断，请刷新页面重试')
   }
-  
+
   return eventSource
 }
 
@@ -319,7 +422,7 @@ export const createEventSource = (url, options = {}) => {
 export const uploadFile = (file, onProgress) => {
   const formData = new FormData()
   formData.append('file', file)
-  
+
   return apiClient.post('/upload', formData, {
     headers: {
       'Content-Type': 'multipart/form-data',
@@ -333,7 +436,7 @@ export const uploadFile = (file, onProgress) => {
       }
     },
   })
-} 
+}
 
 // 任务管理专用API工具函数
 export const schedulerApiUtils = {
@@ -341,7 +444,7 @@ export const schedulerApiUtils = {
   createCancelableRequest: (requestFunction) => {
     const controller = new AbortController()
     const request = requestFunction({ signal: controller.signal })
-    
+
     return {
       request,
       cancel: () => controller.abort(),
@@ -352,30 +455,30 @@ export const schedulerApiUtils = {
   // 重试请求
   retryRequest: async (requestFunction, maxRetries = 3, delay = 1000) => {
     let lastError
-    
+
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         return await requestFunction()
       } catch (error) {
         lastError = error
-        
+
         // 如果是用户主动取消的请求，不重试
         if (error.name === 'AbortError' || error.code === 'ECONNABORTED') {
           throw error
         }
-        
+
         // 如果是最后一次尝试，直接抛出错误
         if (attempt === maxRetries) {
           throw error
         }
-        
+
         // 等待一段时间后重试，使用指数退避
         const waitTime = delay * Math.pow(2, attempt - 1)
         console.log(`请求失败，${waitTime}ms后进行第${attempt + 1}次重试...`)
         await new Promise(resolve => setTimeout(resolve, waitTime))
       }
     }
-    
+
     throw lastError
   },
 
@@ -463,7 +566,7 @@ export const schedulerApiUtils = {
     // 格式化执行时间
     formatDuration: (seconds) => {
       if (!seconds) return '-'
-      
+
       if (seconds < 60) {
         return `${seconds.toFixed(1)}秒`
       } else if (seconds < 3600) {
@@ -490,7 +593,7 @@ export const schedulerApiUtils = {
         '*/15 * * * *': '每15分钟执行一次',
         '0 */1 * * *': '每小时执行一次'
       }
-      
+
       return commonExpressions[expression] || expression
     }
   },
@@ -513,12 +616,12 @@ export const schedulerApiUtils = {
       if (!expression || expression.trim().length === 0) {
         return { valid: false, message: 'Cron表达式不能为空' }
       }
-      
+
       const parts = expression.trim().split(/\s+/)
       if (parts.length !== 5) {
         return { valid: false, message: 'Cron表达式必须包含5个部分' }
       }
-      
+
       return { valid: true }
     },
 
@@ -559,7 +662,7 @@ export class SchedulerAPI {
   // 获取任务列表（带缓存和分页优化）
   async getTasks(params = {}) {
     const cacheKey = JSON.stringify(params)
-    
+
     try {
       const response = await api.scheduler.getTasks(params)
       return response.data
@@ -624,19 +727,19 @@ export class SchedulerAPI {
   // 执行任务（带状态跟踪）
   async runTask(taskId, options = {}) {
     const requestId = `run_task_${taskId}_${Date.now()}`
-    
+
     try {
       // 记录请求
       this.activeRequests.set(requestId, { type: 'run_task', taskId, startTime: Date.now() })
-      
+
       const response = await api.scheduler.runTask(taskId, options)
       ElMessage.success('任务已开始执行')
-      
+
       // 如果需要，可以启动轮询检查执行状态
       if (options.trackExecution) {
         this.trackExecution(response.data.execution_id)
       }
-      
+
       return response.data
     } catch (error) {
       ElMessage.error(`执行任务失败: ${error.message}`)
@@ -656,9 +759,9 @@ export class SchedulerAPI {
       try {
         // 这里需要一个获取执行状态的API
         // const status = await api.scheduler.getExecutionStatus(executionId)
-        
+
         pollCount++
-        
+
         if (callback) {
           callback({ executionId, pollCount })
         }
@@ -748,4 +851,4 @@ export class SchedulerAPI {
 }
 
 // 创建全局实例
-export const schedulerAPI = new SchedulerAPI(apiClient) 
+export const schedulerAPI = new SchedulerAPI(apiClient)

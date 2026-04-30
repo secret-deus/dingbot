@@ -7,16 +7,26 @@ from typing import Any, Dict, List, Optional
 import json
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from loguru import logger
 
 from ....mcp.enhanced_client import EnhancedMCPClient
 from ....llm.processor import EnhancedLLMProcessor
 from ....mcp.types import ChatMessage
+from ....security.auth import require_permission
+from ..dependencies import (
+    get_active_container,
+    get_llm_processor as resolve_llm_processor,
+    get_mcp_client as resolve_mcp_client,
+)
 
 
-router = APIRouter(prefix="/inspection", tags=["Inspection"])
+router = APIRouter(
+    prefix="/inspection",
+    tags=["Inspection"],
+    dependencies=[Depends(require_permission("inspection:run"))],
+)
 
 
 class InspectionScope(BaseModel):
@@ -45,16 +55,12 @@ class InspectionResponse(BaseModel):
     dingTalk: Dict[str, Any]
 
 
-def _get_mcp_client() -> Optional[EnhancedMCPClient]:
-    from main import mcp_client
-    return mcp_client
+def _get_mcp_client(request: Request) -> Optional[EnhancedMCPClient]:
+    return resolve_mcp_client(request)
 
 
-def _get_llm_processor() -> EnhancedLLMProcessor:
-    from main import llm_processor
-    if not llm_processor:
-        raise HTTPException(status_code=503, detail="LLM处理器未初始化")
-    return llm_processor
+def _get_llm_processor(request: Request) -> EnhancedLLMProcessor:
+    return resolve_llm_processor(request)
 
 
 async def perform_inspection(
@@ -80,7 +86,7 @@ async def perform_inspection(
         cluster_summary = await mcp_client.call_tool("k8s-cluster-summary", tool_params)
     except Exception as e:
         logger.error(f"k8s-cluster-summary 调用失败: {e}")
-        
+
         # 如果k8s-cluster-summary不可用，尝试使用其他工具组合
         logger.info("尝试使用备用工具组合进行巡检...")
         try:
@@ -91,13 +97,13 @@ async def perform_inspection(
                 "include_optimization_only": False,
                 "limit": 50
             })
-            
+
             # 获取基础集群信息
             pods_result = await mcp_client.call_tool("k8s-get-pods", {
                 "all_namespaces": True,
                 "show_status": True
             })
-            
+
             # 组合结果
             cluster_summary = {
                 "cluster_overview": {
@@ -107,9 +113,9 @@ async def perform_inspection(
                 "resource_metrics": metrics_result,
                 "pod_status": pods_result
             }
-            
+
             logger.info("✅ 使用备用工具组合成功获取巡检数据")
-            
+
         except Exception as backup_e:
             logger.error(f"备用工具调用也失败: {backup_e}")
             raise HTTPException(status_code=502, detail=f"集群巡检工具调用失败: 主工具({e}), 备用工具({backup_e})")
@@ -164,7 +170,7 @@ async def perform_inspection(
     ding_result = {"sent": False}
     if options.sendToDingTalk and dingtalk_enabled:
         try:
-            from main import dingtalk_bot
+            dingtalk_bot = get_active_container().dingtalk_bot
             if dingtalk_bot and getattr(dingtalk_bot, "webhook_url", None):
                 # 优先使用Markdown分片发送，减少长度与关键字限制问题
                 sent_ok = await dingtalk_bot.send_markdown_message(
@@ -243,11 +249,7 @@ async def run_inspection(
         raise HTTPException(status_code=503, detail="MCP客户端未初始化")
 
     # 检查是否可推送钉钉
-    try:
-        from main import dingtalk_bot
-        ding_enabled = dingtalk_bot is not None
-    except Exception:
-        ding_enabled = False
+    ding_enabled = get_active_container().dingtalk_bot is not None
 
     result = await perform_inspection(
         mcp_client=mcp_client,
@@ -257,5 +259,3 @@ async def run_inspection(
         dingtalk_enabled=ding_enabled,
     )
     return result
-
-

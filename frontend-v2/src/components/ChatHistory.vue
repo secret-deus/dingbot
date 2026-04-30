@@ -6,7 +6,7 @@
           <h3>对话历史</h3>
           <el-tag size="small" type="info" effect="plain">{{ chatStore.sessionHistory.length }} 个会话</el-tag>
         </div>
-        
+
         <div class="header-actions">
           <el-tooltip content="收起侧栏" placement="bottom">
             <el-button size="small" circle @click="emit('collapse')">
@@ -19,7 +19,7 @@
               <el-icon><Plus /></el-icon>
             </el-button>
           </el-tooltip>
-          
+
           <el-dropdown @command="handleMenuCommand" placement="bottom-end">
             <el-tooltip content="更多" placement="bottom">
               <el-button size="small" circle>
@@ -46,7 +46,7 @@
         </div>
       </div>
     </div>
-    
+
     <!-- 搜索和过滤 - 卡片式布局 -->
     <div class="search-section-card">
       <div class="search-section">
@@ -62,7 +62,7 @@
             <el-icon><Search /></el-icon>
           </template>
         </el-input>
-        
+
         <el-tooltip content="筛选" placement="bottom">
           <el-button
             size="small"
@@ -76,7 +76,7 @@
         <el-badge v-if="activeFilterCount > 0" :value="activeFilterCount" class="filter-badge" />
       </div>
     </div>
-    
+
     <!-- 过滤器面板 -->
     <el-collapse-transition>
       <div v-if="showFilters" class="filters-panel">
@@ -97,7 +97,7 @@
             />
           </el-select>
         </div>
-        
+
         <div class="filter-row">
           <label>日期范围:</label>
           <el-date-picker
@@ -112,7 +112,7 @@
             style="width: 200px"
           />
         </div>
-        
+
         <div class="filter-row">
           <label>消息数量:</label>
           <el-input-number
@@ -131,20 +131,20 @@
             style="width: 80px"
           />
         </div>
-        
+
         <div class="filter-actions">
           <el-button size="small" @click="clearFilters">清空筛选</el-button>
           <el-button size="small" type="primary" @click="applyFilters">应用筛选</el-button>
         </div>
       </div>
     </el-collapse-transition>
-    
+
     <!-- 会话列表 -->
     <div class="sessions-list">
       <div v-if="filteredSessions.length === 0" class="empty-state">
         <el-empty description="没有找到符合条件的对话" />
       </div>
-      
+
       <div
         v-for="session in filteredSessions"
         :key="session.id"
@@ -155,7 +155,7 @@
           <div class="session-title-container">
             <el-icon class="item-icon"><ChatDotRound /></el-icon>
             <div class="session-info">
-              <div 
+              <div
                 v-if="editingSessionId === session.id"
                 class="title-edit"
               >
@@ -169,14 +169,14 @@
                   ref="titleInput"
                 />
               </div>
-              <div 
+              <div
                 v-else
                 class="session-title"
                 @dblclick.stop="startEditTitle(session)"
               >
                 {{ session.title }}
               </div>
-              
+
               <div class="session-meta">
                 <el-tag size="small" type="info" effect="plain" class="meta-tag">
                   {{ session.metadata.messageCount }} 条消息
@@ -185,7 +185,7 @@
               </div>
             </div>
           </div>
-          
+
           <div class="session-actions" @click.stop>
             <el-dropdown @command="(cmd) => handleSessionCommand(cmd, session)" placement="bottom-end">
               <el-button type="text" size="small">
@@ -218,7 +218,7 @@
             </el-dropdown>
           </div>
         </div>
-        
+
         <!-- 标签显示 -->
         <div v-if="session.metadata.tags.length > 0" class="session-tags">
           <el-tag
@@ -234,7 +234,7 @@
         </div>
       </div>
     </div>
-    
+
     <!-- 标签管理对话框 -->
     <el-dialog
       v-model="tagDialogVisible"
@@ -256,7 +256,7 @@
             </el-tag>
           </div>
         </div>
-        
+
         <div class="add-tag">
           <h4>添加标签:</h4>
           <el-input
@@ -270,7 +270,7 @@
             添加
           </el-button>
         </div>
-        
+
         <div class="suggested-tags">
           <h4>建议标签:</h4>
           <div class="tags-container">
@@ -287,7 +287,7 @@
         </div>
       </div>
     </el-dialog>
-    
+
     <!-- 导入文件隐藏input -->
     <input
       ref="importFileInput"
@@ -342,9 +342,9 @@ const importFileInput = ref(null)
 
 // 计算属性
 const hasActiveFilters = computed(() => {
-  return selectedTags.value.length > 0 || 
-         dateRange.value.length > 0 || 
-         messageCountRange.value.min !== null || 
+  return selectedTags.value.length > 0 ||
+         dateRange.value.length > 0 ||
+         messageCountRange.value.min !== null ||
          messageCountRange.value.max !== null
 })
 
@@ -378,7 +378,7 @@ const applyFilters = () => {
       max: messageCountRange.value.max
     }
   }
-  
+
   filteredSessions.value = chatStore.searchSessions(searchQuery.value, options)
 }
 
@@ -463,12 +463,12 @@ const exportAllHistory = () => {
     const data = chatStore.exportAllSessions()
     const dataStr = JSON.stringify(data, null, 2)
     const dataBlob = new Blob([dataStr], { type: 'application/json' })
-    
+
     const link = document.createElement('a')
     link.href = URL.createObjectURL(dataBlob)
     link.download = `chat_history_all_${new Date().toISOString().slice(0, 10)}.json`
     link.click()
-    
+
     URL.revokeObjectURL(link.href)
     ElMessage.success('历史记录已导出')
   } catch (error) {
@@ -484,15 +484,15 @@ const exportSession = (sessionId) => {
       ElMessage.error('会话不存在')
       return
     }
-    
+
     const dataStr = JSON.stringify(data, null, 2)
     const dataBlob = new Blob([dataStr], { type: 'application/json' })
-    
+
     const link = document.createElement('a')
     link.href = URL.createObjectURL(dataBlob)
     link.download = `chat_session_${sessionId.slice(-8)}_${new Date().toISOString().slice(0, 10)}.json`
     link.click()
-    
+
     URL.revokeObjectURL(link.href)
     ElMessage.success('对话已导出')
   } catch (error) {
@@ -508,12 +508,12 @@ const importHistory = () => {
 const handleImportFile = (event) => {
   const file = event.target.files[0]
   if (!file) return
-  
+
   const reader = new FileReader()
   reader.onload = (e) => {
     try {
       const data = JSON.parse(e.target.result)
-      
+
       if (chatStore.importSessions(data)) {
         ElMessage.success('历史记录导入成功')
         applyFilters() // 刷新列表
@@ -525,7 +525,7 @@ const handleImportFile = (event) => {
       ElMessage.error('导入历史记录失败')
     }
   }
-  
+
   reader.readAsText(file)
   event.target.value = ''
 }
@@ -541,7 +541,7 @@ const clearAllHistory = async () => {
         type: 'warning',
       }
     )
-    
+
     chatStore.clearAllSessions()
     ElMessage.success('历史记录已清空')
   } catch {
@@ -560,7 +560,7 @@ const deleteSession = async (sessionId) => {
         type: 'warning',
       }
     )
-    
+
     chatStore.deleteSession(sessionId)
     ElMessage.success('对话已删除')
     applyFilters() // 刷新列表
@@ -577,7 +577,7 @@ const duplicateSession = (sessionId) => {
     newSession.toolCalls = [...originalSession.toolCalls]
     newSession.metadata.tags = [...originalSession.metadata.tags]
     chatStore.saveToStorage()
-    
+
     ElMessage.success('对话已复制')
     applyFilters() // 刷新列表
   }
@@ -626,7 +626,7 @@ const formatTime = (timestamp) => {
   const time = new Date(timestamp)
   const diffMs = now - time
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-  
+
   if (diffDays === 0) {
     return time.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
   } else if (diffDays === 1) {
@@ -964,25 +964,180 @@ initialize()
   .search-section {
     flex-direction: column;
   }
-  
+
   .filter-row {
     flex-direction: column;
     align-items: flex-start;
     gap: 8px;
   }
-  
+
   .filter-row label {
     width: auto;
   }
-  
+
   .session-main {
     flex-direction: column;
     gap: 8px;
   }
-  
+
   .session-meta {
     flex-direction: column;
     gap: 4px;
   }
 }
-</style> 
+
+/* Chat cockpit compact sidebar */
+.chat-history {
+  color: #edf7f7;
+}
+
+.history-header-card {
+  margin: 10px 12px 8px !important;
+  padding: 12px !important;
+  border: 1px solid #26343b !important;
+  border-radius: 8px !important;
+  background: rgba(7, 11, 14, 0.72) !important;
+  box-shadow: none !important;
+}
+
+.history-header-card:hover {
+  border-color: rgba(53, 217, 244, 0.45) !important;
+  box-shadow: none !important;
+}
+
+.header-content {
+  align-items: stretch !important;
+  flex-direction: column !important;
+  gap: 10px !important;
+}
+
+.header-title {
+  justify-content: space-between;
+  gap: 8px !important;
+  min-width: 0;
+}
+
+.header-title h3 {
+  min-width: max-content;
+  color: #edf7f7 !important;
+  font-size: 14px !important;
+  letter-spacing: 0 !important;
+  line-height: 1.2 !important;
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+}
+
+.header-title :deep(.el-tag) {
+  flex: 0 0 auto;
+  border-color: rgba(53, 217, 244, 0.26) !important;
+  background: rgba(53, 217, 244, 0.08) !important;
+  color: #35d9f4 !important;
+}
+
+.header-actions {
+  justify-content: flex-end;
+  gap: 8px !important;
+}
+
+.header-actions :deep(.el-button) {
+  border-color: #26343b !important;
+  background: #0a1114 !important;
+  color: #c8d8de !important;
+}
+
+.header-actions :deep(.el-button--primary) {
+  border-color: rgba(53, 217, 244, 0.72) !important;
+  background: rgba(53, 217, 244, 0.16) !important;
+  color: #35d9f4 !important;
+}
+
+.search-section-card {
+  margin: 0 12px 10px !important;
+}
+
+.search-section {
+  align-items: center;
+}
+
+.search-input :deep(.el-input__wrapper) {
+  border: 1px solid #26343b !important;
+  border-radius: 8px !important;
+  background: #0a1114 !important;
+  box-shadow: none !important;
+}
+
+.search-input :deep(.el-input__inner) {
+  color: #edf7f7 !important;
+}
+
+.search-input :deep(.el-input__inner::placeholder) {
+  color: #6f838c !important;
+}
+
+.search-section :deep(.el-button) {
+  border-color: #26343b !important;
+  border-radius: 8px !important;
+  background: #0a1114 !important;
+  color: #8ea0a8 !important;
+}
+
+.sessions-list {
+  padding: 0 12px 12px !important;
+}
+
+.session-card {
+  padding: 12px !important;
+  border: 1px solid #26343b !important;
+  border-left: 1px solid #26343b !important;
+  border-radius: 8px !important;
+  background: rgba(7, 11, 14, 0.66) !important;
+  box-shadow: none !important;
+}
+
+.session-card:hover {
+  border-color: rgba(53, 217, 244, 0.5) !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.session-card-active {
+  border-color: rgba(53, 217, 244, 0.8) !important;
+  background: rgba(53, 217, 244, 0.13) !important;
+}
+
+.session-title {
+  color: #edf7f7 !important;
+  font-size: 14px !important;
+  line-height: 1.35 !important;
+}
+
+.session-card-active .session-title,
+.session-card-active .last-activity {
+  color: #edf7f7 !important;
+}
+
+.session-meta {
+  gap: 8px !important;
+}
+
+.session-meta :deep(.el-tag) {
+  border-color: rgba(53, 217, 244, 0.18) !important;
+  background: rgba(53, 217, 244, 0.08) !important;
+  color: #35d9f4 !important;
+}
+
+.last-activity {
+  color: #6f838c !important;
+}
+
+.item-icon,
+.session-card-active .item-icon {
+  color: #35d9f4 !important;
+}
+
+.session-actions :deep(.el-button) {
+  border-radius: 6px !important;
+  background: rgba(15, 23, 42, 0.82) !important;
+  color: #c8d8de !important;
+}
+</style>

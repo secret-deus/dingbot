@@ -9,12 +9,12 @@
         </el-button>
       </div>
     </div>
-    
+
     <el-tabs v-model="activeTab" class="config-tabs">
       <el-tab-pane label="配置编辑器" name="editor">
         <MCPConfigEditor />
       </el-tab-pane>
-      
+
       <el-tab-pane label="服务器管理" name="servers">
         <div class="tab-content">
           <el-card shadow="hover">
@@ -27,11 +27,11 @@
                 </el-button>
               </div>
             </template>
-            
+
             <div v-if="loadingServers" class="loading-container">
               <el-skeleton :rows="5" animated />
             </div>
-            
+
             <div v-else-if="serverError" class="error-container">
               <el-alert
                 title="加载服务器失败"
@@ -41,11 +41,11 @@
                 :closable="false"
               />
             </div>
-            
+
             <div v-else-if="servers.length === 0" class="empty-container">
               <el-empty description="暂无服务器配置" />
             </div>
-            
+
             <div v-else class="servers-list">
               <el-table :data="servers" style="width: 100%">
                 <el-table-column prop="name" label="名称" width="180" />
@@ -60,15 +60,15 @@
                 <el-table-column prop="tools_count" label="工具数量" width="100" />
                 <el-table-column label="操作">
                   <template #default="scope">
-                    <el-button 
-                      size="small" 
+                    <el-button
+                      size="small"
                       :type="scope.row.enabled ? 'warning' : 'success'"
                       @click="toggleServer(scope.row.name)"
                     >
                       {{ scope.row.enabled ? '禁用' : '启用' }}
                     </el-button>
-                    <el-button 
-                      size="small" 
+                    <el-button
+                      size="small"
                       type="primary"
                       @click="testConnection(scope.row.name)"
                     >
@@ -81,7 +81,7 @@
           </el-card>
         </div>
       </el-tab-pane>
-      
+
       <el-tab-pane label="工具管理" name="tools">
         <div class="tab-content">
           <el-card shadow="hover">
@@ -100,11 +100,11 @@
                 </div>
               </div>
             </template>
-            
+
             <div v-if="loadingTools" class="loading-container">
               <el-skeleton :rows="5" animated />
             </div>
-            
+
             <div v-else-if="toolsError" class="error-container">
               <el-alert
                 title="加载工具失败"
@@ -114,11 +114,11 @@
                 :closable="false"
               />
             </div>
-            
+
             <div v-else-if="tools.length === 0" class="empty-container">
               <el-empty description="暂无工具配置" />
             </div>
-            
+
             <div v-else class="tools-list">
               <el-table :data="tools" style="width: 100%">
                 <el-table-column prop="name" label="名称" width="180" />
@@ -134,8 +134,8 @@
                 <el-table-column prop="server" label="服务器" width="150" />
                 <el-table-column label="操作" width="100">
                   <template #default="scope">
-                    <el-button 
-                      size="small" 
+                    <el-button
+                      size="small"
                       :type="scope.row.enabled ? 'warning' : 'success'"
                       @click="toggleTool(scope.row.name)"
                     >
@@ -148,7 +148,7 @@
           </el-card>
         </div>
       </el-tab-pane>
-      
+
       <el-tab-pane label="配置验证" name="validation">
         <div class="tab-content">
           <el-card shadow="hover">
@@ -161,11 +161,11 @@
                 </el-button>
               </div>
             </template>
-            
+
             <div v-if="validating" class="loading-container">
               <el-skeleton :rows="5" animated />
             </div>
-            
+
             <div v-else-if="validationError" class="error-container">
               <el-alert
                 title="配置验证失败"
@@ -175,7 +175,7 @@
                 :closable="false"
               />
             </div>
-            
+
             <div v-else-if="validationResult" class="validation-result">
               <el-result
                 :icon="validationResult.valid ? 'success' : 'warning'"
@@ -196,7 +196,7 @@
                         class="validation-item"
                       />
                     </div>
-                    
+
                     <div v-if="validationResult.warnings.length > 0" class="validation-section">
                       <h3>警告 ({{ validationResult.warnings.length }})</h3>
                       <el-alert
@@ -209,16 +209,16 @@
                         class="validation-item"
                       />
                     </div>
-                    
+
                     <div class="validation-section">
                       <h3>服务器状态</h3>
                       <el-descriptions :column="1" border>
-                        <el-descriptions-item 
-                          v-for="(status, server) in validationResult.server_status" 
+                        <el-descriptions-item
+                          v-for="(status, server) in validationResult.server_status"
                           :key="server"
                           :label="server"
                         >
-                          <el-tag 
+                          <el-tag
                             :type="status === 'connected' ? 'success' : 'warning'"
                           >
                             {{ status === 'connected' ? '已连接' : '连接失败' }}
@@ -230,7 +230,7 @@
                 </template>
               </el-result>
             </div>
-            
+
             <div v-else class="empty-validation">
               <el-empty description='点击"验证配置"按钮开始验证' />
             </div>
@@ -238,7 +238,7 @@
         </div>
       </el-tab-pane>
     </el-tabs>
-    
+
     <!-- 连接测试结果对话框 -->
     <el-dialog
       v-model="connectionTestVisible"
@@ -259,7 +259,7 @@
           </template>
         </el-result>
       </div>
-      
+
       <div v-else class="connection-test-loading">
         <el-skeleton :rows="3" animated />
       </div>
@@ -271,7 +271,7 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh, RefreshRight, Check } from '@element-plus/icons-vue'
-import axios from 'axios'
+import apiClient from '@/api/client'
 import MCPConfigEditor from '@/components/MCPConfigEditor.vue'
 
 // 响应式状态
@@ -306,13 +306,13 @@ const refreshPage = () => {
 const loadServers = async () => {
   loadingServers.value = true
   serverError.value = null
-  
+
   try {
-    const response = await axios.get('/api/v2/mcp/config/servers')
+    const response = await apiClient.get('/v2/mcp/config/servers')
     servers.value = response.data
   } catch (e) {
     console.error('加载服务器失败:', e)
-    serverError.value = e.response?.data?.detail || e.message || '未知错误'
+    serverError.value = e.response?.data?.error?.message || e.response?.data?.detail || e.message || '未知错误'
   } finally {
     loadingServers.value = false
   }
@@ -321,13 +321,13 @@ const loadServers = async () => {
 const loadTools = async () => {
   loadingTools.value = true
   toolsError.value = null
-  
+
   try {
-    const response = await axios.get('/api/v2/mcp/config/tools')
+    const response = await apiClient.get('/v2/mcp/config/tools')
     tools.value = response.data
   } catch (e) {
     console.error('加载工具失败:', e)
-    toolsError.value = e.response?.data?.detail || e.message || '未知错误'
+    toolsError.value = e.response?.data?.error?.message || e.response?.data?.detail || e.message || '未知错误'
   } finally {
     loadingTools.value = false
   }
@@ -336,9 +336,9 @@ const loadTools = async () => {
 const refreshTools = async () => {
   refreshingTools.value = true
   toolsError.value = null
-  
+
   try {
-    const response = await axios.post('/api/v2/tools/refresh')
+    const response = await apiClient.post('/v2/tools/refresh')
     if (response.data.success) {
       ElMessage.success(response.data.message)
       // 重新加载工具列表
@@ -348,7 +348,7 @@ const refreshTools = async () => {
     }
   } catch (e) {
     console.error('刷新工具失败:', e)
-    toolsError.value = e.response?.data?.detail || e.message || '刷新失败'
+    toolsError.value = e.response?.data?.error?.message || e.response?.data?.detail || e.message || '刷新失败'
     ElMessage.error('刷新工具列表失败')
   } finally {
     refreshingTools.value = false
@@ -357,23 +357,23 @@ const refreshTools = async () => {
 
 const toggleServer = async (serverName) => {
   try {
-    const response = await axios.post(`/api/v2/mcp/config/servers/${serverName}/toggle`)
+    const response = await apiClient.post(`/v2/mcp/config/servers/${serverName}/toggle`)
     ElMessage.success(response.data.message)
     await loadServers()
   } catch (e) {
     console.error('切换服务器状态失败:', e)
-    ElMessage.error(e.response?.data?.detail || e.message || '操作失败')
+    ElMessage.error(e.response?.data?.error?.message || e.response?.data?.detail || e.message || '操作失败')
   }
 }
 
 const toggleTool = async (toolName) => {
   try {
-    const response = await axios.post(`/api/v2/mcp/config/tools/${toolName}/toggle`)
+    const response = await apiClient.post(`/v2/mcp/config/tools/${toolName}/toggle`)
     ElMessage.success(response.data.message)
     await loadTools()
   } catch (e) {
     console.error('切换工具状态失败:', e)
-    ElMessage.error(e.response?.data?.detail || e.message || '操作失败')
+    ElMessage.error(e.response?.data?.error?.message || e.response?.data?.detail || e.message || '操作失败')
   }
 }
 
@@ -381,13 +381,13 @@ const validateConfig = async () => {
   validating.value = true
   validationError.value = null
   validationResult.value = null
-  
+
   try {
-    const response = await axios.post('/api/v2/mcp/config/validate')
+    const response = await apiClient.post('/v2/mcp/config/validate')
     validationResult.value = response.data
   } catch (e) {
     console.error('配置验证失败:', e)
-    validationError.value = e.response?.data?.detail || e.message || '未知错误'
+    validationError.value = e.response?.data?.error?.message || e.response?.data?.detail || e.message || '未知错误'
   } finally {
     validating.value = false
   }
@@ -397,9 +397,9 @@ const testConnection = async (serverName) => {
   connectionTestVisible.value = true
   connectionTestResult.value = null
   testingConnection.value = true
-  
+
   try {
-    const response = await axios.post(`/api/v2/mcp/config/test/${serverName}`)
+    const response = await apiClient.post(`/v2/mcp/config/test/${serverName}`)
     connectionTestResult.value = response.data
   } catch (e) {
     console.error('连接测试失败:', e)
@@ -407,7 +407,7 @@ const testConnection = async (serverName) => {
       server_name: serverName,
       status: 'error',
       connected: false,
-      message: e.response?.data?.detail || e.message || '测试失败'
+      message: e.response?.data?.error?.message || e.response?.data?.detail || e.message || '测试失败'
     }
   } finally {
     testingConnection.value = false

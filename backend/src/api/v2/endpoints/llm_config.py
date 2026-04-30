@@ -18,8 +18,15 @@ from ....llm.config_manager import (
     get_llm_config_manager
 )
 from ....llm.config import LLMProviderConfig, LLMConfiguration
+from ....security.auth import require_permission
+from ....security.redaction import redact
 
-router = APIRouter(prefix="/llm/config", tags=["LLM配置"])
+router = APIRouter(
+    prefix="/llm/config",
+    tags=["LLM配置"],
+    dependencies=[Depends(require_permission("llm:read"))],
+)
+WRITE_DEPENDENCIES = [Depends(require_permission("llm:write"))]
 
 # 请求模型
 class LLMConfigUpdateRequest(BaseModel):
@@ -55,7 +62,7 @@ class ProviderResponse(BaseModel):
     model: str
     base_url: Optional[str] = None
     status: Optional[str] = None
-    
+
 class BackupResponse(BaseModel):
     """备份响应"""
     name: str
@@ -68,6 +75,21 @@ def get_config_manager() -> LLMConfigManager:
     """获取LLM配置管理器"""
     return get_llm_config_manager()
 
+
+def _redact_llm_config(config: LLMConfiguration) -> dict[str, Any]:
+    return redact({
+        "version": config.version,
+        "name": config.name,
+        "description": config.description,
+        "enabled": config.enabled,
+        "providers": [provider.model_dump() for provider in config.providers],
+        "default_provider": config.default_provider,
+        "global_defaults": config.global_defaults,
+        "security": config.security,
+        "logging": config.logging,
+        "cache": config.cache,
+    })
+
 # 当前配置
 @router.get("/current")
 async def get_current_llm_config(
@@ -76,24 +98,13 @@ async def get_current_llm_config(
     """获取当前LLM配置"""
     try:
         config = config_manager.get_config()
-        return {
-            "version": config.version,
-            "name": config.name,
-            "description": config.description,
-            "enabled": config.enabled,
-            "providers": [provider.model_dump() for provider in config.providers],
-            "default_provider": config.default_provider,
-            "global_defaults": config.global_defaults,
-            "security": config.security,
-            "logging": config.logging,
-            "cache": config.cache
-        }
+        return _redact_llm_config(config)
     except Exception as e:
         logger.error(f"获取当前LLM配置失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取配置失败: {str(e)}")
 
 # 配置更新
-@router.post("/update")
+@router.post("/update", dependencies=WRITE_DEPENDENCIES)
 async def update_llm_config(
     request: LLMConfigUpdateRequest,
     config_manager: LLMConfigManager = Depends(get_config_manager)
@@ -103,15 +114,15 @@ async def update_llm_config(
         # 验证并创建配置对象
         config_data = request.config
         config = LLMConfiguration.model_validate(config_data)
-        
+
         # 更新配置（会自动创建备份）
         success = config_manager.update_config(config)
-        
+
         if success:
             return {"message": "LLM配置更新成功"}
         else:
             raise HTTPException(status_code=400, detail="配置更新失败")
-            
+
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"配置验证失败: {str(e)}")
     except Exception as e:
@@ -126,11 +137,11 @@ async def get_llm_config_overview(
     """获取LLM配置概览"""
     try:
         config = config_manager.get_config()
-        
+
         # 统计信息
         total_providers = len(config.providers)
         enabled_providers = sum(1 for p in config.providers if p.enabled)
-        
+
         # 按类型分组提供商
         providers_by_type = {}
         for provider in config.providers:
@@ -138,7 +149,7 @@ async def get_llm_config_overview(
             if provider_type not in providers_by_type:
                 providers_by_type[provider_type] = []
             providers_by_type[provider_type].append(provider.name)
-        
+
         return {
             "config_name": config.name,
             "config_description": config.description,
@@ -164,7 +175,7 @@ async def list_providers(
     try:
         config = config_manager.get_config()
         providers = []
-        
+
         for provider in config.providers:
             providers.append(ProviderResponse(
                 id=provider.id,
@@ -174,13 +185,13 @@ async def list_providers(
                 base_url=provider.base_url,
                 status="configured"  # 可以添加实际状态检查
             ))
-        
+
         return providers
     except Exception as e:
         logger.error(f"获取提供商列表失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取提供商列表失败: {str(e)}")
 
-@router.post("/providers")
+@router.post("/providers", dependencies=WRITE_DEPENDENCIES)
 async def create_provider(
     request: ProviderCreateRequest,
     config_manager: LLMConfigManager = Depends(get_config_manager)
@@ -202,26 +213,26 @@ async def create_provider(
             max_tokens=request.max_tokens,
             timeout=request.timeout
         )
-        
+
         # 合并自定义配置
         if request.custom_config:
             for key, value in request.custom_config.items():
                 if hasattr(provider_config, key):
                     setattr(provider_config, key, value)
-        
+
         success = config_manager.add_provider(provider_config)
         if success:
             return {"message": f"提供商 {request.name} 创建成功"}
         else:
             raise HTTPException(status_code=400, detail="提供商创建失败")
-            
+
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"创建提供商失败: {e}")
         raise HTTPException(status_code=500, detail=f"创建提供商失败: {str(e)}")
 
-@router.put("/providers/{provider_id}")
+@router.put("/providers/{provider_id}", dependencies=WRITE_DEPENDENCIES)
 async def update_provider(
     provider_id: str,
     request: ProviderCreateRequest,
@@ -243,20 +254,20 @@ async def update_provider(
             max_tokens=request.max_tokens,
             timeout=request.timeout
         )
-        
+
         success = config_manager.update_provider(provider_id, provider_config)
         if success:
             return {"message": f"提供商 {provider_id} 更新成功"}
         else:
             raise HTTPException(status_code=404, detail="提供商不存在")
-            
+
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"更新提供商失败: {e}")
         raise HTTPException(status_code=500, detail=f"更新提供商失败: {str(e)}")
 
-@router.delete("/providers/{provider_id}")
+@router.delete("/providers/{provider_id}", dependencies=WRITE_DEPENDENCIES)
 async def delete_provider(
     provider_id: str,
     config_manager: LLMConfigManager = Depends(get_config_manager)
@@ -293,7 +304,7 @@ async def get_llm_config_backups(
         logger.error(f"获取备份列表失败: {e}")
         raise HTTPException(status_code=500, detail=f"获取备份列表失败: {str(e)}")
 
-@router.post("/restore/{backup_name}")
+@router.post("/restore/{backup_name}", dependencies=WRITE_DEPENDENCIES)
 async def restore_llm_config_backup(
     backup_name: str,
     config_manager: LLMConfigManager = Depends(get_config_manager)
@@ -317,26 +328,26 @@ async def validate_llm_config(
     """验证LLM配置"""
     try:
         config = config_manager.get_config()
-        
+
         # 基本验证
         errors = []
         warnings = []
-        
+
         # 验证是否有提供商
         if not config.providers:
             errors.append("配置中没有任何提供商")
-        
+
         # 验证默认提供商
         if config.default_provider:
             default_exists = any(p.id == config.default_provider for p in config.providers)
             if not default_exists:
                 errors.append(f"默认提供商 '{config.default_provider}' 不存在")
-        
+
         # 验证提供商配置
         for provider in config.providers:
             if not provider.api_key and not provider.base_url:
                 warnings.append(f"提供商 '{provider.name}' 缺少API密钥和基础URL")
-        
+
         return {
             "valid": len(errors) == 0,
             "errors": errors,
@@ -349,7 +360,7 @@ async def validate_llm_config(
         raise HTTPException(status_code=500, detail=f"配置验证失败: {str(e)}")
 
 # 配置导入导出
-@router.get("/export")
+@router.get("/export", dependencies=WRITE_DEPENDENCIES)
 async def export_llm_config(
     config_manager: LLMConfigManager = Depends(get_config_manager)
 ):
@@ -358,7 +369,7 @@ async def export_llm_config(
         # 创建临时文件
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
             temp_file = f.name
-        
+
         success = config_manager.export_config(temp_file)
         if success:
             return FileResponse(
@@ -368,12 +379,12 @@ async def export_llm_config(
             )
         else:
             raise HTTPException(status_code=500, detail="配置导出失败")
-            
+
     except Exception as e:
         logger.error(f"导出LLM配置失败: {e}")
         raise HTTPException(status_code=500, detail=f"导出配置失败: {str(e)}")
 
-@router.post("/import")
+@router.post("/import", dependencies=WRITE_DEPENDENCIES)
 async def import_llm_config(
     file: UploadFile = File(...),
     config_manager: LLMConfigManager = Depends(get_config_manager)
@@ -385,17 +396,17 @@ async def import_llm_config(
             content = await file.read()
             f.write(content)
             temp_file = f.name
-        
+
         success = config_manager.import_config(temp_file)
-        
+
         # 清理临时文件
         os.unlink(temp_file)
-        
+
         if success:
             return {"message": "LLM配置导入成功"}
         else:
             raise HTTPException(status_code=400, detail="配置导入失败")
-            
+
     except Exception as e:
         logger.error(f"导入LLM配置失败: {e}")
         raise HTTPException(status_code=500, detail=f"导入配置失败: {str(e)}")
@@ -417,7 +428,7 @@ async def get_file_watcher_status(
         raise HTTPException(status_code=500, detail=f"获取状态失败: {str(e)}")
 
 
-@router.post("/file-watcher/toggle")
+@router.post("/file-watcher/toggle", dependencies=WRITE_DEPENDENCIES)
 async def toggle_file_watcher(
     enabled: bool,
     config_manager: LLMConfigManager = Depends(get_config_manager)
@@ -426,7 +437,7 @@ async def toggle_file_watcher(
     try:
         config_manager.set_file_watcher_enabled(enabled)
         status = config_manager.get_file_watcher_status()
-        
+
         return {
             "message": f"文件监控已{'启用' if enabled else '禁用'}",
             "enabled": enabled,
@@ -437,7 +448,7 @@ async def toggle_file_watcher(
         raise HTTPException(status_code=500, detail=f"操作失败: {str(e)}")
 
 
-@router.post("/file-watcher/restart")
+@router.post("/file-watcher/restart", dependencies=WRITE_DEPENDENCIES)
 async def restart_file_watcher(
     config_manager: LLMConfigManager = Depends(get_config_manager)
 ):
@@ -445,7 +456,7 @@ async def restart_file_watcher(
     try:
         success = config_manager.restart_file_watcher()
         status = config_manager.get_file_watcher_status()
-        
+
         if success:
             return {
                 "message": "文件监控重启成功",
@@ -458,4 +469,4 @@ async def restart_file_watcher(
             }
     except Exception as e:
         logger.error(f"重启文件监控失败: {e}")
-        raise HTTPException(status_code=500, detail=f"重启失败: {str(e)}") 
+        raise HTTPException(status_code=500, detail=f"重启失败: {str(e)}")

@@ -16,11 +16,11 @@
           </div>
         </div>
       </template>
-      
+
       <div v-if="loading" class="loading-container">
         <el-skeleton :rows="10" animated />
       </div>
-      
+
       <div v-else-if="error" class="error-container">
         <el-alert
           title="加载配置失败"
@@ -33,7 +33,7 @@
           重试
         </el-button>
       </div>
-      
+
       <div v-if="warnings && warnings.length > 0" class="warnings-container">
         <el-alert
           v-for="(warning, index) in warnings"
@@ -47,7 +47,7 @@
           class="warning-item"
         />
       </div>
-      
+
       <div v-else class="editor-container">
         <!-- 配置编辑器 -->
         <div class="json-editor-container">
@@ -66,7 +66,7 @@
               </el-tooltip>
             </div>
           </div>
-          
+
           <el-input
             v-model="configJson"
             type="textarea"
@@ -75,17 +75,17 @@
             spellcheck="false"
             @input="onConfigChange"
           />
-          
+
           <div class="validation-status">
             <el-tag v-if="isValidJson" type="success">JSON 格式有效</el-tag>
             <el-tag v-else type="danger">JSON 格式无效: {{ jsonError }}</el-tag>
           </div>
         </div>
-        
+
         <!-- 配置预览 -->
         <div class="config-preview">
           <h3>配置概览</h3>
-          
+
           <div v-if="parsedConfig" class="preview-content">
             <div class="preview-section">
               <h4>基本信息</h4>
@@ -102,11 +102,11 @@
                 <span class="value">{{ parsedConfig.version }}</span>
               </div>
             </div>
-            
+
             <div class="preview-section">
               <h4>服务器 ({{ parsedConfig.servers?.length || 0 }})</h4>
-              <el-tag 
-                v-for="server in parsedConfig.servers" 
+              <el-tag
+                v-for="server in parsedConfig.servers"
                 :key="server.name"
                 :type="server.enabled ? 'success' : 'info'"
                 class="preview-tag"
@@ -117,12 +117,12 @@
                 无服务器配置
               </div>
             </div>
-            
+
             <div class="preview-section">
               <h4>工具 ({{ parsedConfig.tools?.length || 0 }})</h4>
               <div class="tools-container">
-                <el-tag 
-                  v-for="tool in parsedConfig.tools?.slice(0, 10)" 
+                <el-tag
+                  v-for="tool in parsedConfig.tools?.slice(0, 10)"
                   :key="tool.name"
                   :type="tool.enabled ? 'success' : 'info'"
                   class="preview-tag"
@@ -138,14 +138,14 @@
               </div>
             </div>
           </div>
-          
+
           <div v-else class="preview-error">
             无法解析配置，请检查JSON格式
           </div>
         </div>
       </div>
     </el-card>
-    
+
     <!-- 保存结果提示 -->
     <el-dialog
       v-model="saveResultVisible"
@@ -155,15 +155,15 @@
       <div class="save-result">
         <el-icon v-if="saveSuccess" class="success-icon" :size="48"><SuccessFilled /></el-icon>
         <el-icon v-else class="error-icon" :size="48"><CircleCloseFilled /></el-icon>
-        
+
         <p>{{ saveResultMessage }}</p>
-        
+
         <div v-if="!saveSuccess" class="error-details">
           <p>错误详情:</p>
           <pre>{{ saveError }}</pre>
         </div>
       </div>
-      
+
       <template #footer>
         <span class="dialog-footer">
           <el-button @click="saveResultVisible = false">关闭</el-button>
@@ -180,7 +180,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Check, Refresh, Operation, CopyDocument, SuccessFilled, CircleCloseFilled } from '@element-plus/icons-vue'
-import axios from 'axios'
+import apiClient from '@/api/client'
 
 // 响应式状态
 const configJson = ref('')
@@ -226,19 +226,19 @@ const hasChanges = computed(() => {
 const loadConfig = async () => {
   loading.value = true
   error.value = null
-  
+
   try {
     // 尝试从两个可能的位置加载配置
     let configData = null
     let loadErrors = []
-    
+
     // 首先尝试从统一的API端点加载
     try {
       console.log('尝试从统一API端点加载配置...')
-      const response = await axios.get('/api/v2/mcp/config/current', {
+      const response = await apiClient.get('/v2/mcp/config/current', {
         timeout: 10000
       })
-      
+
       if (response.data && typeof response.data === 'object') {
         configData = response.data
         console.log('✅ 从统一API端点成功加载配置')
@@ -246,23 +246,23 @@ const loadConfig = async () => {
     } catch (e) {
       console.warn('无法从统一API端点加载配置，尝试备用方法', e)
       loadErrors.push(`统一API加载失败: ${e.message}`)
-      
+
       // 备用方法：尝试从特定文件路径加载
       const configPaths = [
         'backend/config/mcp_config.json',
         'config/mcp_config.json'
       ]
-      
+
       for (const path of configPaths) {
         if (configData) break // 如果已经加载成功，跳过剩余尝试
-        
+
         try {
           console.log(`尝试从 ${path} 加载配置...`)
-          const response = await axios.get('/api/v2/mcp/config/file', {
+          const response = await apiClient.get('/v2/mcp/config/file', {
             params: { path },
             timeout: 8000
           })
-          
+
           if (response.data && typeof response.data === 'object') {
             configData = response.data
             console.log(`✅ 从 ${path} 成功加载配置`)
@@ -273,17 +273,17 @@ const loadConfig = async () => {
         }
       }
     }
-    
+
     if (configData) {
       originalConfig.value = configData
       configJson.value = JSON.stringify(configData, null, 2)
-      
+
       // 检查配置是否有基本结构
       if (!configData.servers || !Array.isArray(configData.servers)) {
         console.warn('⚠️ 加载的配置缺少servers数组')
         warnings.value = ['配置缺少servers数组，可能需要初始化']
       }
-      
+
       if (!configData.tools || !Array.isArray(configData.tools)) {
         console.warn('⚠️ 加载的配置缺少tools数组')
         warnings.value = (warnings.value || []).concat(['配置缺少tools数组，可能需要初始化'])
@@ -318,10 +318,10 @@ const loadConfig = async () => {
           "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         }
       }
-      
+
       originalConfig.value = defaultConfig
       configJson.value = JSON.stringify(defaultConfig, null, 2)
-      
+
       // 设置警告而不是错误，允许用户编辑和保存新配置
       warnings.value = ['无法加载现有配置，已创建基本模板。请添加服务器和工具配置后保存。']
       error.value = `加载失败: ${loadErrors.join('; ')}`
@@ -329,7 +329,7 @@ const loadConfig = async () => {
   } catch (e) {
     console.error('加载配置失败:', e)
     error.value = e.response?.data?.detail || e.message || '未知错误'
-    
+
     // 创建最小可用的配置模板
     const minimalConfig = {
       "version": "1.0",
@@ -338,7 +338,7 @@ const loadConfig = async () => {
       "servers": [],
       "tools": []
     }
-    
+
     originalConfig.value = minimalConfig
     configJson.value = JSON.stringify(minimalConfig, null, 2)
   } finally {
@@ -379,25 +379,25 @@ const saveConfig = async () => {
     ElMessage.error('JSON格式无效，无法保存')
     return
   }
-  
+
   saving.value = true
   saveSuccess.value = false
   saveError.value = ''
-  
+
   try {
     const config = JSON.parse(configJson.value)
-    
+
     // 添加请求超时和重试逻辑
     const maxRetries = 3
     let retryCount = 0
     let lastError = null
-    
+
     while (retryCount <= maxRetries) {
       try {
         console.log(`尝试保存配置 (尝试 ${retryCount + 1}/${maxRetries + 1})`)
-        
+
         // 使用新的API端点保存配置
-        const response = await axios.post('/api/v2/mcp/config/update', {
+        const response = await apiClient.post('/v2/mcp/config/update', {
           config_data: config
         }, {
           timeout: 15000, // 15秒超时
@@ -406,16 +406,16 @@ const saveConfig = async () => {
             'X-Requested-With': 'XMLHttpRequest'
           }
         })
-        
+
         if (response.data && response.data.success) {
           saveSuccess.value = true
           saveResultMessage.value = '配置保存成功！'
-          
+
           // 记录警告信息
           if (response.data.warnings && response.data.warnings.length > 0) {
             saveResultMessage.value += `\n\n警告：\n${response.data.warnings.join('\n')}`
           }
-          
+
           originalConfig.value = JSON.parse(JSON.stringify(config)) // 深拷贝
           console.log('配置保存成功:', response.data)
           break // 成功后退出循环
@@ -425,9 +425,9 @@ const saveConfig = async () => {
       } catch (err) {
         lastError = err
         retryCount++
-        
+
         console.warn(`保存失败 (${retryCount}/${maxRetries + 1})...`, err)
-        
+
         if (retryCount <= maxRetries) {
           // 指数退避策略
           const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 5000)
@@ -442,20 +442,20 @@ const saveConfig = async () => {
     console.error('保存配置失败:', e)
     saveSuccess.value = false
     saveResultMessage.value = '配置保存失败'
-    
+
     // 增强错误信息
     if (e.response) {
       // 服务器响应错误
-      const errorDetail = e.response.data?.detail || e.response.data?.message || e.message || '未知错误'
+      const errorDetail = e.response.data?.error?.message || e.response.data?.detail || e.response.data?.message || e.message || '未知错误'
       saveError.value = `服务器错误 (${e.response.status}): ${errorDetail}`
-      
+
       // 添加更多调试信息
       if (e.response.data) {
         try {
-          const dataStr = typeof e.response.data === 'object' ? 
-            JSON.stringify(e.response.data, null, 2) : 
+          const dataStr = typeof e.response.data === 'object' ?
+            JSON.stringify(e.response.data, null, 2) :
             String(e.response.data)
-          
+
           if (dataStr.length > 500) {
             saveError.value += `\n\n响应数据 (截断): ${dataStr.substring(0, 500)}...`
           } else {
@@ -658,7 +658,7 @@ onMounted(() => {
   .editor-container {
     flex-direction: column;
   }
-  
+
   .json-editor-container, .config-preview {
     flex: 1;
   }

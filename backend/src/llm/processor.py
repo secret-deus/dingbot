@@ -23,20 +23,20 @@ from ..mcp.types import (
 from ..mcp.enhanced_client import EnhancedMCPClient
 from .security.masker import DataMasker
 from .security.config import MaskingConfig
+from . import processor_limits as pl
+from ..security.redaction import redact_for_log
 
 
 class EnhancedLLMProcessor:
     """简化的LLM处理器 - 直接基于环境变量配置"""
-    
-    # 结果大小管理配置
-    MAX_RESULT_SIZE = 50000  # 50KB 字符限制
-    MAX_RESULT_LINES = 1000  # 最大行数限制
-    SUMMARY_TARGET_SIZE = 8000  # 摘要目标大小
-    
-    # 上下文管理配置
-    MAX_CONTEXT_TOKENS = 100000  # 最大上下文token数（估算）
-    MAX_HISTORY_MESSAGES = 20  # 最大历史消息数
-    
+
+    # 结果大小与上下文限制（见 processor_limits）
+    MAX_RESULT_SIZE = pl.MAX_RESULT_SIZE
+    MAX_RESULT_LINES = pl.MAX_RESULT_LINES
+    SUMMARY_TARGET_SIZE = pl.SUMMARY_TARGET_SIZE
+    MAX_CONTEXT_TOKENS = pl.MAX_CONTEXT_TOKENS
+    MAX_HISTORY_MESSAGES = pl.MAX_HISTORY_MESSAGES
+
     def __init__(self, config_dict: Dict[str, Any], mcp_client=None):
         """
         初始化LLM处理器
@@ -46,23 +46,23 @@ class EnhancedLLMProcessor:
         self.config = config_dict
         self.mcp_client = mcp_client
         self.client = None  # 单个LLM客户端
-        
+
         # 初始化脱敏器
         self.data_masker = DataMasker(MaskingConfig())
-        
+
         # 初始化客户端
         self._initialize_client()
-        
+
         logger.info(f"✅ 简化LLM处理器初始化完成: {self.config.get('provider', 'unknown')}")
-        logger.info(f"🔧 调试：处理器配置详情: {self.config}")
-    
+        logger.info(f"🔧 调试：处理器配置详情: {redact_for_log(self.config)}")
+
     def _initialize_client(self):
         """初始化LLM客户端"""
         try:
             provider = self.config.get("provider", "openai")
             api_key = self.config.get("api_key", "")
             base_url = self.config.get("base_url")
-            
+
             # 🔍 详细诊断日志
             logger.info(f"📋 LLM客户端初始化诊断:")
             logger.info(f"   Provider: {provider}")
@@ -70,7 +70,7 @@ class EnhancedLLMProcessor:
             logger.info(f"   API Key长度: {len(api_key) if api_key else 0}")
             logger.info(f"   Base URL: {base_url}")
             logger.info(f"   Timeout: {self.config.get('timeout', 30)}")
-            
+
             if provider == "openai":
                 self.client = AsyncOpenAI(
                     api_key=api_key,
@@ -90,38 +90,38 @@ class EnhancedLLMProcessor:
                     base_url=base_url,
                     timeout=self.config.get("timeout", 30)
                 )
-                
+
             logger.info(f"✅ {provider}客户端创建成功")
-            
+
             # 🔍 测试客户端连接
             logger.info("🔗 测试客户端连接性...")
-            
+
         except Exception as e:
             # 🔍 详细错误信息
             logger.error(f"❌ LLM客户端初始化失败:")
             logger.error(f"   错误类型: {type(e).__name__}")
             logger.error(f"   错误信息: {str(e)}")
-            
+
             import traceback
             logger.error(f"   完整堆栈:\n{traceback.format_exc()}")
-            
+
             # 检查是否是代理相关错误
             error_str = str(e).lower()
             if 'socks' in error_str or 'proxy' in error_str:
                 logger.error("🚫 代理配置错误！请检查NO_PROXY设置或安装socks支持")
-            
+
             self.client = None
             # ⚠️ 不抛出异常，允许服务继续运行，使用fallback模式
             logger.warning("⚠️ LLM客户端将使用fallback模式")
-    
+
     def get_current_provider(self):
         """获取当前供应商配置"""
         return self.config
-    
+
     def get_current_client(self):
         """获取当前供应商的客户端"""
         return self.client
-    
+
     def get_available_providers(self) -> Dict[str, Dict[str, Any]]:
         """获取可用的供应商列表"""
         return {
@@ -137,36 +137,26 @@ class EnhancedLLMProcessor:
                 "stats": {}
             }
         }
-    
+
     def update_multi_provider_config(self, config):
         """更新配置 (向后兼容方法)"""
         self.config = config
         logger.info(f"✅ 配置已更新")
-    
+
     def update_provider_stats(self, provider_id: str, success: bool, tokens: int = 0):
         """更新供应商统计信息 (此方法不再适用，因为只有一个供应商)"""
         logger.warning(f"update_provider_stats 被调用，但当前只有一个供应商。provider_id: {provider_id}, success: {success}, tokens: {tokens}")
-    
+
     def _get_model_name(self) -> str:
         """获取用于API调用的模型名称"""
         return self.config.get("model", "gpt-3.5-turbo")
-    
+
     def _check_result_size(self, result: Any) -> bool:
         """检查结果是否过大"""
-        try:
-            # 序列化结果以检查大小
-            result_str = json.dumps(result, ensure_ascii=False, indent=2)
-            result_size = len(result_str.encode('utf-8'))
-            result_lines = result_str.count('\n')
-            
-            logger.debug(f"结果大小检查: {result_size} bytes, {result_lines} lines")
-            
-            return (result_size > self.MAX_RESULT_SIZE or 
-                   result_lines > self.MAX_RESULT_LINES)
-        except Exception as e:
-            logger.warning(f"检查结果大小时出错: {e}")
-            return False
-    
+        return pl.check_result_size_exceeds(
+            result, self.MAX_RESULT_SIZE, self.MAX_RESULT_LINES
+        )
+
     def _extract_key_information(self, result: Any, tool_name: str, context: Optional[Dict[str, Any]] = None) -> str:
         """智能提炼关键信息"""
         try:
@@ -175,7 +165,7 @@ class EnhancedLLMProcessor:
                 content = result
             else:
                 content = json.dumps(result, ensure_ascii=False, indent=2)
-            
+
             # 根据工具类型采用不同的提炼策略
             if tool_name.startswith('k8s_'):
                 return self._extract_k8s_key_info(content, tool_name, context)
@@ -185,11 +175,11 @@ class EnhancedLLMProcessor:
                 return self._extract_log_key_info(content)
             else:
                 return self._extract_general_key_info(content)
-                
+
         except Exception as e:
             logger.error(f"提炼关键信息时出错: {e}")
             return str(result)[:self.SUMMARY_TARGET_SIZE] + "\n[信息提炼失败，已截断]"
-    
+
     def _extract_k8s_key_info(self, content: str, tool_name: str, context: Optional[Dict[str, Any]] = None) -> str:
         """提炼Kubernetes相关信息的关键内容"""
         return self._extract_resource_key_info(content, tool_name, context, ['namespace', 'pod', 'service', 'deployment'])
@@ -201,33 +191,33 @@ class EnhancedLLMProcessor:
     def _extract_resource_key_info(self, content: str, tool_name: str, context: Optional[Dict[str, Any]], resource_keywords: List[str]) -> str:
         """通用的资源信息提炼逻辑"""
         lines = content.split('\n')
-        
+
         # 从上下文中提取用户查询的资源信息
         target_resources = self._extract_target_resources_from_context(context)
         if target_resources:
             logger.info(f"🎯 检测到目标资源: {target_resources}")
-        
+
         # 保留重要的状态信息
         important_keywords = [
             'status', 'state', 'ready', 'running', 'pending', 'failed', 'error',
             'warning', 'critical', 'name', 'age', 'id'
         ] + resource_keywords
-        
+
         # 分类收集信息
         summary_lines = []
         target_resource_lines = []  # 用户查询的特定资源
         important_lines = []
         table_headers = []
         other_lines = []
-        
+
         for line in lines:
             line_lower = line.lower()
-            
+
             # 优先保留用户查询的特定资源
             if target_resources and any(resource.lower() in line_lower for resource in target_resources):
                 target_resource_lines.append(line)
                 continue
-            
+
             # 保留统计摘要信息
             if any(word in line_lower for word in ['total', 'count', 'summary', '总计', '数量']):
                 summary_lines.append(line)
@@ -243,34 +233,34 @@ class EnhancedLLMProcessor:
                     important_lines.append(line)
             else:
                 other_lines.append(line)
-        
+
         # 智能组合结果
         result_lines = []
         if target_resource_lines:
             result_lines.extend(target_resource_lines)
             result_lines.append("")
-        
+
         result_lines.extend(summary_lines[:10])
         result_lines.extend(table_headers[:3])
         result_lines.extend(important_lines[:20])
-        
+
         remaining_space = max(0, 40 - len(result_lines))
         if remaining_space > 0:
             result_lines.extend(other_lines[:remaining_space])
-        
+
         if len(result_lines) < len(lines):
             filtered_count = len(lines) - len(result_lines)
             result_lines.append(f"\n[已智能提炼关键信息，原始 {len(lines)} 行，显示 {len(result_lines)} 行]")
-            
+
         return '\n'.join(result_lines)
-    
+
     def _extract_target_resources_from_context(self, context: Optional[Dict[str, Any]]) -> List[str]:
         """从上下文中提取用户查询的目标资源名称"""
         if not context:
             return []
-        
+
         target_resources = []
-        
+
         # 从工具参数中提取
         parameters = context.get('parameters', {})
         if isinstance(parameters, dict):
@@ -278,75 +268,75 @@ class EnhancedLLMProcessor:
             for param_name in ['name', 'resource_name', 'deployment_name', 'pod_name', 'service_name']:
                 if param_name in parameters:
                     target_resources.append(str(parameters[param_name]))
-        
+
         # 从用户消息中提取（增强的关键词匹配）
         user_message = context.get('user_message', '')
         if isinstance(user_message, str):
             import re
-            
+
             # 方法1: 匹配带连字符的资源名称模式
             hyphenated_patterns = re.findall(r'\b[a-z0-9]+(?:-[a-z0-9]+)+\b', user_message.lower())
             target_resources.extend(hyphenated_patterns)
-            
+
             # 方法2: 匹配引号中的资源名称
             quoted_patterns = re.findall(r'["\']([a-z0-9-]+)["\']', user_message.lower())
             target_resources.extend(quoted_patterns)
-            
+
             # 方法3: 匹配deployment/pod/service等关键词后的名称
             resource_type_patterns = re.findall(r'(?:deployment|pod|service|configmap|secret|ingress)\s+([a-z0-9-]+)', user_message.lower())
             target_resources.extend(resource_type_patterns)
-            
+
             # 方法4: 匹配namespace后的资源名称
             namespace_patterns = re.findall(r'(?:namespace|ns)\s+([a-z0-9-]+).*?(?:deployment|pod|service)\s+([a-z0-9-]+)', user_message.lower())
             for match in namespace_patterns:
                 if len(match) > 1:
                     target_resources.append(match[1])  # 资源名称
-            
+
             # 方法5: 匹配标签选择器中的应用名称
             label_patterns = re.findall(r'(?:app|label)[\s=]+([a-z0-9-]+)', user_message.lower())
             target_resources.extend(label_patterns)
-            
+
             # 方法6: 匹配selector参数
             selector_patterns = re.findall(r'selector[\s=]+(?:app=)?([a-z0-9-]+)', user_message.lower())
             target_resources.extend(selector_patterns)
-            
+
             # 过滤掉常见的非资源词汇
             common_words = {
-                'get', 'show', 'list', 'describe', 'status', 'deployment', 'pod', 'service', 
+                'get', 'show', 'list', 'describe', 'status', 'deployment', 'pod', 'service',
                 'namespace', 'the', 'of', 'in', 'for', 'with', 'and', 'or', 'check', 'view',
                 'test', 'prod', 'dev', 'staging', 'default', 'kube-system', 'kube-public'
             }
-            
+
             # 清理和过滤
             filtered_resources = []
             for resource in target_resources:
-                if (len(resource) > 2 and 
-                    resource not in common_words and 
+                if (len(resource) > 2 and
+                    resource not in common_words and
                     not resource.startswith('kube-') and
                     resource != 'system'):
                     filtered_resources.append(resource)
-            
+
             target_resources = filtered_resources
-        
+
         # 去重并返回
         return list(set(target_resources))
-    
+
     def _extract_log_key_info(self, content: str) -> str:
         """提炼日志信息的关键内容"""
         lines = content.split('\n')
         key_lines = []
-        
+
         # 日志级别优先级
         priority_levels = ['error', 'warn', 'fatal', 'critical']
         normal_levels = ['info', 'debug']
-        
+
         error_lines = []
         warning_lines = []
         info_lines = []
-        
+
         for line in lines:
             line_lower = line.lower()
-            
+
             if any(level in line_lower for level in priority_levels):
                 error_lines.append(line)
             elif 'warn' in line_lower:
@@ -354,38 +344,38 @@ class EnhancedLLMProcessor:
             elif any(level in line_lower for level in normal_levels):
                 if len(info_lines) < 10:  # 限制普通日志数量
                     info_lines.append(line)
-        
+
         # 组合结果：错误 + 警告 + 部分信息
         result_lines = error_lines[:15] + warning_lines[:10] + info_lines[:5]
-        
+
         if len(result_lines) < len(lines):
             result_lines.append(f"\n[已提炼关键日志，原始 {len(lines)} 行，显示 {len(result_lines)} 行]")
-        
+
         return '\n'.join(result_lines)
-    
+
     def _extract_general_key_info(self, content: str) -> str:
         """提炼一般内容的关键信息"""
         lines = content.split('\n')
-        
+
         # 如果内容不是很大，直接返回
         if len(content) <= self.SUMMARY_TARGET_SIZE:
             return content
-        
+
         # 保留前面和后面的部分内容
         total_lines = len(lines)
         keep_start = min(50, total_lines // 3)
         keep_end = min(20, total_lines // 4)
-        
+
         if keep_start + keep_end >= total_lines:
             return content
-        
+
         start_lines = lines[:keep_start]
         end_lines = lines[-keep_end:] if keep_end > 0 else []
-        
+
         result_lines = start_lines + [f"\n[... 省略 {total_lines - keep_start - keep_end} 行 ...]"] + end_lines
-        
+
         return '\n'.join(result_lines)
-    
+
     def _process_mcp_result(self, result: Any, tool_name: str, context: Optional[Dict[str, Any]] = None) -> str:
         """处理MCP工具调用结果，如果过大则智能提炼"""
         try:
@@ -393,12 +383,12 @@ class EnhancedLLMProcessor:
             if self._check_result_size(result):
                 logger.info(f"工具 {tool_name} 结果过大，正在提炼关键信息...")
                 processed_result = self._extract_key_information(result, tool_name, context)
-                
+
                 # 添加分页建议
                 pagination_suggestion = self._generate_pagination_suggestion(tool_name, result)
                 if pagination_suggestion:
                     processed_result += f"\n\n{pagination_suggestion}"
-                
+
                 logger.info(f"关键信息提炼完成，大小从 {len(str(result))} 减少到 {len(processed_result)}")
                 return processed_result
             else:
@@ -411,11 +401,11 @@ class EnhancedLLMProcessor:
             if len(result_str) > self.SUMMARY_TARGET_SIZE:
                 return result_str[:self.SUMMARY_TARGET_SIZE] + "\n[结果处理出错，已截断]"
             return result_str
-    
+
     def _generate_pagination_suggestion(self, tool_name: str, result: Any) -> str:
         """生成分页建议"""
         suggestions = []
-        
+
         # 针对不同工具类型生成建议
         if tool_name.startswith('k8s_get_'):
             if 'pods' in tool_name:
@@ -434,63 +424,63 @@ class EnhancedLLMProcessor:
             elif 'events' in tool_name:
                 suggestions.append("💡 建议使用时间过滤：--since=30m")
                 suggestions.append("💡 或按类型过滤：--field-selector=type=Warning")
-        
+
         elif tool_name.startswith('k8s_describe_'):
             suggestions.append("💡 建议指定具体资源名称而不是描述所有资源")
-        
+
         # 通用建议
         if suggestions:
             suggestions.append("💡 如需完整数据，请使用更具体的查询条件")
             return "📋 **优化建议**：\n" + "\n".join(suggestions)
-        
+
         return ""
-    
+
     def _estimate_tokens(self, text: str) -> int:
         """估算文本的token数量（粗略估算：1个token约4个字符）"""
-        return len(text) // 4
-    
+        return pl.estimate_tokens(text)
+
     def _optimize_context_size(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """优化上下文大小，避免超出限制"""
         if len(messages) <= 2:  # 至少保留系统消息和用户消息
             return messages
-        
+
         # 计算总token数
         total_tokens = sum(self._estimate_tokens(str(msg.get('content', ''))) for msg in messages)
-        
+
         if total_tokens <= self.MAX_CONTEXT_TOKENS and len(messages) <= self.MAX_HISTORY_MESSAGES:
             return messages
-        
+
         logger.info(f"上下文过大 ({total_tokens} tokens, {len(messages)} messages)，正在优化...")
-        
+
         # 保留系统消息（第一条）和最近的用户消息
         system_messages = [msg for msg in messages if msg.get('role') == 'system']
         user_messages = [msg for msg in messages if msg.get('role') == 'user']
         assistant_messages = [msg for msg in messages if msg.get('role') == 'assistant']
         tool_messages = [msg for msg in messages if msg.get('role') == 'tool']
-        
+
         # 构建优化后的消息列表
         optimized_messages = []
-        
+
         # 1. 保留系统消息
         optimized_messages.extend(system_messages)
-        
+
         # 2. 保留最近的对话（用户-助手-工具的完整循环）
         recent_conversations = []
         current_tokens = sum(self._estimate_tokens(str(msg.get('content', ''))) for msg in system_messages)
-        
+
         # 从最后开始，保留完整的对话循环
         i = len(messages) - 1
         while i >= 0 and len(recent_conversations) < self.MAX_HISTORY_MESSAGES // 2:
             msg = messages[i]
             msg_tokens = self._estimate_tokens(str(msg.get('content', '')))
-            
+
             if current_tokens + msg_tokens > self.MAX_CONTEXT_TOKENS:
                 break
-                
+
             recent_conversations.insert(0, msg)
             current_tokens += msg_tokens
             i -= 1
-        
+
         # 3. 如果还有空间，添加摘要信息
         if len(recent_conversations) < len(messages) - len(system_messages):
             summary_msg = {
@@ -498,12 +488,12 @@ class EnhancedLLMProcessor:
                 "content": f"[上下文摘要: 省略了 {len(messages) - len(system_messages) - len(recent_conversations)} 条历史消息以优化性能]"
             }
             optimized_messages.append(summary_msg)
-        
+
         optimized_messages.extend(recent_conversations)
-        
+
         final_tokens = sum(self._estimate_tokens(str(msg.get('content', ''))) for msg in optimized_messages)
         logger.info(f"上下文优化完成: {len(messages)} -> {len(optimized_messages)} messages, {total_tokens} -> {final_tokens} tokens")
-        
+
         return optimized_messages
 
     async def process_message(self, message: str) -> str:
@@ -512,7 +502,7 @@ class EnhancedLLMProcessor:
             # 检查LLM是否启用
             if not self.config.get("enabled", True):
                 return "LLM功能已禁用，无法处理消息。请在设置中启用LLM功能。"
-            
+
             messages = [
                 ChatMessage(role="user", content=message)
             ]
@@ -521,44 +511,53 @@ class EnhancedLLMProcessor:
         except Exception as e:
             logger.error(f"消息处理失败: {e}")
             return f"处理消息时发生错误: {str(e)}"
-        
+
     async def stream_chat(
-        self, 
-        message: str, 
-        enable_tools: bool = True
+        self,
+        message: str,
+        enable_tools: bool = True,
+        skill_id: Optional[str] = None,
     ) -> AsyncGenerator[str, None]:
-        """优化的两阶段流式聊天处理：工具执行 + LLM对话回复"""
+        """优化的两阶段流式聊天处理：工具执行 + LLM对话回复
+
+        skill_id: 项目内 Skill（config/skills.json），过滤暴露给模型的 MCP 工具。
+        """
         try:
-            logger.info(f"开始流式聊天处理，消息长度: {len(message)}, 工具支持: {enable_tools}")
-            
+            logger.info(
+                f"开始流式聊天处理，消息长度: {len(message)}, 工具支持: {enable_tools}, skill_id: {skill_id!r}"
+            )
+
             # 检查LLM是否启用
             if not self.config.get("enabled", True):
                 yield "LLM功能已禁用，无法进行聊天。请在设置中启用LLM功能。"
                 return
-            
+
+            tool_calls_made = []
+            tool_results = []
+
             # 检查客户端是否可用
             if self.client is None:
                 logger.warning("LLM客户端未初始化，使用模拟响应")
-                
+
                 # 如果有工具调用，仍然执行脱敏逻辑和工具处理
                 if enable_tools and tool_calls_made and tool_results:
                     # logger.debug("🔒 执行脱敏处理演示")
                     session_id = f'demo_session_{int(time.time())}'
-                    
+
                     # 🔒 执行脱敏演示
                     # 在演示模式下，工具名称可能不可用，传递空列表
                     masked_tool_results = self.data_masker.mask_tool_results(tool_results, session_id, [])
-                    
+
                     # 📝 在日志中记录脱敏效果
                     import json
                     # logger.debug(f"🔒 脱敏处理完成 (演示模式, 会话: {session_id})")
                     # 仅在调试模式下显示详细数据
-                    
+
                     # 生成包含脱敏信息的模拟响应
                     mock_response = f"⚠️ LLM服务未配置，这是演示响应。\n\n工具已执行并完成脱敏处理：\n- 会话ID: {session_id}\n- 脱敏映射数: {len(self.data_masker.session_manager.sessions.get(session_id, {}).get('original_to_masked', {}))}\n\n请检查日志查看详细的脱敏效果。"
                 else:
                     mock_response = "抱歉，LLM服务未正确配置。请检查API密钥设置或网络代理配置。"
-                
+
                 chunk_size = 8
                 for i in range(0, len(mock_response), chunk_size):
                     chunk = mock_response[i:i + chunk_size]
@@ -566,12 +565,12 @@ class EnhancedLLMProcessor:
                         yield chunk
                     await asyncio.sleep(0.1)
                 return
-            
+
             # 初始化对话历史
             conversation_history = [
                 {"role": "user", "content": message}
             ]
-            
+
             # 获取工具列表（如果启用）
             tools = None
             if enable_tools and self.mcp_client:
@@ -585,16 +584,26 @@ class EnhancedLLMProcessor:
                         except Exception as reconnect_error:
                             logger.error(f"❌ MCP客户端重新连接失败: {reconnect_error}")
                             logger.warning("将使用非工具模式进行对话")
-                    
-                    # 获取工具列表
+
+                    # 获取工具列表并按 Skill 过滤
                     available_tools = await self.mcp_client.list_tools()
-                    tool_count = len(available_tools) if available_tools else 0
-                    logger.info(f"📊 MCP客户端获取到 {tool_count} 个工具")
-                    
-                    # ✅ 恢复完整工具功能 - 工具转换问题已修复
-                    if available_tools and tool_count > 0:
-                        logger.info(f"✅ 使用所有可用工具: {tool_count} 个")
-                        limited_tools = available_tools
+                    from src.skills.registry import get_skill_registry
+
+                    reg = get_skill_registry()
+                    skill_def = reg.get(skill_id)
+                    filtered_tools = reg.filter_mcptools(skill_id, available_tools or [])
+                    if skill_def.allowed_tool_names or skill_def.allowed_prefixes:
+                        allowed_names = {t.name for t in filtered_tools}
+                        self.mcp_client.set_skill_context(skill_id or reg.default_skill_id, allowed_names)
+                    else:
+                        self.mcp_client.set_skill_context(skill_id or reg.default_skill_id, None)
+
+                    tool_count = len(filtered_tools) if filtered_tools else 0
+                    logger.info(f"📊 MCP客户端获取到 {tool_count} 个工具（Skill 过滤后）")
+
+                    if filtered_tools and tool_count > 0:
+                        logger.info(f"✅ 使用 Skill 过滤后工具: {tool_count} 个")
+                        limited_tools = filtered_tools
                         tools = self._convert_tools_to_openai(limited_tools)
                         tool_names = [tool['function']['name'] for tool in tools]
                         logger.info(f"🔧 转换为OpenAI格式的工具 ({len(tool_names)} 个): {', '.join(tool_names[:5])}{'...' if len(tool_names) > 5 else ''}")
@@ -604,29 +613,27 @@ class EnhancedLLMProcessor:
                 except Exception as e:
                     logger.error(f"❌ 获取工具失败，使用非工具模式: {e}", exc_info=True)
                     tools = None
-            
+
             # 如果没有工具可用，直接进行普通对话
             if not tools or len(tools) == 0:
                 logger.info("无工具可用，直接进行普通对话")
                 async for chunk in self._stream_llm_response(conversation_history):
                     yield chunk
                 return
-            
+
             # 迭代决策和工具执行（支持多轮工具调用）
             logger.info("开始工具决策和执行循环")
-            tool_calls_made = []
-            tool_results = []
             updated_conversation_history = conversation_history.copy()
             max_rounds = 5  # 最大支持5轮工具调用，防止无限循环
             current_round = 0
-            
+
             while current_round < max_rounds:
                 current_round += 1
                 logger.info(f"第 {current_round} 轮决策开始")
-                
+
                 round_tool_calls = []
                 round_has_tool_call = False
-                
+
                 try:
                     async for chunk in self._phase_one_tool_execution(updated_conversation_history, tools, message):
                         if isinstance(chunk, dict) and chunk.get("type") == "tool_call_complete":
@@ -641,34 +648,34 @@ class EnhancedLLMProcessor:
                         else:
                             # 流式输出工具执行状态
                             yield chunk
-                    
+
                     # 如果本轮没有产生任何工具调用，说明决策已完成，跳出循环
                     if not round_has_tool_call:
                         logger.info(f"第 {current_round} 轮未产生工具调用，决策完成")
                         break
-                        
+
                     logger.info(f"第 {current_round} 轮完成，产生了 {len(round_tool_calls)} 个工具调用")
-                    
+
                 except Exception as e:
                     logger.error(f"工具执行决策循环出错 (Round {current_round}): {e}", exc_info=True)
                     yield f"\n❌ 工具执行决策出错: {str(e)}"
                     return
-            
+
             if current_round >= max_rounds:
                 logger.warning(f"达到最大工具调用轮数 ({max_rounds})，强制终止")
-            
+
             # 最终阶段：基于所有工具结果生成LLM对话回复
             if tool_calls_made:
                 logger.info(f"开始最终回复生成，共执行了 {len(tool_calls_made)} 个工具调用")
                 yield "\n\n---\n\n"  # 清晰的分隔符
-                
+
                 try:
                     # 确保有工具结果才进行第二阶段
                     valid_results = [r for r in tool_results if r is not None]
-                    
+
                     # 记录工具结果统计
                     logger.info(f"第二阶段收到 {len(valid_results)} 个有效工具结果")
-                    
+
                     # 检查工具结果有效性
                     def is_valid_tool_result(result):
                         """检查工具结果是否有效"""
@@ -682,15 +689,15 @@ class EnhancedLLMProcessor:
                             return bool(result.get('content'))
                         # 如果没有content字段，检查是否有其他数据字段
                         return bool(result and len(str(result).strip()) > 0)
-                    
-                    
+
+
                     if valid_results:
                         response_generated = False
                         async for chunk in self._phase_two_generate_response(message, tool_calls_made, tool_results):
                             if chunk and chunk.strip():
                                 response_generated = True
                                 yield chunk
-                        
+
                         # 如果没有生成任何响应，使用回退机制
                         if not response_generated:
                             logger.warning("第二阶段未生成任何响应，使用回退机制")
@@ -699,7 +706,7 @@ class EnhancedLLMProcessor:
                     else:
                         logger.warning("没有有效的工具结果，提供简化回复")
                         yield "工具执行已完成，但未获得有效结果。"
-                        
+
                 except Exception as e:
                     logger.error(f"第二阶段响应生成失败: {e}", exc_info=True)
                     yield f"\n⚠️ 响应生成遇到问题，为您提供工具执行结果摘要：\n\n"
@@ -714,17 +721,23 @@ class EnhancedLLMProcessor:
                 # 如果LLM决定不调用工具，应该有普通回复
                 async for chunk in self._stream_llm_response(updated_conversation_history):
                     yield chunk
-            
+
             logger.info("两阶段流式聊天处理完成")
-                    
+
         except Exception as e:
             logger.error(f"流式聊天处理失败: {e}", exc_info=True)
             yield f"\n❌ 处理失败: {str(e)}"
+        finally:
+            if self.mcp_client and hasattr(self.mcp_client, "clear_skill_context"):
+                try:
+                    self.mcp_client.clear_skill_context()
+                except Exception:
+                    pass
 
     async def _phase_one_tool_execution(
-        self, 
-        conversation_history: List[Dict[str, Any]], 
-        tools: List[Dict[str, Any]], 
+        self,
+        conversation_history: List[Dict[str, Any]],
+        tools: List[Dict[str, Any]],
         original_message: str
     ) -> AsyncGenerator[Any, None]:
         """第一阶段：LLM决策和工具执行，包含完整的对话历史管理"""
@@ -736,41 +749,41 @@ class EnhancedLLMProcessor:
                 "tools": tools,
                 "tool_choice": "auto"
             }
-            
+
             # 添加可选参数
             if self.config.get("temperature") is not None:
                 request_params["temperature"] = self.config["temperature"]
             if self.config.get("max_tokens") is not None:
                 request_params["max_tokens"] = self.config["max_tokens"]
-            
+
             logger.info(f"第一阶段：调用LLM进行工具决策")
             logger.debug(f"LLM请求参数: model={request_params['model']}, tools_count={len(tools)}, messages_count={len(conversation_history)}")
-            
+
             # 如果工具过多，记录警告
             if len(tools) > 15:
                 logger.warning(f"工具数量较多 ({len(tools)} 个)，可能影响LLM响应速度")
-                
+
             # 记录请求体大小估算（工具数量 x 平均大小）
             estimated_size = len(tools) * 800  # 估算每个工具约800字节
             logger.debug(f"LLM请求体估算大小: {estimated_size} 字节")
-            
+
             # 性能优化：使用asyncio.create_task来并发处理，添加超时保护
             llm_task = asyncio.create_task(
                 self.client.chat.completions.create(**request_params)
             )
-            
+
             # 非流式调用LLM获取工具决策
             response = await llm_task
             logger.info("LLM工具决策调用成功")
-            
+
             # 安全地访问response.choices
             if not response or not response.choices or len(response.choices) == 0:
                 logger.error("LLM响应异常：choices为空")
                 yield "❌ LLM响应异常，无法获取工具决策"
                 return
-                
+
             assistant_message = response.choices[0].message
-            
+
             # 如果没有工具调用，说明这是一条普通消息或最终回复
             if not assistant_message.tool_calls:
                 # 将内容记录到对话历史（如果是普通回复）
@@ -780,14 +793,14 @@ class EnhancedLLMProcessor:
                         "content": assistant_message.content
                     })
                 return
-            
+
             # 将LLM的工具调用决策添加到对话历史
             tool_call_message = {
                 "role": "assistant",
                 "content": assistant_message.content,
                 "tool_calls": []
             }
-            
+
             # 格式化工具调用信息
             for tool_call in assistant_message.tool_calls:
                 tool_call_message["tool_calls"].append({
@@ -798,15 +811,15 @@ class EnhancedLLMProcessor:
                         "arguments": tool_call.function.arguments
                     }
                 })
-            
+
             conversation_history.append(tool_call_message)
-            
+
             # 执行工具调用并管理对话历史
             for tool_call in assistant_message.tool_calls:
                 tool_name = tool_call.function.name
                 arguments_json = tool_call.function.arguments
                 tool_call_id = tool_call.id
-                
+
                 # 发送工具调用开始的结构化消息
                 yield {
                     "type": "tool_call_start",
@@ -816,20 +829,20 @@ class EnhancedLLMProcessor:
                         "id": tool_call_id
                     }
                 }
-                
+
                 logger.info(f"执行工具调用: {tool_name}")
-                
+
                 try:
                     # 执行工具调用
                     # 解析参数JSON
                     parsed_args = json.loads(arguments_json)
                     start_time = time.time()
-                    
+
                     # 处理参数类型：如果LLM返回的是列表，需要合并为字典
                     if isinstance(parsed_args, list):
                         logger.warning(f"⚠️ LLM返回的参数是列表类型，包含 {len(parsed_args)} 个元素，正在合并...")
                         logger.debug(f"原始参数列表: {parsed_args}")
-                        
+
                         # 合并所有字典参数
                         arguments = {}
                         for i, arg_item in enumerate(parsed_args):
@@ -838,7 +851,7 @@ class EnhancedLLMProcessor:
                                 logger.debug(f"合并参数项 {i+1}: {arg_item}")
                             else:
                                 logger.warning(f"参数项 {i+1} 不是字典类型，跳过: {type(arg_item)}")
-                        
+
                         logger.info(f"✅ 参数合并完成，最终参数: {arguments}")
                     elif isinstance(parsed_args, dict):
                         arguments = parsed_args
@@ -851,13 +864,13 @@ class EnhancedLLMProcessor:
                         else:
                             arguments = {"value": parsed_args}
                         logger.info(f"转换后的参数: {arguments}")
-                    
+
                     # 添加超时保护和连接状态检查的工具调用
                     try:
                         # 检查MCP客户端状态
                         if not self.mcp_client:
                             raise Exception("MCP客户端未初始化")
-                        
+
                         # 检查连接状态
                         if hasattr(self.mcp_client, 'status') and self.mcp_client.status.name != "CONNECTED":
                             logger.warning(f"MCP客户端状态异常: {self.mcp_client.status.name}")
@@ -867,14 +880,14 @@ class EnhancedLLMProcessor:
                             except Exception as reconnect_error:
                                 logger.error(f"MCP重连失败: {reconnect_error}")
                                 raise Exception(f"MCP连接异常且重连失败: {reconnect_error}")
-                        
+
                         # 执行工具调用
                         logger.debug(f"🔧 调用工具 {tool_name}，参数类型: {type(arguments)}, 参数值: {arguments}")
                         result = await self.mcp_client.call_tool(tool_name, arguments)
                         execution_time = time.time() - start_time
-                        
+
                         logger.info(f"工具 {tool_name} 执行完成，耗时: {execution_time:.2f}秒")
-                        
+
                         # 将工具结果添加到对话历史
                         tool_result_message = {
                             "role": "tool",
@@ -882,7 +895,7 @@ class EnhancedLLMProcessor:
                             "content": json.dumps(result, ensure_ascii=False, indent=2)
                         }
                         conversation_history.append(tool_result_message)
-                        
+
                         # 发送结构化的状态更新
                         yield {
                             "type": "tool_call_update",
@@ -895,7 +908,7 @@ class EnhancedLLMProcessor:
                             },
                             "result": result
                         }
-                        
+
                         # 返回工具调用完成信息
                         yield {
                             "type": "tool_call_complete",
@@ -907,11 +920,11 @@ class EnhancedLLMProcessor:
                             "result": result,
                             "conversation_history": conversation_history.copy()
                         }
-                        
+
                     except asyncio.TimeoutError:
                         logger.error(f"工具调用超时: {tool_name}")
                         execution_time = time.time() - start_time
-                        
+
                         # 将超时错误添加到对话历史
                         tool_error_message = {
                             "role": "tool",
@@ -919,7 +932,7 @@ class EnhancedLLMProcessor:
                             "content": f"工具执行超时: 执行时间超过15秒"
                         }
                         conversation_history.append(tool_error_message)
-                        
+
                         # 发送结构化的状态更新
                         yield {
                             "type": "tool_call_update",
@@ -932,7 +945,7 @@ class EnhancedLLMProcessor:
                             },
                             "error": "执行超时"
                         }
-                        
+
                         # 返回超时信息
                         yield {
                             "type": "tool_call_complete",
@@ -945,11 +958,11 @@ class EnhancedLLMProcessor:
                             "error": "执行超时",
                             "conversation_history": conversation_history.copy()
                         }
-                    
+
                     except Exception as tool_error:
                         logger.error(f"工具调用异常: {tool_name}: {tool_error}")
                         execution_time = time.time() - start_time
-                        
+
                         # 将工具错误添加到对话历史
                         tool_error_message = {
                             "role": "tool",
@@ -957,7 +970,7 @@ class EnhancedLLMProcessor:
                             "content": f"工具执行失败: {str(tool_error)}"
                         }
                         conversation_history.append(tool_error_message)
-                        
+
                         # 发送结构化的状态更新
                         yield {
                             "type": "tool_call_update",
@@ -970,7 +983,7 @@ class EnhancedLLMProcessor:
                             },
                             "error": str(tool_error)
                         }
-                        
+
                         # 返回工具调用失败信息
                         yield {
                             "type": "tool_call_complete",
@@ -983,10 +996,10 @@ class EnhancedLLMProcessor:
                             "error": str(tool_error),
                             "conversation_history": conversation_history.copy()
                         }
-                    
+
                 except Exception as e:
                     logger.error(f"工具调用失败 {tool_name}: {e}")
-                    
+
                     # 将工具错误添加到对话历史
                     tool_error_message = {
                         "role": "tool",
@@ -994,7 +1007,7 @@ class EnhancedLLMProcessor:
                         "content": f"工具执行失败: {str(e)}"
                     }
                     conversation_history.append(tool_error_message)
-                    
+
                     # 发送结构化的状态更新
                     yield {
                         "type": "tool_call_update",
@@ -1007,7 +1020,7 @@ class EnhancedLLMProcessor:
                         },
                         "error": str(e)
                     }
-                    
+
                     # 返回工具调用失败信息
                     yield {
                         "type": "tool_call_complete",
@@ -1020,61 +1033,61 @@ class EnhancedLLMProcessor:
                         "error": str(e),
                         "conversation_history": conversation_history.copy()  # 提供更新后的对话历史
                     }
-                    
+
         except Exception as e:
             logger.error(f"第一阶段工具执行失败: {e}")
             yield f"❌ 工具执行阶段失败: {str(e)}"
 
     async def _phase_two_generate_response(
-        self, 
-        original_message: str, 
-        tool_calls: List[Dict[str, Any]], 
+        self,
+        original_message: str,
+        tool_calls: List[Dict[str, Any]],
         tool_results: List[Any]
     ) -> AsyncGenerator[str, None]:
         """第二阶段：基于工具结果生成LLM对话回复"""
         try:
             logger.info(f"开始第二阶段响应生成，工具调用数: {len(tool_calls)}, 结果数: {len(tool_results)}")
-            
+
             # 构建优化的提示词
             system_prompt = self._get_tool_response_system_prompt()
             user_prompt = self._get_tool_response_user_prompt(original_message, tool_calls, tool_results)
-            
+
             logger.debug(f"系统提示词长度: {len(system_prompt)}")
             logger.debug(f"用户提示词长度: {len(user_prompt)}")
-            
+
             # 构建消息历史
             messages = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ]
-            
+
             # 构建请求参数
             stream_enabled = self.config.get("stream", True)
-            logger.info(f"配置中的stream设置: {stream_enabled}, 完整配置: {self.config}")
+            logger.info(f"配置中的stream设置: {stream_enabled}, 完整配置: {redact_for_log(self.config)}")
             request_params = {
                 "model": self._get_model_name(),
                 "messages": messages,
                 "stream": stream_enabled
             }
-            
+
             # 添加可选参数
             if self.config.get("temperature") is not None:
                 request_params["temperature"] = self.config["temperature"]
             if self.config.get("max_tokens") is not None:
                 request_params["max_tokens"] = self.config["max_tokens"]
-            
+
             logger.info(f"第二阶段：调用LLM生成回复，模型: {self._get_model_name()}")
-            
+
             # 检查客户端状态
             if not self.client:
                 logger.error("LLM客户端为None，无法生成响应")
                 yield "❌ LLM客户端未初始化，无法生成响应"
                 return
-            
+
             # 根据配置选择流式或非流式调用
             try:
                 # logger.info(f"准备调用LLM，请求参数: {json.dumps(request_params, ensure_ascii=False, indent=2)}")
-                
+
                 # 获取会话ID用于数据恢复
                 session_id = getattr(self, 'current_session_id', None)
                 if not session_id:
@@ -1082,18 +1095,18 @@ class EnhancedLLMProcessor:
                     session_id = f'fallback_session_{int(time.time())}'
                 else:
                     logger.error(f"🆔 恢复阶段使用会话ID: {session_id}")
-                
+
                 # 初始化通用变量
                 response_generated = False
                 chunk_count = 0
                 full_response = ""  # 收集完整响应用于最终恢复
-                
+
                 # 修改逻辑：先获取完整内容，再逐行逐字流式输出
                 if stream_enabled:
                     # LLM流式调用 - 先收集完整响应
                     stream = await self.client.chat.completions.create(**request_params)
                     logger.info("LLM流式调用已启动，收集完整响应中...")
-                    
+
                     async for chunk in stream:
                         chunk_count += 1
                         if chunk.choices and len(chunk.choices) > 0:
@@ -1107,56 +1120,56 @@ class EnhancedLLMProcessor:
                     logger.info("LLM非流式调用已启动")
                     response = await self.client.chat.completions.create(**request_params)
                     logger.info("LLM非流式调用完成")
-                    
+
                     if response and response.choices and len(response.choices) > 0:
                         full_response = response.choices[0].message.content or ""
                         response_generated = True
                     else:
                         logger.error("非流式调用返回空响应")
                         response_generated = False
-                
+
                 # 统一处理：先恢复完整内容，然后直接输出
                 if response_generated and full_response:
                     # 记录恢复前的长度
                     logger.info(f"🔍 恢复前的 full_response 长度: {len(full_response)} 字符")
                     logger.info(f"🔍 恢复前的内容预览（前200字符）:\n{full_response[:200]}")
-                    
+
                     # 先进行完整的脱敏恢复
                     final_restored_response = self.data_masker.restore_llm_response(
                         full_response, session_id
                     )
-                    
+
                     logger.info(f"🔄 恢复后的内容预览（前200字符）:\n{final_restored_response[:200]}")
                     logger.info(f"🔄 恢复后的完整内容长度: {len(final_restored_response)} 字符")
-                    
+
                     # 检查是否发生了截断
                     if len(final_restored_response) < len(full_response):
                         logger.error(f"⚠️ 恢复后内容变短了！恢复前: {len(full_response)}, 恢复后: {len(final_restored_response)}")
                     elif len(final_restored_response) < len(full_response) * 0.5:
                         logger.error(f"⚠️ 恢复后内容显著变短！可能存在严重的恢复问题")
-                    
+
                     # 直接输出恢复后的完整内容
                     yield final_restored_response
-                
+
                 if stream_enabled:
                     logger.info(f"LLM流式调用完成，共生成 {chunk_count} 个块，有效响应: {response_generated}")
                 else:
                     logger.info(f"LLM非流式调用完成，有效响应: {response_generated}")
-                
+
                 # 原来的完整内容恢复逻辑已移到上面统一处理
-                
+
                 # 如果没有生成任何响应，提供回退响应
                 if not response_generated:
                     logger.warning("LLM未生成任何响应，使用回退机制")
                     async for chunk in self._generate_fallback_response(original_message, tool_calls, tool_results):
                         yield chunk
-                        
+
             except Exception as llm_error:
                 logger.error(f"LLM调用异常: {llm_error}", exc_info=True)
                 yield f"\n⚠️ LLM调用失败: {str(llm_error)}\n\n为您提供工具执行结果摘要：\n\n"
                 async for chunk in self._generate_fallback_response(original_message, tool_calls, tool_results):
                     yield chunk
-                        
+
         except Exception as e:
             logger.error(f"第二阶段响应生成失败: {e}", exc_info=True)
             # 提供回退响应而不是简单的错误信息
@@ -1179,19 +1192,19 @@ class EnhancedLLMProcessor:
                 "messages": conversation_history,
                 "stream": stream_enabled
             }
-            
+
             # 添加可选参数
             if self.config.get("temperature") is not None:
                 request_params["temperature"] = self.config["temperature"]
             if self.config.get("max_tokens") is not None:
                 request_params["max_tokens"] = self.config["max_tokens"]
-            
+
             logger.info("输出普通LLM响应")
-            
+
             if stream_enabled:
                 # LLM流式调用
                 stream = await self.client.chat.completions.create(**request_params)
-                
+
                 async for chunk in stream:
                     if chunk.choices and len(chunk.choices) > 0:
                         delta = chunk.choices[0].delta
@@ -1200,7 +1213,7 @@ class EnhancedLLMProcessor:
             else:
                 # LLM非流式调用，后端模拟流式输出
                 response = await self.client.chat.completions.create(**request_params)
-                
+
                 if response and response.choices and len(response.choices) > 0:
                     content = response.choices[0].message.content or ""
                     if content:
@@ -1208,7 +1221,7 @@ class EnhancedLLMProcessor:
                         import re
                         sentences = re.split(r'([。！？\n])', content)
                         current_chunk = ""
-                        
+
                         for i, part in enumerate(sentences):
                             current_chunk += part
                             if part in ['。', '！', '？', '\n'] or i == len(sentences) - 1:
@@ -1217,7 +1230,7 @@ class EnhancedLLMProcessor:
                                     current_chunk = ""
                                     import asyncio
                                     await asyncio.sleep(0.01)
-                        
+
         except Exception as e:
             logger.error(f"LLM响应失败: {e}")
             yield f"❌ 响应生成失败: {str(e)}"
@@ -1245,29 +1258,29 @@ class EnhancedLLMProcessor:
 如果工具执行失败或返回错误，请详细分析可能的原因，提供完整的故障排查步骤和解决方案。"""
 
     def _get_tool_response_user_prompt(
-        self, 
-        original_question: str, 
-        tool_calls: List[Dict[str, Any]], 
+        self,
+        original_question: str,
+        tool_calls: List[Dict[str, Any]],
         tool_results: List[Any]
     ) -> str:
         """获取工具结果解读的用户提示词 - 添加脱敏处理"""
-        
+
         # 🔒 关键脱敏点：在序列化前对工具结果进行脱敏
         # 生成唯一的会话ID，确保脱敏和恢复使用同一个ID
         import time
         session_id = f'session_{int(time.time() * 1000)}_{hash(str(tool_results))}'
         self.current_session_id = session_id  # 确保保存会话ID
-        
+
         # logger.error(f"🆔 会话ID生成: {session_id}")
         logger.info(f"🔄 恢复对话会话，会话ID: {session_id}")
 
-        
+
         # 提取工具名称用于白名单检查
         tool_names = [tool_call.get("name", "") for tool_call in tool_calls]
         # logger.info(f"🔧 工具调用列表: {tool_names}")
-        
+
         masked_tool_results = self.data_masker.mask_tool_results(tool_results, session_id, tool_names)
-        
+
         # 📝 在日志中记录详细的脱敏效果
         import json
         # logger.error(f"🔒🔒🔒 脱敏处理详细日志 (会话ID: {session_id}) 🔒🔒🔒")
@@ -1275,25 +1288,25 @@ class EnhancedLLMProcessor:
         for i, result in enumerate(tool_results, 1):
             result_json = json.dumps(result, ensure_ascii=False)
             # logger.error(f"   工具结果#{i}: {result_json[:500]}...")
-        
+
         logger.error(f"🔒 脱敏后工具结果:")
         for i, result in enumerate(masked_tool_results, 1):
             result_json = json.dumps(result, ensure_ascii=False)
             # logger.error(f"   脱敏结果#{i}: {result_json[:500]}...")
-        
+
         # 获取映射统计
         stats = self.data_masker.get_session_stats(session_id)
         # logger.error(f"📊 脱敏映射统计: {stats['mapping_count']} 个映射关系")
-        
+
         # # 显示具体的映射关系（调试用）
         # mapping_store = self.data_masker.session_manager.get_session(session_id)
         # if mapping_store:
         #     logger.error(f"🗄️ 映射关系详情:")
         #     for original, masked in list(mapping_store.original_to_masked.items())[:10]:  # 只显示前10个
         #         logger.error(f"   '{original}' → '{masked}'")
-        
+
         # logger.error(f"🔒🔒🔒 脱敏处理日志结束 🔒🔒🔒")
-        
+
         # 格式化工具执行结果（使用脱敏后的数据）
         formatted_results = []
         for i, (tool_call, result) in enumerate(zip(tool_calls, masked_tool_results), 1):
@@ -1307,9 +1320,9 @@ class EnhancedLLMProcessor:
             else:
                 error = tool_call.get("error", "执行失败")
                 formatted_results.append(f"{i}. 工具: {tool_name}\n   错误: {error}")
-        
+
         results_text = "\n\n".join(formatted_results)
-        
+
         return f"""用户问题：{original_question}
 
 工具执行结果：
@@ -1361,19 +1374,19 @@ class EnhancedLLMProcessor:
             return arguments_json[:100] + "..." if len(arguments_json) > 100 else arguments_json
 
     async def _generate_fallback_response(
-        self, 
-        original_message: str, 
-        tool_calls: List[Dict[str, Any]], 
+        self,
+        original_message: str,
+        tool_calls: List[Dict[str, Any]],
         tool_results: List[Any]
     ) -> AsyncGenerator[str, None]:
         """生成回退响应，当LLM无法生成响应时使用"""
         try:
             yield "基于工具执行结果，为您提供以下信息：\n\n"
-            
+
             for i, (tool_call, result) in enumerate(zip(tool_calls, tool_results), 1):
                 tool_name = tool_call.get("name", "未知工具")
                 yield f"**{i}. 工具: {tool_name}**\n"
-                
+
                 if result is not None:
                     # 格式化工具结果
                     if isinstance(result, dict):
@@ -1411,9 +1424,9 @@ class EnhancedLLMProcessor:
                 else:
                     error = tool_call.get("error", "执行失败")
                     yield f"❌ 执行失败：{error}\n"
-                
+
                 yield "\n"
-                
+
         except Exception as e:
             logger.error(f"生成回退响应失败: {e}")
             yield f"工具执行完成，但无法生成详细说明。"
@@ -1459,61 +1472,79 @@ class EnhancedLLMProcessor:
             if not self.mcp_client:
                 logger.warning("MCP客户端未连接，无法执行工具调用")
                 return "❌ MCP客户端未连接，无法执行工具调用"
-            
+
             logger.info(f"执行工具调用: {tool_name}")
             logger.debug(f"工具参数: {arguments_json}")
-            
+
             import json
             try:
                 arguments = json.loads(arguments_json)
             except json.JSONDecodeError as e:
                 logger.error(f"工具参数JSON解析失败: {e}")
                 return f"❌ 工具参数格式错误: {str(e)}"
-            
+
             # 执行工具调用
             start_time = time.time()
             result = await self.mcp_client.call_tool(tool_name, arguments)
             execution_time = time.time() - start_time
-            
+
             logger.info(f"工具 {tool_name} 执行完成，耗时: {execution_time:.2f}秒")
-            
+
             # 格式化结果
             formatted_result = self.format_tool_result(result)
             return formatted_result
-            
+
         except Exception as e:
             logger.error(f"工具调用失败 {tool_name}: {e}", exc_info=True)
             return f"❌ 工具调用失败: {str(e)}"
-    
+
     async def _get_available_tools(self):
         """获取可用工具列表"""
         try:
             if not self.mcp_client:
                 return None
-            
+
             available_tools = await self.mcp_client.list_tools()
             if available_tools:
                 return self._convert_tools_to_openai(available_tools)
             return None
-            
+
         except Exception as e:
             logger.warning(f"获取工具列表失败: {e}")
             return None
 
+    async def _process_chat(self, messages: List[ChatMessage], user_id: str) -> ProcessResult:
+        """非流式对话（chat stream=False 路径）。"""
+        if self.mcp_client and hasattr(self.mcp_client, "status"):
+            if getattr(self.mcp_client.status, "name", "") == "CONNECTED":
+                try:
+                    tools = await self.mcp_client.list_tools()
+                    if tools:
+                        return await self._chat_with_tools(messages)
+                except Exception as e:
+                    logger.warning("MCP 工具不可用: %s", e)
+        return await self._chat_without_tools(messages)
 
-    
+    async def _stream_chat_response(
+        self, messages: List[ChatMessage], user_id: str
+    ) -> AsyncGenerator[str, None]:
+        """chat(stream=True) 使用的流式入口。"""
+        if not messages:
+            return
+        text = messages[-1].content if messages else ""
+        async for chunk in self.stream_chat(text, enable_tools=True):
+            yield chunk
 
-    
     async def chat(
-        self, 
-        messages: List[ChatMessage], 
+        self,
+        messages: List[ChatMessage],
         user_id: str = "default",
         stream: bool = False,
         provider_id: Optional[str] = None
     ) -> Union[AsyncGenerator[str, None], ProcessResult]:
         """
         聊天方法 - 支持供应商切换
-        
+
         :param messages: 消息列表
         :param user_id: 用户ID
         :param stream: 是否流式输出
@@ -1523,7 +1554,7 @@ class EnhancedLLMProcessor:
         original_provider = self.config.get("provider", "openai")
         if provider_id and provider_id != original_provider:
             logger.warning(f"provider_id 参数已废弃，当前配置为 {original_provider}，无法切换。")
-        
+
         try:
             # 检查LLM是否启用
             if not self.config.get("enabled", True):
@@ -1534,7 +1565,7 @@ class EnhancedLLMProcessor:
                     return _yield_disabled()
                 else:
                     return ProcessResult(content=result)
-            
+
             # 检查当前供应商是否可用
             current_provider = self.get_current_provider()
             if not current_provider or not current_provider.get("enabled", True):
@@ -1545,7 +1576,7 @@ class EnhancedLLMProcessor:
                     return _yield_unavailable()
                 else:
                     return ProcessResult(content=result)
-            
+
             # 使用流式或非流式方式
             if stream:
                 # 流式输出
@@ -1553,12 +1584,12 @@ class EnhancedLLMProcessor:
             else:
                 # 非流式输出
                 return await self._process_chat(messages, user_id)
-                
+
         finally:
             # 恢复原供应商
             if provider_id and provider_id != original_provider:
                 logger.warning(f"provider_id 参数已废弃，无法切换供应商。当前配置为 {original_provider}。")
-    
+
     async def chat_with_shortcuts(
         self,
         shortcut: str,
@@ -1573,22 +1604,22 @@ class EnhancedLLMProcessor:
             "/status": "请检查集群状态和健康情况",
             "/help": "显示所有可用的快捷指令"
         }
-        
+
         prompt = shortcut_prompts.get(shortcut)
         if not prompt:
             return ProcessResult(
-                content=f"未知的快捷指令: {shortcut}\n\n可用指令:\n" + 
+                content=f"未知的快捷指令: {shortcut}\n\n可用指令:\n" +
                        "\n".join(f"- {k}: {v}" for k, v in shortcut_prompts.items())
             )
-        
+
         # 构建消息
         messages = [
             ChatMessage(role="system", content="你是一个专业的Kubernetes运维助手，擅长使用K8s工具来管理集群。"),
             ChatMessage(role="user", content=f"{prompt}\n\n用户补充信息: {content}")
         ]
-        
+
         return await self.chat(messages, enable_tools=True)
-    
+
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=60))
     async def _chat_without_tools(self, messages: List[ChatMessage]) -> ProcessResult:
         """不使用工具的聊天"""
@@ -1596,9 +1627,9 @@ class EnhancedLLMProcessor:
             return ProcessResult(
                 content="LLM客户端未正确初始化，请检查配置。"
             )
-            
+
         openai_messages = self._convert_messages_to_openai(messages)
-        
+
         try:
             # 使用异步create方法
             response = await self.client.chat.completions.create(
@@ -1612,32 +1643,32 @@ class EnhancedLLMProcessor:
             return ProcessResult(
                 content=f"调用LLM服务失败: {str(e)}"
             )
-        
+
         # 确保响应内容不为空
         content = ""
         if response and response.choices and len(response.choices) > 0:
             message = response.choices[0].message
             content = message.content or ""
-        
+
         # 如果内容为空，提供默认响应
         if not content:
             content = "抱歉，我没能生成有效的响应，请重试。"
-        
+
         # 规范化usage信息
         usage_dict = self._simplify_usage(getattr(response, 'usage', None))
-        
+
         return ProcessResult(
             content=content,
             usage=usage_dict
         )
-    
+
     async def _chat_with_tools(self, messages: List[ChatMessage]) -> ProcessResult:
         """使用工具的聊天"""
         if self.client is None:
             return ProcessResult(
                 content="LLM客户端未正确初始化，请检查配置。"
             )
-            
+
         # 获取可用工具
         try:
             if not self.mcp_client:
@@ -1646,14 +1677,14 @@ class EnhancedLLMProcessor:
         except Exception as e:
             logger.warning(f"获取MCP工具失败: {e}")
             return await self._chat_without_tools(messages)
-            
+
         if not tools:
             return await self._chat_without_tools(messages)
-        
+
         # 转换工具为 OpenAI 格式
         openai_tools = self._convert_tools_to_openai(tools)
         openai_messages = self._convert_messages_to_openai(messages)
-        
+
         # 调用 LLM
         try:
             # 使用异步create方法
@@ -1670,36 +1701,36 @@ class EnhancedLLMProcessor:
             return ProcessResult(
                 content=f"调用LLM服务失败: {str(e)}"
             )
-        
+
         # 安全地访问response.choices
         if not response or not response.choices or len(response.choices) == 0:
             logger.error("LLM响应异常：choices为空")
             return ProcessResult(
                 content="LLM响应异常，请重试。"
             )
-            
+
         message = response.choices[0].message
-        
+
         # 如果没有工具调用，直接返回
         if not message.tool_calls:
             # 确保内容不为空
             content = message.content or "抱歉，我没能生成有效的响应，请重试。"
-            
+
             # 规范化usage信息
             usage_dict = self._simplify_usage(getattr(response, 'usage', None))
-            
+
             return ProcessResult(
                 content=content,
                 usage=usage_dict
             )
-        
+
         # 执行工具调用
         function_results = []
         for tool_call in message.tool_calls:
             try:
                 # 解析参数
                 parsed_params = json.loads(tool_call.function.arguments)
-                
+
                 # 处理参数类型：如果LLM返回的是列表，需要合并为字典
                 if isinstance(parsed_params, list):
                     logger.warning(f"⚠️ LLM返回的参数是列表类型，包含 {len(parsed_params)} 个元素，正在合并...")
@@ -1720,7 +1751,7 @@ class EnhancedLLMProcessor:
                         parameters = {}
                     else:
                         parameters = {"value": parsed_params}
-                
+
                 # 调用 MCP 工具
                 if not self.mcp_client:
                     result = "MCP客户端未连接，无法执行工具调用"
@@ -1730,7 +1761,7 @@ class EnhancedLLMProcessor:
                         tool_call.function.name,
                         parameters
                     )
-                
+
                 function_results.append(FunctionCallResult(
                     function_call=FunctionCall(
                         name=tool_call.function.name,
@@ -1738,7 +1769,7 @@ class EnhancedLLMProcessor:
                     ),
                     result=result
                 ))
-                
+
                 # 将工具结果添加到消息历史
                 openai_messages.append({
                     "role": "assistant",
@@ -1752,23 +1783,23 @@ class EnhancedLLMProcessor:
                         }
                     }]
                 })
-                
+
                 # 构建上下文信息
                 context = {
                     'parameters': parameters,
                     'user_message': messages[-1].content if messages else '',
                     'tool_call_id': tool_call.id
                 }
-                
+
                 # 使用智能结果处理
                 processed_content = self._process_mcp_result(result, tool_call.function.name, context)
-                
+
                 openai_messages.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
                     "content": processed_content
                 })
-                
+
             except Exception as e:
                 logger.error(f"工具调用失败 {tool_call.function.name}: {e}")
                 function_results.append(FunctionCallResult(
@@ -1778,13 +1809,13 @@ class EnhancedLLMProcessor:
                     ),
                     error=str(e)
                 ))
-        
+
         # 如果有工具调用结果，再次调用 LLM 生成最终回复
         if function_results:
             try:
                 # 优化上下文大小
                 optimized_messages = self._optimize_context_size(openai_messages)
-                
+
                 # 使用异步create方法
                 final_response = await self.client.chat.completions.create(
                     model=self._get_model_name(),
@@ -1798,38 +1829,38 @@ class EnhancedLLMProcessor:
                     content="工具调用完成，但生成最终响应时出错。",
                     function_calls=function_results
                 )
-            
+
             # 确保最终内容不为空
             final_message_content = ""
             if final_response and final_response.choices and len(final_response.choices) > 0:
                 final_message_content = final_response.choices[0].message.content or ""
-            
+
             final_content = self._format_response_with_tools(
                 final_message_content,
                 function_results
             )
-            
+
             # 规范化usage信息
             usage_dict = self._simplify_usage(getattr(final_response, 'usage', None))
-            
+
             return ProcessResult(
                 content=final_content,
                 function_calls=function_results,
                 usage=usage_dict
             )
-        
+
         # 最终回退处理
         content = message.content or "工具调用完成"
-        
+
         # 规范化usage信息
         usage_dict = self._simplify_usage(getattr(response, 'usage', None))
-        
+
         return ProcessResult(
             content=content,
             function_calls=function_results,
             usage=usage_dict
         )
-    
+
     def _convert_messages_to_openai(self, messages: List[ChatMessage]) -> List[Dict[str, Any]]:
         """转换消息格式为 OpenAI 格式"""
         result = []
@@ -1838,30 +1869,30 @@ class EnhancedLLMProcessor:
                 "role": msg.role,
                 "content": msg.content
             }
-            
+
             if msg.tool_call_id:
                 openai_msg["tool_call_id"] = msg.tool_call_id
-                
+
             if msg.function_call:
                 openai_msg["function_call"] = {
                     "name": msg.function_call.name,
                     "arguments": msg.function_call.arguments
                 }
-            
+
             result.append(openai_msg)
-        
+
         return result
-    
+
     def _convert_tools_to_openai(self, tools) -> List[Dict[str, Any]]:
         """转换 MCP 工具为 OpenAI 工具格式"""
         result = []
         for i, tool in enumerate(tools):
             try:
                 logger.debug(f"🔧 处理工具 {i+1}/{len(tools)}: {tool.name}")
-                
+
                 # 清理schema以确保与不同API提供商的兼容性
                 cleaned_schema = self._clean_schema_for_compatibility(tool.input_schema)
-                
+
                 converted_tool = {
                     "type": "function",
                     "function": {
@@ -1872,19 +1903,19 @@ class EnhancedLLMProcessor:
                 }
                 result.append(converted_tool)
                 logger.debug(f"✅ 工具 {tool.name} 转换成功")
-                
+
             except Exception as e:
                 logger.error(f"❌ 工具 {tool.name} 转换失败: {e}")
                 # 继续处理其他工具，不因单个工具失败而停止
                 continue
-                
+
         return result
-    
+
     def _clean_schema_for_compatibility(self, schema: Dict[str, Any]) -> Dict[str, Any]:
         """清理JSON schema以确保API兼容性"""
         if not isinstance(schema, dict):
             return schema
-        
+
         try:
             cleaned = {}
             for key, value in schema.items():
@@ -1897,25 +1928,25 @@ class EnhancedLLMProcessor:
                         cleaned[key][prop_name] = self._clean_property_definition(prop_def, 0)
                 else:
                     cleaned[key] = value
-            
+
             return cleaned
         except Exception as e:
             logger.error(f"❌ Schema清理失败: {e}")
             # 返回原始schema作为fallback
             return schema
-    
+
     def _clean_property_definition(self, prop_def: Dict[str, Any], _depth: int = 0) -> Dict[str, Any]:
         """清理单个属性定义"""
         if not isinstance(prop_def, dict):
             return prop_def
-        
+
         # 防止递归过深导致栈溢出
         if _depth > 10:
             logger.warning(f"🔧 Schema递归深度超过10层，停止处理")
             return prop_def
-        
+
         cleaned = prop_def.copy()
-        
+
         # 处理类型定义
         if "type" in cleaned:
             type_value = cleaned["type"]
@@ -1927,7 +1958,7 @@ class EnhancedLLMProcessor:
                     logger.debug(f"🔧 转换数组类型 {old_type} 为 {type_value[0]}")
                 else:
                     cleaned["type"] = "string"  # 默认为string
-        
+
         # 递归处理嵌套的schema
         for key, value in cleaned.items():
             if key == "items" and isinstance(value, dict):
@@ -1936,9 +1967,9 @@ class EnhancedLLMProcessor:
                 cleaned[key] = {}
                 for sub_key, sub_value in value.items():
                     cleaned[key][sub_key] = self._clean_property_definition(sub_value, _depth + 1)
-        
+
         return cleaned
-    
+
     def _format_response_with_tools(
         self,
         content: str,
@@ -1947,12 +1978,12 @@ class EnhancedLLMProcessor:
         """格式化包含工具调用结果的响应"""
         if not function_results:
             return content
-        
+
         formatted_content = content + "\n\n**工具调用详情:**\n"
-        
+
         for i, result in enumerate(function_results, 1):
             formatted_content += f"\n**{i}. {result.function_call.name}**\n"
-            
+
             if result.error:
                 formatted_content += f"❌ 执行失败: {result.error}\n"
             else:
@@ -1971,19 +2002,19 @@ class EnhancedLLMProcessor:
                 except Exception as format_error:
                     logger.warning(f"格式化工具结果时出错: {format_error}")
                     formatted_content += f"📋 结果: 数据格式化失败\n"
-        
+
         return formatted_content
-    
+
     async def get_available_shortcuts(self) -> Dict[str, str]:
         """获取可用的快捷指令"""
         shortcuts = {
             "/pods": "查看Pod列表",
             "/logs": "查看Pod日志",
-            "/scale": "扩缩容Deployment", 
+            "/scale": "扩缩容Deployment",
             "/status": "检查集群状态",
             "/help": "显示帮助信息"
         }
-        
+
         # 如果 MCP 客户端连接，添加工具相关的快捷指令
         if self.mcp_client and hasattr(self.mcp_client, 'status') and self.mcp_client.status.value == "connected":
             try:
@@ -1992,9 +2023,9 @@ class EnhancedLLMProcessor:
                     shortcuts[f"/tool-{tool.name}"] = f"直接调用工具: {tool.description}"
             except Exception as e:
                 logger.warning(f"获取工具快捷指令失败: {e}")
-        
+
         return shortcuts
-    
+
     def format_tool_result(self, result: Any) -> str:
         """格式化工具调用结果为用户友好的文本"""
         try:
@@ -2004,28 +2035,28 @@ class EnhancedLLMProcessor:
                     items = result["items"]
                     if not items:
                         return "📭 未找到任何资源"
-                    
+
                     formatted = f"📦 找到 {len(items)} 个资源:\n\n"
                     for item in items[:10]:  # 限制显示数量
                         # 安全地处理可能为None的item
                         if item is not None and isinstance(item, dict):
                             metadata = item.get("metadata", {})
                             status = item.get("status", {})
-                            
+
                             # 安全地获取名称
                             name = "Unknown"
                             if isinstance(metadata, dict):
                                 name = metadata.get("name", "Unknown")
                             elif "name" in item:
                                 name = item.get("name", "Unknown")
-                            
+
                             # 安全地获取命名空间
                             namespace = "default"
                             if isinstance(metadata, dict):
                                 namespace = metadata.get("namespace", "default")
                             elif "namespace" in item:
                                 namespace = item.get("namespace", "default")
-                            
+
                             # 安全地获取状态
                             phase = "Unknown"
                             if isinstance(status, dict):
@@ -2034,23 +2065,23 @@ class EnhancedLLMProcessor:
                                 phase = item.get("phase", "Unknown")
                             elif "status" in item:
                                 phase = item.get("status", "Unknown")
-                            
+
                             formatted += f"• **{name}**\n"
                             formatted += f"  命名空间: {namespace}\n"
                             formatted += f"  状态: {phase}\n\n"
                         else:
                             formatted += f"• **无效资源项**\n"
                             formatted += f"  数据: {str(item)[:50]}...\n\n"
-                    
+
                     if len(items) > 10:
                         formatted += f"... 还有 {len(items) - 10} 个资源\n"
-                    
+
                     return formatted
-                
+
                 elif "pod_name" in result and "content" in result:
                     # 日志格式
                     return f"📋 **{result['pod_name']}** 日志:\n\n```\n{result['content']}\n```"
-                
+
                 elif "deployment_name" in result:
                     # 扩缩容结果格式
                     return f"🔄 扩缩容完成:\n" + \
@@ -2058,18 +2089,18 @@ class EnhancedLLMProcessor:
                            f"• 命名空间: {result.get('namespace', 'default')}\n" + \
                            f"• 副本数: {result.get('previous_replicas', 0)} → {result.get('target_replicas', 0)}\n" + \
                            f"• 状态: {'✅ 成功' if result.get('success') else '❌ 失败'}"
-                
+
                 else:
                     # 通用字典格式
                     try:
                         return f"📄 结果:\n```json\n{json.dumps(result, ensure_ascii=False, indent=2)}\n```"
                     except Exception as json_error:
                         return f"📄 结果:\n{str(result)}"
-            
+
             elif isinstance(result, list):
                 return f"📋 列表结果 ({len(result)} 项):\n" + \
                        "\n".join(f"• {item}" for item in result[:10] if item is not None)
-            
+
             else:
                 return f"📄 结果: {str(result)}"
         except Exception as e:

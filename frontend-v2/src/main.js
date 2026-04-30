@@ -37,10 +37,11 @@ app.mount('#app')
 
 // 隐藏加载屏幕
 document.body.classList.add('app-ready')
+document.getElementById('loading')?.remove()
 
 // 开发环境下的调试信息
 if (import.meta.env.DEV) {
   console.log('🚀 钉钉K8s运维机器人前端启动成功')
   console.log('📱 当前环境:', import.meta.env.MODE)
   console.log('🔗 API基地址:', import.meta.env.VITE_API_BASE_URL || '/api')
-} 
+}

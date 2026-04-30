@@ -1,0 +1,122 @@
+# Kubernetes MCP服务器配置文件示例
+# 复制此文件为 k8s_config.yaml 并修改相应配置
+
+# 服务器配置
+server:
+  # 服务器绑定地址
+  host: "localhost"
+
+  # 服务器端口
+  port: 8766
+
+  # 调试模式
+  debug: false
+
+  # 请求超时时间（秒）
+  timeout: 30
+
+# Kubernetes集群配置
+kubernetes:
+  # Kubeconfig文件路径（优先级最高）
+  kubeconfig_path: "${KUBECONFIG_PATH}"
+
+  # 默认命名空间
+  default_namespace: "default"
+
+  # 集群连接超时时间（秒）
+  connection_timeout: 10
+
+  # 操作超时时间（秒）
+  operation_timeout: 30
+
+  # 是否验证SSL证书
+  verify_ssl: true
+
+  # 集群内运行模式（Pod内部运行时使用）
+  in_cluster: false
+
+  # 手动配置（当kubeconfig不可用时）
+  manual_config:
+    # API服务器地址
+    api_server: "https://kubernetes.default.svc"
+
+    # Token认证
+    token: "${K8S_TOKEN}"
+
+    # 证书路径
+    ca_cert_path: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+
+# 安全配置
+security:
+  # 启用操作审计
+  audit_enabled: true
+
+  # 允许的命名空间列表（空表示所有）
+  allowed_namespaces: []
+
+  # 禁止的命名空间列表
+  forbidden_namespaces: ["kube-system", "kube-public"]
+
+  # 最大返回资源数量
+  max_resources: 100
+
+  # 启用危险操作确认
+  dangerous_operations_confirm: true
+
+  # 危险操作列表
+  dangerous_operations:
+    - "delete"
+    - "patch"
+    - "scale-down"
+
+# 日志配置
+logging:
+  # 日志级别: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  level: "INFO"
+
+  # 日志格式: json, text
+  format: "json"
+
+  # 日志文件路径
+  file_path: "logs/k8s-mcp.log"
+
+  # 日志文件最大大小（MB）
+  max_file_size: 100
+
+  # 日志文件保留数量
+  backup_count: 10
+
+# 监控配置
+monitoring:
+  # 启用健康检查
+  health_check_enabled: true
+
+  # 健康检查间隔（秒）
+  health_check_interval: 30
+
+  # 启用性能指标
+  metrics_enabled: true
+
+  # 指标收集间隔（秒）
+  metrics_interval: 60
+
+# 工具配置
+tools:
+  # 启用的工具列表
+  enabled_tools:
+    - "k8s-get-pods"
+    - "k8s-get-services"
+    - "k8s-get-deployments"
+    - "k8s-get-nodes"
+    - "k8s-scale-deployment"
+    - "k8s-get-logs"
+    - "k8s-describe-pod"
+    - "k8s-get-events"
+    - "k8s-get-configmaps"
+    - "k8s-get-secrets"
+
+  # 工具默认参数
+  default_params:
+    logs_tail_lines: 100
+    max_list_items: 50
+    timeout_seconds: 30

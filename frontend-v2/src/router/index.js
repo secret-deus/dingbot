@@ -6,6 +6,8 @@ const Dashboard = () => import('@/views/Dashboard.vue')
 const Chat = () => import('@/views/Chat.vue')
 const MCPConfig = () => import('@/views/MCPConfig.vue')
 const Scheduler = () => import('@/views/Scheduler.vue')
+const AccessControl = () => import('@/views/AccessControl.vue')
+const AuditLogs = () => import('@/views/AuditLogs.vue')
 
 const routes = [
   {
@@ -28,7 +30,8 @@ const routes = [
     meta: {
       title: '仪表板',
       icon: 'Odometer',
-      requiresAuth: true
+      requiresAuth: true,
+      permission: 'ops:read'
     }
   },
   {
@@ -38,7 +41,8 @@ const routes = [
     meta: {
       title: '智能对话',
       icon: 'ChatDotSquare',
-      requiresAuth: true
+      requiresAuth: true,
+      permission: 'chat:read'
     }
   },
   {
@@ -48,7 +52,8 @@ const routes = [
     meta: {
       title: 'MCP配置',
       icon: 'Tools',
-      requiresAuth: true
+      requiresAuth: true,
+      permission: 'mcp:read'
     }
   },
   {
@@ -58,7 +63,30 @@ const routes = [
     meta: {
       title: '定时任务',
       icon: 'Timer',
-      requiresAuth: true
+      requiresAuth: true,
+      permission: 'scheduler:read'
+    }
+  },
+  {
+    path: '/access-control',
+    name: 'AccessControl',
+    component: AccessControl,
+    meta: {
+      title: '访问控制',
+      icon: 'User',
+      requiresAuth: true,
+      permission: 'users:read'
+    }
+  },
+  {
+    path: '/audit-logs',
+    name: 'AuditLogs',
+    component: AuditLogs,
+    meta: {
+      title: '操作日志',
+      icon: 'Document',
+      requiresAuth: true,
+      permission: 'audit:read'
     }
   },
   {
@@ -81,11 +109,12 @@ router.beforeEach(async (to, from, next) => {
   } else {
     document.title = '钉钉K8s运维机器人'
   }
-  
+
   // 动态导入auth store
   const { useAuthStore } = await import('@/stores/auth')
   const authStore = useAuthStore()
-  
+  await authStore.initAuth()
+
   // 检查是否需要认证
   if (to.meta.requiresAuth !== false) {
     // 默认需要认证，除非明确设置为false
@@ -97,6 +126,10 @@ router.beforeEach(async (to, from, next) => {
       })
       return
     }
+    if (to.meta.permission && !authStore.hasPermission(to.meta.permission)) {
+      next({ path: '/dashboard' })
+      return
+    }
   } else {
     // 不需要认证的页面（如登录页），如果已登录则重定向到首页
     if (to.path === '/login' && authStore.isAuthenticated) {
@@ -104,7 +137,7 @@ router.beforeEach(async (to, from, next) => {
       return
     }
   }
-  
+
   next()
 })
 
@@ -113,4 +146,4 @@ router.afterEach((to, from) => {
   console.log(`路由切换: ${from.path} -> ${to.path}`)
 })
 
-export default router 
+export default router

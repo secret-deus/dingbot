@@ -17,50 +17,50 @@ class LLMProviderConfig(BaseModel):
     id: str = Field(..., description="提供商唯一标识符")
     name: str = Field(..., description="提供商显示名称")
     enabled: bool = Field(True, description="是否启用此提供商")
-    
+
     # 核心配置
     model: str = Field(..., description="默认模型名称")
     api_key: Optional[str] = Field(None, description="API密钥")
     base_url: Optional[str] = Field(None, description="API基础URL")
-    
+
     # Azure OpenAI 特有配置
     deployment_name: Optional[str] = Field(None, description="Azure OpenAI部署名称")
     api_version: Optional[str] = Field(None, description="Azure OpenAI API版本")
-    
+
     # OpenAI 特有配置
     organization: Optional[str] = Field(None, description="OpenAI组织ID")
-    
+
     # 模型参数配置
     temperature: float = Field(0.7, ge=0.0, le=2.0, description="模型温度参数")
     max_tokens: int = Field(2000, gt=0, le=32000, description="最大token数")
     top_p: Optional[float] = Field(None, ge=0.0, le=1.0, description="核采样参数")
     frequency_penalty: Optional[float] = Field(None, ge=-2.0, le=2.0, description="频率惩罚")
     presence_penalty: Optional[float] = Field(None, ge=-2.0, le=2.0, description="存在惩罚")
-    
+
     # 连接配置
     timeout: int = Field(30, gt=0, le=300, description="请求超时时间(秒)")
     max_retries: int = Field(3, ge=0, le=10, description="最大重试次数")
     retry_delay: float = Field(1.0, ge=0.0, le=60.0, description="重试延迟(秒)")
-    
+
     # 流式输出配置
     stream: bool = Field(False, description="是否启用流式输出")
     stream_timeout: int = Field(60, gt=0, le=600, description="流式输出超时时间(秒)")
-    
+
     # 高级配置
     custom_headers: Optional[Dict[str, str]] = Field(None, description="自定义HTTP头")
     proxy_url: Optional[str] = Field(None, description="代理URL")
     verify_ssl: bool = Field(True, description="是否验证SSL证书")
-    
+
     # 功能支持配置
     supports_functions: bool = Field(True, description="是否支持函数调用")
     supports_vision: bool = Field(False, description="是否支持视觉功能")
     supports_streaming: bool = Field(True, description="是否支持流式输出")
-    
+
     # 成本和限制配置
     cost_per_token: Optional[float] = Field(None, ge=0.0, description="每token成本")
     rate_limit_rpm: Optional[int] = Field(None, gt=0, description="每分钟请求限制")
     rate_limit_tpm: Optional[int] = Field(None, gt=0, description="每分钟token限制")
-    
+
     @field_validator('id')
     @classmethod
     def validate_id(cls, v):
@@ -72,7 +72,7 @@ class LLMProviderConfig(BaseModel):
         if not re.match(r'^[a-zA-Z0-9_-]+$', v):
             raise ValueError("Provider ID can only contain letters, numbers, underscores and hyphens")
         return v.strip().lower()
-    
+
     @field_validator('model')
     @classmethod
     def validate_model(cls, v):
@@ -80,7 +80,7 @@ class LLMProviderConfig(BaseModel):
         if not v or not v.strip():
             raise ValueError("Model name cannot be empty")
         return v.strip()
-    
+
     @field_validator('base_url')
     @classmethod
     def validate_base_url(cls, v):
@@ -97,14 +97,14 @@ class LLMConfiguration(BaseModel):
     version: str = Field("1.0", description="配置版本")
     name: str = Field("LLM配置", description="配置名称")
     description: Optional[str] = Field(None, description="配置描述")
-    
+
     # 全局启用状态
     enabled: bool = Field(True, description="是否启用LLM功能")
-    
+
     # 提供商配置
     providers: List[LLMProviderConfig] = Field(default_factory=list, description="LLM提供商列表")
     default_provider: str = Field("openai", description="默认提供商ID")
-    
+
     # 全局默认配置
     global_defaults: Dict[str, Any] = Field(
         default_factory=lambda: {
@@ -116,7 +116,7 @@ class LLMConfiguration(BaseModel):
         },
         description="全局默认配置"
     )
-    
+
     # 安全配置
     security: Optional[Dict[str, Any]] = Field(
         default_factory=lambda: {
@@ -127,7 +127,7 @@ class LLMConfiguration(BaseModel):
         },
         description="安全配置"
     )
-    
+
     # 日志配置
     logging: Optional[Dict[str, Any]] = Field(
         default_factory=lambda: {
@@ -138,7 +138,7 @@ class LLMConfiguration(BaseModel):
         },
         description="日志配置"
     )
-    
+
     # 缓存配置
     cache: Optional[Dict[str, Any]] = Field(
         default_factory=lambda: {
@@ -148,7 +148,7 @@ class LLMConfiguration(BaseModel):
         },
         description="缓存配置"
     )
-    
+
     # 监控配置
     monitoring: Optional[Dict[str, Any]] = Field(
         default_factory=lambda: {
@@ -159,7 +159,7 @@ class LLMConfiguration(BaseModel):
         },
         description="监控配置"
     )
-    
+
     @field_validator('default_provider')
     @classmethod
     def validate_default_provider(cls, v, info):
@@ -167,22 +167,22 @@ class LLMConfiguration(BaseModel):
         if not v or not v.strip():
             raise ValueError("Default provider cannot be empty")
         return v.strip().lower()
-    
+
     def get_provider(self, provider_id: str) -> Optional[LLMProviderConfig]:
         """根据ID获取提供商配置"""
         for provider in self.providers:
             if provider.id == provider_id:
                 return provider
         return None
-    
+
     def get_enabled_providers(self) -> List[LLMProviderConfig]:
         """获取所有启用的提供商"""
         return [provider for provider in self.providers if provider.enabled]
-    
+
     def get_default_provider_config(self) -> Optional[LLMProviderConfig]:
         """获取默认提供商配置"""
         return self.get_provider(self.default_provider)
-    
+
     def add_provider(self, provider: LLMProviderConfig) -> bool:
         """添加提供商配置"""
         # 检查ID是否已存在
@@ -190,13 +190,13 @@ class LLMConfiguration(BaseModel):
             return False
         self.providers.append(provider)
         return True
-    
+
     def remove_provider(self, provider_id: str) -> bool:
         """删除提供商配置"""
         original_count = len(self.providers)
         self.providers = [p for p in self.providers if p.id != provider_id]
         return len(self.providers) < original_count
-    
+
     def update_provider(self, provider_id: str, provider: LLMProviderConfig) -> bool:
         """更新提供商配置"""
         for i, p in enumerate(self.providers):
@@ -283,7 +283,7 @@ def save_configuration_to_file(config: LLMConfiguration, file_path: str) -> None
     try:
         # 确保目录存在
         Path(file_path).parent.mkdir(parents=True, exist_ok=True)
-        
+
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(
                 config.model_dump(),
@@ -294,4 +294,67 @@ def save_configuration_to_file(config: LLMConfiguration, file_path: str) -> None
         logger.info(f"LLM configuration saved to {file_path}")
     except Exception as e:
         logger.error(f"Failed to save LLM configuration to {file_path}: {e}")
-        raise 
+        raise
+
+
+def env_fallback_processor_config() -> Dict[str, Any]:
+    """当配置文件不可用或未启用时，从环境变量构造与 EnhancedLLMProcessor 兼容的配置字典。"""
+    import os
+
+    return {
+        "provider": os.getenv("LLM_PROVIDER", "openai"),
+        "model": os.getenv("LLM_MODEL", "gpt-4"),
+        "api_key": os.getenv("LLM_API_KEY", ""),
+        "base_url": os.getenv("LLM_BASE_URL"),
+        "organization": os.getenv("LLM_ORGANIZATION"),
+        "deployment_name": os.getenv("LLM_DEPLOYMENT_NAME"),
+        "api_version": os.getenv("LLM_API_VERSION"),
+        "temperature": float(os.getenv("LLM_TEMPERATURE", "0.7")),
+        "max_tokens": int(os.getenv("LLM_MAX_TOKENS", "4000")),
+        "timeout": int(os.getenv("LLM_TIMEOUT", "30")),
+        "max_retries": int(os.getenv("LLM_MAX_RETRIES", "3")),
+    }
+
+
+def provider_to_processor_dict(provider: LLMProviderConfig) -> Dict[str, Any]:
+    """将文件中的提供商配置转为 EnhancedLLMProcessor 使用的字典（单一真相源）。"""
+    return {
+        "provider": provider.id,
+        "model": provider.model,
+        "api_key": provider.api_key or "",
+        "base_url": provider.base_url,
+        "organization": provider.organization,
+        "deployment_name": provider.deployment_name,
+        "api_version": provider.api_version,
+        "temperature": provider.temperature,
+        "max_tokens": provider.max_tokens,
+        "timeout": provider.timeout,
+        "max_retries": provider.max_retries,
+        "stream": provider.stream,
+    }
+
+
+def resolve_llm_processor_config_dict() -> Dict[str, Any]:
+    """优先使用 config/llm_config.json 中的默认提供商；否则回退到环境变量。"""
+    import os
+    from loguru import logger
+
+    try:
+        from .config_manager import get_llm_config_manager
+
+        mgr = get_llm_config_manager()
+        cfg = mgr.get_config()
+        prov = mgr.get_default_provider()
+        if cfg.enabled and prov is not None and prov.enabled:
+            d = provider_to_processor_dict(prov)
+            logger.info(
+                f"LLM 运行时配置来自文件: provider={d.get('provider')} model={d.get('model')}"
+            )
+            return d
+        logger.warning(
+            "LLM 配置文件未启用或无可用默认提供商，回退到环境变量"
+        )
+    except Exception as e:
+        logger.warning(f"读取 LLM 文件配置失败，回退到环境变量: {e}")
+
+    return env_fallback_processor_config()
