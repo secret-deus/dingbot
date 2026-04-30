@@ -15,13 +15,13 @@ export default defineConfig({
     proxy: {
       // 代理API请求到后端服务
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'http://127.0.0.1:8000',
         changeOrigin: true,
         secure: false,
       },
       // 代理钉钉webhook到后端
       '/dingtalk': {
-        target: 'http://localhost:8000',
+        target: 'http://127.0.0.1:8000',
         changeOrigin: true,
         secure: false,
       }
@@ -51,4 +51,4 @@ export default defineConfig({
     __VUE_PROD_DEVTOOLS__: false,
     __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: false
   }
-}) 
+})
