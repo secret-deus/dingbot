@@ -1,0 +1,388 @@
+:root,
+:root[data-ops-theme="graphite"] {
+  --ops-bg: #090a08;
+  --ops-bg-elevated: #0e100d;
+  --ops-surface: #12140f;
+  --ops-surface-raised: #171a14;
+  --ops-surface-hover: #1e2119;
+  --ops-surface-selected: #242115;
+  --ops-border: #2a2d24;
+  --ops-border-strong: #3a3d30;
+  --ops-text: #f1efe7;
+  --ops-text-soft: #e6e2d8;
+  --ops-muted: #9da08e;
+  --ops-muted-2: #787a69;
+  --ops-accent: #d6a84f;
+  --ops-accent-strong: #e4bd68;
+  --ops-accent-text: #2a1e08;
+  --ops-accent-soft: rgba(214, 168, 79, 0.10);
+  --ops-accent-border: rgba(214, 168, 79, 0.30);
+  --ops-success: #9fcf96;
+  --ops-success-strong: #8fbf87;
+  --ops-success-soft: rgba(143, 191, 135, 0.10);
+  --ops-warning: #e4bd68;
+  --ops-warning-soft: rgba(228, 189, 104, 0.12);
+  --ops-danger: #fb7185;
+  --ops-danger-soft: rgba(251, 113, 133, 0.10);
+  --ops-shadow: 0 18px 44px rgba(0, 0, 0, 0.30);
+  --ops-radius: 8px;
+  --primary-color: var(--ops-accent);
+  --primary-light: var(--ops-accent-strong);
+  --primary-dark: var(--ops-accent);
+  --primary-hover: var(--ops-accent-strong);
+  --info-color: var(--ops-accent);
+  --info-light: var(--ops-accent-strong);
+  --success-color: var(--ops-success);
+  --success-light: var(--ops-success-strong);
+  --warning-color: var(--ops-warning);
+  --warning-light: var(--ops-warning);
+  --danger-color: var(--ops-danger);
+  --text-primary: var(--ops-text);
+  --text-regular: var(--ops-text-soft);
+  --text-secondary: var(--ops-muted);
+  --text-placeholder: var(--ops-muted-2);
+  --background-page: var(--ops-bg);
+  --background-base: var(--ops-surface);
+  --background-light: var(--ops-surface-raised);
+  --background-lighter: var(--ops-surface-hover);
+  --background-hover: var(--ops-surface-hover);
+  --card-bg: var(--ops-surface);
+  --card-border: var(--ops-border);
+  --border-base: var(--ops-border);
+  --border-light: var(--ops-border);
+  --border-lighter: var(--ops-border);
+  --border-dark: var(--ops-border-strong);
+  --el-color-primary: var(--ops-accent);
+  --el-color-primary-light-3: var(--ops-accent-strong);
+  --el-color-primary-light-5: var(--ops-accent-strong);
+  --el-color-primary-light-7: var(--ops-accent-soft);
+  --el-color-primary-light-8: var(--ops-accent-soft);
+  --el-color-primary-light-9: var(--ops-accent-soft);
+  --el-color-success: var(--ops-success);
+  --el-color-warning: var(--ops-warning);
+  --el-color-danger: var(--ops-danger);
+  --el-bg-color: var(--ops-surface);
+  --el-bg-color-page: var(--ops-bg);
+  --el-bg-color-overlay: var(--ops-surface-raised);
+  --el-border-color: var(--ops-border);
+  --el-border-color-light: var(--ops-border);
+  --el-border-color-lighter: var(--ops-border);
+  --el-text-color-primary: var(--ops-text);
+  --el-text-color-regular: var(--ops-text-soft);
+  --el-text-color-secondary: var(--ops-muted);
+  --el-fill-color-light: var(--ops-surface-raised);
+  --el-fill-color-blank: var(--ops-surface);
+}
+
+:root[data-ops-theme="forest"] {
+  --ops-bg: #07100b;
+  --ops-bg-elevated: #0c1510;
+  --ops-surface: #101914;
+  --ops-surface-raised: #152019;
+  --ops-surface-hover: #1b2a21;
+  --ops-surface-selected: #1c2b1e;
+  --ops-border: #28362d;
+  --ops-border-strong: #3b4a3f;
+  --ops-text: #edf3e9;
+  --ops-text-soft: #dfe8da;
+  --ops-muted: #9cab94;
+  --ops-muted-2: #73816c;
+  --ops-accent: #a8c66c;
+  --ops-accent-strong: #c4dd88;
+  --ops-accent-text: #142006;
+  --ops-accent-soft: rgba(168, 198, 108, 0.11);
+  --ops-accent-border: rgba(168, 198, 108, 0.30);
+  --ops-success: #8fcf9a;
+  --ops-success-strong: #81c28d;
+  --ops-success-soft: rgba(143, 207, 154, 0.10);
+  --ops-warning: #d9b66a;
+  --ops-warning-soft: rgba(217, 182, 106, 0.12);
+  --ops-danger: #ef7d83;
+  --ops-danger-soft: rgba(239, 125, 131, 0.10);
+}
+
+:root[data-ops-theme="mono"] {
+  --ops-bg: #0a0a0a;
+  --ops-bg-elevated: #101010;
+  --ops-surface: #151515;
+  --ops-surface-raised: #1b1b1b;
+  --ops-surface-hover: #242424;
+  --ops-surface-selected: #27231b;
+  --ops-border: #303030;
+  --ops-border-strong: #444444;
+  --ops-text: #f4f4f2;
+  --ops-text-soft: #e2e2de;
+  --ops-muted: #a3a39a;
+  --ops-muted-2: #77776f;
+  --ops-accent: #c7a35a;
+  --ops-accent-strong: #dec276;
+  --ops-accent-text: #211806;
+  --ops-accent-soft: rgba(199, 163, 90, 0.10);
+  --ops-accent-border: rgba(199, 163, 90, 0.30);
+  --ops-success: #9dbb8f;
+  --ops-success-strong: #8dad80;
+  --ops-success-soft: rgba(157, 187, 143, 0.10);
+  --ops-warning: #d6b46c;
+  --ops-warning-soft: rgba(214, 180, 108, 0.12);
+  --ops-danger: #de7d80;
+  --ops-danger-soft: rgba(222, 125, 128, 0.10);
+}
+
+html,
+body,
+#app {
+  background: var(--ops-bg);
+}
+
+.ops-app-theme,
+.app-container,
+.main-content,
+.chat-cockpit-page,
+.stream-chat,
+.mcp-config-page,
+.scheduler-cockpit {
+  background: var(--ops-bg) !important;
+  color: var(--ops-text) !important;
+}
+
+.ops-rail,
+.header,
+.mobile-topbar,
+.cockpit-panel,
+.chat-command-strip,
+.mcp-command-strip,
+.scheduler-command-strip,
+.metric-tile,
+.rail-card,
+.stage-panel,
+.server-card,
+.tool-card,
+.runtime-card,
+.context-card,
+.mission-stat,
+.input-card,
+.welcome-card,
+.assistant-message-card,
+.history-header-card,
+.search-section-card,
+.session-card,
+.tool-call-card,
+.server-switch-item,
+.global-status,
+.mcp-tooltip {
+  border-color: var(--ops-border) !important;
+  background: var(--ops-surface) !important;
+  color: var(--ops-text) !important;
+  box-shadow: none !important;
+}
+
+.server-meta > div,
+.mini-tile,
+.server-row,
+.task-card,
+.execution-row,
+.running-row,
+.validation-section,
+.tool-detail-content,
+.message-input .el-textarea__inner,
+.el-input__wrapper,
+.el-select__wrapper,
+.el-textarea__inner {
+  border-color: var(--ops-border) !important;
+  background: var(--ops-surface-raised) !important;
+  color: var(--ops-text) !important;
+}
+
+.el-input__wrapper.is-focus,
+.el-select__wrapper.is-focused,
+.el-select__wrapper:hover,
+.el-textarea__inner:focus {
+  border-color: var(--ops-accent-border) !important;
+  background: var(--ops-surface-raised) !important;
+  box-shadow: 0 0 0 1px var(--ops-accent-border) inset !important;
+}
+
+.el-popper.is-light,
+.el-select__popper.el-popper,
+.el-select-dropdown {
+  border-color: var(--ops-border) !important;
+  background: var(--ops-surface-raised) !important;
+  color: var(--ops-text) !important;
+  box-shadow: var(--ops-shadow) !important;
+}
+
+.el-popper.is-light .el-popper__arrow::before,
+.el-select__popper.el-popper .el-popper__arrow::before {
+  border-color: var(--ops-border) !important;
+  background: var(--ops-surface-raised) !important;
+}
+
+.el-select-dropdown__list {
+  background: var(--ops-surface-raised) !important;
+}
+
+.el-select-dropdown__item {
+  color: var(--ops-text-soft) !important;
+}
+
+.el-select-dropdown__item span {
+  color: inherit !important;
+}
+
+.el-select-dropdown__item.is-hovering,
+.el-select-dropdown__item:hover {
+  background: var(--ops-surface-hover) !important;
+  color: var(--ops-text) !important;
+}
+
+.el-select-dropdown__item.is-selected {
+  background: var(--ops-accent-soft) !important;
+  color: var(--ops-accent-strong) !important;
+  font-weight: 700 !important;
+}
+
+.el-select-dropdown__item.is-disabled {
+  color: var(--ops-muted-2) !important;
+}
+
+.el-select-dropdown.is-multiple .el-select-dropdown__item.is-selected::after {
+  background-color: var(--ops-accent) !important;
+}
+
+.rail-brand,
+.mobile-brand,
+.rail-nav button.active,
+.mobile-nav button.active,
+.segmented-nav button.active,
+.control-stack button:hover,
+.quick-actions button:hover,
+.el-button--primary,
+.el-button--success,
+.el-button--warning {
+  border-color: var(--ops-accent-border) !important;
+  background: var(--ops-accent-soft) !important;
+  color: var(--ops-accent-strong) !important;
+}
+
+.rail-nav button.active::before {
+  background: var(--ops-accent) !important;
+}
+
+.rail-nav button,
+.mobile-nav button,
+.segmented-nav button,
+.control-stack button,
+.quick-actions button,
+.el-button {
+  border-color: var(--ops-border) !important;
+  background: var(--ops-surface-raised) !important;
+  color: var(--ops-text-soft) !important;
+  box-shadow: none !important;
+}
+
+.rail-nav button:hover,
+.mobile-nav button:hover,
+.el-button:hover {
+  border-color: var(--ops-accent-border) !important;
+  background: var(--ops-surface-hover) !important;
+  color: var(--ops-text) !important;
+}
+
+.eyebrow,
+.mission-stat strong,
+.metric-tile strong,
+.rail-number,
+.question-icon,
+.meta-role,
+.tool-detail-label,
+.markdown-content a,
+.markdown-content code,
+.status-tag-item,
+.tools-count {
+  color: var(--ops-accent) !important;
+}
+
+.command-copy span,
+.mission-head span,
+.stage-head span,
+.metric-tile span,
+.metric-tile em,
+.server-head span,
+.server-row span,
+.tool-card p,
+.tool-meta,
+.empty-cockpit span,
+.session-preview,
+.session-meta,
+.meta-time,
+.bubble-meta,
+.shortcut-tip,
+.server-details,
+.mcp-tooltip,
+.runbook-item,
+.mini-tile span {
+  color: var(--ops-muted) !important;
+}
+
+.state-pill.on,
+.status-pill.live,
+.ok,
+.mini-status,
+.el-tag--success,
+.tool-call-success .tool-status {
+  color: var(--ops-success) !important;
+}
+
+.el-switch.is-checked .el-switch__core {
+  border-color: var(--ops-success-strong) !important;
+  background-color: var(--ops-success-strong) !important;
+}
+
+.el-switch__core {
+  border-color: var(--ops-border-strong) !important;
+  background-color: var(--ops-surface-hover) !important;
+}
+
+.el-tag,
+.status-pill,
+.state-pill,
+.status-tag-item {
+  border-color: var(--ops-accent-border) !important;
+  background: var(--ops-accent-soft) !important;
+  color: var(--ops-accent-strong) !important;
+}
+
+.el-table,
+.el-table tr,
+.el-table td.el-table__cell,
+.el-table th.el-table__cell {
+  --el-table-border-color: var(--ops-border);
+  --el-table-header-bg-color: var(--ops-surface-raised);
+  --el-table-tr-bg-color: var(--ops-surface);
+  --el-table-row-hover-bg-color: var(--ops-surface-hover);
+  border-color: var(--ops-border) !important;
+  background: var(--ops-surface) !important;
+  color: var(--ops-text-soft) !important;
+}
+
+.user-message-card,
+.session-card-active {
+  border-color: var(--ops-accent-border) !important;
+  background: var(--ops-surface-selected) !important;
+}
+
+.tool-call-error,
+.issue.error,
+.error-banner {
+  border-color: rgba(251, 113, 133, 0.28) !important;
+  background: var(--ops-danger-soft) !important;
+  color: var(--ops-danger) !important;
+}
+
+.tool-call-calling,
+.issue.warning,
+.status-pill.warning {
+  border-color: var(--ops-accent-border) !important;
+  background: var(--ops-warning-soft) !important;
+  color: var(--ops-warning) !important;
+}

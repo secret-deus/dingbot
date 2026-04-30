@@ -1,0 +1,76 @@
+[tool.poetry]
+name = "ding-robot-v3"
+version = "3.0.0"
+description = "钉钉K8s运维机器人 - 重构版"
+authors = ["DevOps Team"]
+readme = "README.md"
+package-mode = false
+
+[tool.poetry.dependencies]
+python = ">=3.11,<3.14"
+# Web framework
+fastapi = "^0.115.0"
+uvicorn = {version = "^0.34.0", extras = ["standard"]}
+# Data validation & settings
+pydantic = "^2.10.0"
+pydantic-settings = "^2.7.0"
+python-dotenv = "^1.0.0"
+# Database
+sqlalchemy = "^2.0.0"
+aiosqlite = "^0.21.0"
+# LLM
+litellm = "^1.60.0"
+# MCP
+mcp = "^1.6.0"
+# Scheduler
+apscheduler = "^3.10.0"
+# Auth & Security
+python-jose = {version = "^3.3.0", extras = ["cryptography"]}
+passlib = {version = "^1.7.4", extras = ["bcrypt"]}
+# K8s
+kubernetes = "^31.0.0"
+# Alibaba Cloud ECS
+alibabacloud-ecs20140526 = "^3.0.0"
+alibabacloud-tea-openapi = "^0.3.0"
+# DingTalk
+httpx = "^0.28.0"
+# SSE
+sse-starlette = "^2.0.0"
+# Logging
+loguru = "^0.7.0"
+# Utils
+aiofiles = "^24.1.0"
+greenlet = "^3.5.0"
+bcrypt = ">=4.0.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.0"
+pytest-asyncio = "^0.25.0"
+httpx = "^0.28.0"
+black = "^24.0.0"
+ruff = "^0.8.0"
+mypy = "^1.14.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
