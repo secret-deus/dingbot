@@ -290,7 +290,6 @@ coverage/
 # Docker
 Dockerfile.local
 docker-compose.override.yml
-.dockerignore
 
 # =============================================================================
 # 项目特定的忽略
@@ -333,6 +332,10 @@ core.*
 test_data/
 mock_data/
 sample_data/
+backend-v2/backend-v2/
+
+# 前端构建产物
+backend-v2/static/spa/
 
 # 巡检报告和运维数据
 project_document/reports/
@@ -381,8 +384,15 @@ vulnerability_scan/
 python_backend/venv/
 frontend/node_modules/
 
-# Kiro IDE 相关文件
+# IDE / Agent 本地文件
+.claude/
+.qoder/
+.specstory/
 .kiro/
+AGENTS.md
+agents.md
+agent.md
+GEMINI.md
 
 CLAUDE.md
 QWEN.md
@@ -391,16 +401,31 @@ QWEN.md
 config/
 
 # 项目元数据 JSON 需要纳入版本控制；运行时 JSON 仍默认忽略
-!frontend-v2/package.json
-!frontend-v2/package-lock.json
+!frontend-v3/package.json
+!frontend-v3/package-lock.json
+!frontend-v3/tsconfig.json
+!frontend-v3/tsconfig.node.json
 
 # 运行时配置只提交示例，不提交本地密钥/环境配置
 !config/
 config/*
 !config/*.example.json
 !config/README.md
+!config/tool_catalog.json
 backend/config/*
 !backend/config/*.example.json
 !backend/config/README.md
+
+# ToolSearch MCP package metadata is source, not runtime config.
+!mcp-servers/
+!mcp-servers/toolsearch/
+!mcp-servers/toolsearch/package.json
+!mcp-servers/toolsearch/package-lock.json
+!mcp-servers/toolsearch/tsconfig.json
+
+# Docker build context files are source.
+!.dockerignore
+!backend-v2/.dockerignore
+!frontend-v3/.dockerignore
 
 !.gitignore

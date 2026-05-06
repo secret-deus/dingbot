@@ -1,1 +1,0 @@
-import{G as l,r as s,U as r}from"./index-D3Px48V5.js";const c=l("mcp",()=>{const t=s([]),o=s(!1);async function e(){o.value=!0;try{const a=await r.list();t.value=a.tools}finally{o.value=!1}}return{tools:t,loading:o,fetchTools:e}});export{c as u};
