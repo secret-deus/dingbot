@@ -10,46 +10,42 @@
     "enable_cache": true,
     "cache_timeout": 300000
   },
+  "builtin": {
+    "k8s": {
+      "enabled": true,
+      "kubeconfig_path": null,
+      "namespace": "default",
+      "in_cluster": false,
+      "knowledge_graph_path": "backend-v2/data/k8s_knowledge_graph.json",
+      "prometheus_base_url": null
+    },
+    "ecs": {
+      "enabled": false,
+      "access_key_id": null,
+      "access_key_secret": null,
+      "region_id": "cn-hangzhou"
+    }
+  },
   "servers": [
     {
-      "name": "k8s-mcp",
-      "type": "sse",
-      "implementation": "builtin",
+      "name": "toolsearch",
+      "type": "stdio",
+      "implementation": "local",
       "enabled": false,
-      "host": "localhost",
-      "port": 8766,
-      "path": "/events",
-      "timeout": 600,
-      "retry_attempts": 3,
-      "retry_delay": 1,
+      "command": "node",
+      "args": [
+        "mcp-servers/toolsearch/dist/src/index.js"
+      ],
+      "cwd": ".",
+      "env": {
+        "TOOL_CATALOG_PATH": "config/tool_catalog.json"
+      },
+      "timeout": 60,
       "enabled_tools": [
-        "k8s-get-pods",
-        "k8s-get-services",
-        "k8s-get-deployments",
-        "k8s-get-nodes",
-        "k8s-get-logs",
-        "k8s-describe-pod",
-        "k8s-get-events",
-        "k8s-relation-query",
-        "k8s-cluster-summary",
-        "k8s-resource-analysis-report"
-      ]
-    },
-    {
-      "name": "ecs-sse-server",
-      "type": "sse",
-      "implementation": "builtin",
-      "enabled": false,
-      "host": "localhost",
-      "port": 8002,
-      "path": "/events",
-      "timeout": 600,
-      "retry_attempts": 3,
-      "retry_delay": 1,
-      "enabled_tools": [
-        "ecs-list-instances",
-        "ecs-describe-instance-monitor-data",
-        "ecs-inspect"
+        "toolsearch",
+        "tool_get",
+        "tool_categories",
+        "tool_reload_catalog"
       ]
     }
   ],

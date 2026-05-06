@@ -27,6 +27,7 @@ class UpdateTaskRequest(BaseModel):
     name: Optional[str] = None
     cron_expr: Optional[str] = None
     prompt: Optional[str] = None
+    notify_dingtalk: Optional[bool] = None
     status: Optional[str] = None
 
 
@@ -44,6 +45,7 @@ async def list_tasks(
         {"id": t.id, "name": t.name, "cron_expr": t.cron_expr, "prompt": t.prompt,
          "skill_id": t.skill_id, "notify_dingtalk": t.notify_dingtalk,
          "status": t.status.value, "last_run_at": str(t.last_run_at) if t.last_run_at else None,
+         "last_result": t.last_result,
          "created_at": str(t.created_at)}
         for t in tasks
     ]
@@ -58,6 +60,7 @@ async def create_task(
     repo = TaskRepository(db)
     task = await repo.create_task(req.name, req.cron_expr, req.prompt, req.skill_id, req.notify_dingtalk)
     await db.commit()
+    await _sync_scheduler_jobs()
     return {"id": task.id, "name": task.name, "status": task.status.value}
 
 
@@ -78,12 +81,15 @@ async def update_task(
         task.cron_expr = req.cron_expr
     if req.prompt:
         task.prompt = req.prompt
+    if req.notify_dingtalk is not None:
+        task.notify_dingtalk = req.notify_dingtalk
     if req.status:
         try:
             task.status = TaskStatus(req.status)
         except ValueError:
             raise HTTPException(400, f"无效状态: {req.status}")
     await db.commit()
+    await _sync_scheduler_jobs()
     return {"id": task.id, "status": task.status.value}
 
 
@@ -99,6 +105,21 @@ async def delete_task(
         raise HTTPException(404, "任务不存在")
     await repo.delete(task)
     await db.commit()
+    await _sync_scheduler_jobs()
+
+
+@router.post("/tasks/{task_id}/run")
+async def run_task_once(
+    task_id: str,
+    _user: dict = Depends(require_operator),
+):
+    runner = _scheduler_runner()
+    if runner is None:
+        raise HTTPException(503, "调度器未启用")
+    try:
+        return await runner.run_task_once(task_id, manual=True)
+    except KeyError:
+        raise HTTPException(404, "任务不存在")
 
 
 @router.get("/tasks/{task_id}/executions")
@@ -117,6 +138,18 @@ async def list_executions(
     return [
         {"id": e.id, "status": e.status, "started_at": str(e.started_at),
          "finished_at": str(e.finished_at) if e.finished_at else None,
-         "error": e.error}
+         "result": e.result, "error": e.error}
         for e in execs
     ]
+
+
+def _scheduler_runner():
+    from app.core.deps import _get_app_state
+
+    return _get_app_state().get("scheduler_runner")
+
+
+async def _sync_scheduler_jobs() -> None:
+    runner = _scheduler_runner()
+    if runner is not None:
+        await runner.sync_jobs()

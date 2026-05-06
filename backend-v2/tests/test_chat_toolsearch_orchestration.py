@@ -1,0 +1,706 @@
+from __future__ import annotations
+
+import json
+
+import pytest
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+from app.db.models import Base, MessageRole, Session
+from app.mcp.policy import ToolCatalogPolicy
+from app.services.chat_service import ChatOrchestrator
+
+
+@pytest.mark.asyncio
+async def test_chat_uses_toolsearch_before_exposing_real_tools(tmp_path):
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'chat.db'}")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session:
+        chat_session = Session(title="toolsearch orchestration")
+        session.add(chat_session)
+        await session.flush()
+
+        fake_chat = _FakeChat()
+        orchestrator = ChatOrchestrator(
+            db=session,
+            chat_service=fake_chat,
+            mcp_manager=_FakeMCP(ToolCatalogPolicy(str(_catalog(tmp_path)))),
+            current_user={"username": "operator", "role": "operator"},
+        )
+
+        events = [
+            event
+            async for event in orchestrator.handle_message(chat_session.id, "帮我看 default pod 列表")
+        ]
+
+        assert fake_chat.tool_names_by_call[0] == ["k8s-get-pods", "tool_categories", "tool_get", "toolsearch"]
+        assert "k8s-get-pods" in fake_chat.tool_names_by_call[1]
+        assert events[-1]["type"] == "done"
+        assert any(
+            event["type"] == "tool_result"
+            and isinstance(event["result"].get("result"), dict)
+            and event["result"]["result"].get("count") == 0
+            for event in events
+        )
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_chat_can_disable_tool_context_for_one_message(tmp_path):
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'chat-no-tools.db'}")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session:
+        chat_session = Session(title="no tool context")
+        session.add(chat_session)
+        await session.flush()
+
+        fake_chat = _NoToolChat()
+        orchestrator = ChatOrchestrator(
+            db=session,
+            chat_service=fake_chat,
+            mcp_manager=_FakeMCP(ToolCatalogPolicy(str(_catalog(tmp_path)))),
+            current_user={"username": "operator", "role": "operator"},
+        )
+
+        events = [
+            event
+            async for event in orchestrator.handle_message(
+                chat_session.id,
+                "只用已有上下文回答",
+                tool_context_enabled=False,
+            )
+        ]
+
+        assert fake_chat.tool_names_by_call == [[]]
+        assert events[-1]["type"] == "done"
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_discovery_only_prompt_does_not_expose_real_tools_after_toolsearch(tmp_path):
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'chat-discovery-only.db'}")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session:
+        chat_session = Session(title="discovery only")
+        session.add(chat_session)
+        await session.flush()
+
+        fake_chat = _DiscoveryOnlyChat()
+        orchestrator = ChatOrchestrator(
+            db=session,
+            chat_service=fake_chat,
+            mcp_manager=_FakeMCP(ToolCatalogPolicy(str(_catalog(tmp_path)))),
+            current_user={"username": "operator", "role": "operator"},
+        )
+
+        events = [
+            event
+            async for event in orchestrator.handle_message(
+                chat_session.id,
+                "只搜索一下 pod 相关工具，先不要执行具体 K8s 工具",
+            )
+        ]
+
+        assert fake_chat.tool_names_by_call[0] == ["tool_categories", "tool_get", "toolsearch"]
+        assert fake_chat.tool_names_by_call[1] == ["tool_categories", "tool_get", "toolsearch"]
+        assert all("k8s-get-pods" not in names for names in fake_chat.tool_names_by_call)
+        assert any(event["type"] == "tool_result" for event in events)
+        assert events[-1]["type"] == "done"
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_build_messages_strips_historical_tool_calls(tmp_path):
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'chat-history.db'}")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session:
+        chat_session = Session(title="history")
+        session.add(chat_session)
+        await session.flush()
+
+        orchestrator = ChatOrchestrator(db=session, chat_service=_NoToolChat(), mcp_manager=None)
+        await orchestrator.message_repo.add_message(chat_session.id, MessageRole.USER, "查看 pod", 1)
+        await orchestrator.message_repo.add_message(
+            chat_session.id,
+            MessageRole.ASSISTANT,
+            "工具检索没有收敛到可执行结果",
+            2,
+            tool_calls=[
+                {
+                    "id": "call-old",
+                    "type": "function",
+                    "function": {"name": "toolsearch", "arguments": "{}"},
+                }
+            ],
+        )
+        await session.commit()
+
+        messages = await orchestrator._build_messages(chat_session.id)
+
+        assert messages == [
+            {"role": "user", "content": "查看 pod"},
+            {"role": "assistant", "content": "工具检索没有收敛到可执行结果"},
+        ]
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_cluster_status_intent_seeds_k8s_anchor_tools(tmp_path):
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'chat-k8s-anchor.db'}")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session:
+        chat_session = Session(title="cluster anchor tools")
+        session.add(chat_session)
+        await session.flush()
+
+        fake_chat = _NoToolChat()
+        orchestrator = ChatOrchestrator(
+            db=session,
+            chat_service=fake_chat,
+            mcp_manager=_K8SAnchorMCP(),
+            current_user={"username": "operator", "role": "operator"},
+        )
+
+        events = [
+            event
+            async for event in orchestrator.handle_message(chat_session.id, "查看集群状态")
+        ]
+
+        first_tool_names = fake_chat.tool_names_by_call[0]
+        assert "toolsearch" in first_tool_names
+        assert "tool_get" in first_tool_names
+        assert "tool_categories" in first_tool_names
+        assert "k8s-cluster-summary" in first_tool_names
+        assert "k8s-get-pods" in first_tool_names
+        assert "k8s-get-deployments" in first_tool_names
+        assert "k8s-get-nodes" in first_tool_names
+        assert "k8s-get-events" in first_tool_names
+        assert events[-1]["type"] == "done"
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_chat_returns_fallback_when_tool_fails_without_model_text(tmp_path):
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'chat-tool-error.db'}")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session:
+        chat_session = Session(title="tool error fallback")
+        session.add(chat_session)
+        await session.flush()
+
+        orchestrator = ChatOrchestrator(
+            db=session,
+            chat_service=_ToolErrorChat(),
+            mcp_manager=_UnavailableToolMCP(),
+            current_user={"username": "operator", "role": "operator"},
+        )
+
+        events = [
+            event
+            async for event in orchestrator.handle_message(chat_session.id, "查看集群状态")
+        ]
+
+        fallback = "".join(event.get("content", "") for event in events if event["type"] == "token")
+        assert "k8s-cluster-summary 当前不可用" in fallback
+        assert events[-1]["type"] == "done"
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_chat_returns_k8s_unavailable_when_discovery_finds_disabled_tool(tmp_path):
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'chat-discovery-disabled.db'}")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session:
+        chat_session = Session(title="disabled discovery fallback")
+        session.add(chat_session)
+        await session.flush()
+
+        fake_chat = _UnavailableDiscoveryLoopChat()
+        orchestrator = ChatOrchestrator(
+            db=session,
+            chat_service=fake_chat,
+            mcp_manager=_UnavailableDiscoveryMCP(),
+            current_user={"username": "operator", "role": "operator"},
+        )
+
+        events = [
+            event
+            async for event in orchestrator.handle_message(chat_session.id, "查看集群状态")
+        ]
+
+        fallback = "".join(event.get("content", "") for event in events if event["type"] == "token")
+        assert "当前 Kubernetes 工具不可用" in fallback
+        assert "Kubernetes API 不可用" in fallback
+        assert events[-1]["type"] == "done"
+        assert all(event["type"] != "error" for event in events)
+        assert all("k8s-cluster-summary" not in names for names in fake_chat.tool_names_by_call)
+        assert any(
+            event["type"] == "tool_result"
+            and json.loads(event["result"]["result"])["results"][0]["available"] is False
+            for event in events
+        )
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_chat_summarizes_successful_tool_results_when_model_loops(tmp_path):
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'chat-loop-summary.db'}")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session:
+        chat_session = Session(title="loop summary")
+        session.add(chat_session)
+        await session.flush()
+
+        orchestrator = ChatOrchestrator(
+            db=session,
+            chat_service=_ConcreteToolLoopChat(),
+            mcp_manager=_ConcreteToolMCP(),
+            current_user={"username": "operator", "role": "operator"},
+        )
+
+        events = [
+            event
+            async for event in orchestrator.handle_message(chat_session.id, "查看集群所有pod")
+        ]
+
+        fallback = "".join(event.get("content", "") for event in events if event["type"] == "token")
+        assert "工具调用轮次已达到上限" in fallback
+        assert "`k8s-get-pods`: count=2" in fallback
+        assert "default/web-1:Running" in fallback
+        assert events[-1]["type"] == "done"
+
+    await engine.dispose()
+
+
+class _FakeChat:
+    def __init__(self):
+        self.tool_names_by_call: list[list[str]] = []
+
+    async def stream_chat(self, messages, tools=None):
+        tool_names = sorted(tool["name"] for tool in (tools or []))
+        self.tool_names_by_call.append(tool_names)
+
+        call_index = len(self.tool_names_by_call)
+        if call_index == 1:
+            yield {
+                "type": "tool_call",
+                "tool_call": {
+                    "id": "call-toolsearch",
+                    "type": "function",
+                    "function": {
+                        "name": "toolsearch",
+                        "arguments": json.dumps({"query": "pod 列表", "limit": 1}),
+                    },
+                },
+            }
+        elif call_index == 2:
+            yield {
+                "type": "tool_call",
+                "tool_call": {
+                    "id": "call-k8s",
+                    "type": "function",
+                    "function": {
+                        "name": "k8s-get-pods",
+                        "arguments": json.dumps({"namespace": "default"}),
+                    },
+                },
+            }
+        else:
+            yield {"type": "token", "content": "default 命名空间暂无 Pod。"}
+        yield {"type": "done"}
+
+
+class _NoToolChat:
+    def __init__(self):
+        self.tool_names_by_call: list[list[str]] = []
+
+    async def stream_chat(self, messages, tools=None):
+        self.tool_names_by_call.append(sorted(tool["name"] for tool in (tools or [])))
+        yield {"type": "token", "content": "已按当前上下文回答。"}
+        yield {"type": "done"}
+
+
+class _DiscoveryOnlyChat:
+    def __init__(self):
+        self.tool_names_by_call: list[list[str]] = []
+
+    async def stream_chat(self, messages, tools=None):
+        self.tool_names_by_call.append(sorted(tool["name"] for tool in (tools or [])))
+        if len(self.tool_names_by_call) == 1:
+            yield {
+                "type": "tool_call",
+                "tool_call": {
+                    "id": "call-toolsearch",
+                    "type": "function",
+                    "function": {
+                        "name": "toolsearch",
+                        "arguments": json.dumps({"query": "pod 工具", "limit": 1}),
+                    },
+                },
+            }
+        else:
+            yield {"type": "token", "content": "已找到 pod 相关候选工具。"}
+        yield {"type": "done"}
+
+
+class _ToolErrorChat:
+    async def stream_chat(self, messages, tools=None):
+        yield {
+            "type": "tool_call",
+            "tool_call": {
+                "id": "call-k8s-summary",
+                "type": "function",
+                "function": {
+                    "name": "k8s-cluster-summary",
+                    "arguments": "{}",
+                },
+            },
+        }
+        yield {"type": "done"}
+
+
+class _ConcreteToolLoopChat:
+    async def stream_chat(self, messages, tools=None):
+        yield {
+            "type": "tool_call",
+            "tool_call": {
+                "id": "call-k8s-pods",
+                "type": "function",
+                "function": {
+                    "name": "k8s-get-pods",
+                    "arguments": json.dumps({"namespace": "all"}),
+                },
+            },
+        }
+        yield {"type": "done"}
+
+
+class _UnavailableDiscoveryLoopChat:
+    def __init__(self):
+        self.tool_names_by_call: list[list[str]] = []
+
+    async def stream_chat(self, messages, tools=None):
+        self.tool_names_by_call.append(sorted(tool["name"] for tool in (tools or [])))
+        yield {
+            "type": "tool_call",
+            "tool_call": {
+                "id": f"call-toolsearch-{len(self.tool_names_by_call)}",
+                "type": "function",
+                "function": {
+                    "name": "toolsearch",
+                    "arguments": json.dumps({"query": "集群状态", "limit": 1}),
+                },
+            },
+        }
+        yield {"type": "done"}
+
+
+class _AllowDecision:
+    allowed = True
+    reason = "allowed"
+    requires_confirmation = False
+
+    def to_audit_details(self, arguments):
+        return {"argumentPreview": arguments}
+
+
+class _UnavailableToolMCP:
+    async def list_tools(self, skill_id=None):
+        return [
+            {
+                "name": "k8s-cluster-summary",
+                "description": "集群概览",
+                "inputSchema": {"type": "object", "properties": {}, "required": []},
+                "server": "builtin",
+                "available": False,
+                "unavailableReason": "未找到 kubeconfig",
+            }
+        ]
+
+    def authorize_tool_call(self, name, user, arguments=None):
+        return _AllowDecision()
+
+    async def call_tool(self, name, arguments, user=None):
+        return {
+            "error": "tool_unavailable",
+            "reason": "kubeconfig_not_configured",
+            "message": "未找到 kubeconfig",
+            "tool": name,
+        }
+
+
+class _ConcreteToolMCP:
+    async def list_tools(self, skill_id=None):
+        return [
+            {
+                "name": "k8s-get-pods",
+                "description": "获取 Pod 列表",
+                "inputSchema": {"type": "object", "properties": {}, "required": []},
+                "server": "builtin",
+                "available": True,
+            }
+        ]
+
+    def authorize_tool_call(self, name, user, arguments=None):
+        return _AllowDecision()
+
+    async def call_tool(self, name, arguments, user=None):
+        if name == "k8s-get-pods":
+            return {
+                "result": {
+                    "count": 2,
+                    "items": [
+                        {"namespace": "default", "name": "web-1", "status": "Running"},
+                        {"namespace": "kube-system", "name": "coredns", "status": "Running"},
+                    ],
+                }
+            }
+        return {"error": f"unexpected tool {name}"}
+
+
+class _UnavailableDiscoveryMCP:
+    async def list_tools(self, skill_id=None):
+        return [
+            {
+                "name": "toolsearch",
+                "description": "Search tools",
+                "inputSchema": {"type": "object", "properties": {}, "required": []},
+                "server": "toolsearch",
+            },
+            {
+                "name": "tool_get",
+                "description": "Get tool",
+                "inputSchema": {"type": "object", "properties": {}, "required": []},
+                "server": "toolsearch",
+            },
+            {
+                "name": "tool_categories",
+                "description": "Tool categories",
+                "inputSchema": {"type": "object", "properties": {}, "required": []},
+                "server": "toolsearch",
+            },
+            {
+                "name": "k8s-cluster-summary",
+                "description": "集群概览",
+                "inputSchema": {"type": "object", "properties": {}, "required": []},
+                "server": "builtin",
+                "available": False,
+                "unavailableReason": "Kubernetes API 不可用: connection refused",
+            },
+        ]
+
+    def authorize_tool_call(self, name, user, arguments=None):
+        return _AllowDecision()
+
+    async def call_tool(self, name, arguments, user=None):
+        if name == "toolsearch":
+            return {
+                "result": json.dumps(
+                    {
+                        "query": arguments["query"],
+                        "total": 1,
+                        "results": [
+                            {
+                                "name": "k8s-cluster-summary",
+                                "executionPolicy": "executable",
+                                "dangerLevel": "read",
+                            }
+                        ],
+                    }
+                )
+            }
+        return {"error": f"unexpected tool {name}"}
+
+
+class _K8SAnchorMCP:
+    async def list_tools(self, skill_id=None):
+        return [
+            {
+                "name": "toolsearch",
+                "description": "Search tools",
+                "inputSchema": {"type": "object", "properties": {}, "required": []},
+                "server": "toolsearch",
+            },
+            {
+                "name": "tool_get",
+                "description": "Get tool",
+                "inputSchema": {"type": "object", "properties": {}, "required": []},
+                "server": "toolsearch",
+            },
+            {
+                "name": "tool_categories",
+                "description": "Tool categories",
+                "inputSchema": {"type": "object", "properties": {}, "required": []},
+                "server": "toolsearch",
+            },
+            {
+                "name": "k8s-cluster-summary",
+                "description": "集群概览",
+                "inputSchema": {"type": "object", "properties": {}, "required": []},
+                "server": "builtin",
+                "available": True,
+            },
+            {
+                "name": "k8s-get-nodes",
+                "description": "获取 Node 列表",
+                "inputSchema": {"type": "object", "properties": {}, "required": []},
+                "server": "builtin",
+                "available": True,
+            },
+            {
+                "name": "k8s-get-pods",
+                "description": "获取 Pod 列表",
+                "inputSchema": {"type": "object", "properties": {}, "required": []},
+                "server": "builtin",
+                "available": True,
+            },
+            {
+                "name": "k8s-get-deployments",
+                "description": "获取 Deployment 列表",
+                "inputSchema": {"type": "object", "properties": {}, "required": []},
+                "server": "builtin",
+                "available": True,
+            },
+            {
+                "name": "k8s-get-services",
+                "description": "获取 Service 列表",
+                "inputSchema": {"type": "object", "properties": {}, "required": []},
+                "server": "builtin",
+                "available": True,
+            },
+            {
+                "name": "k8s-get-events",
+                "description": "获取事件列表",
+                "inputSchema": {"type": "object", "properties": {}, "required": []},
+                "server": "builtin",
+                "available": True,
+            },
+            {
+                "name": "k8s-get-cluster-metrics",
+                "description": "获取集群指标",
+                "inputSchema": {"type": "object", "properties": {}, "required": []},
+                "server": "builtin",
+                "available": True,
+            },
+        ]
+
+    def authorize_tool_call(self, name, user, arguments=None):
+        return _AllowDecision()
+
+    async def call_tool(self, name, arguments, user=None):
+        return {"error": f"unexpected tool {name}"}
+
+
+class _FakeMCP:
+    def __init__(self, policy: ToolCatalogPolicy):
+        self.policy = policy
+        self.tools = [
+            {
+                "name": "toolsearch",
+                "description": "Search tools",
+                "inputSchema": {"type": "object", "properties": {}, "required": []},
+                "server": "toolsearch",
+            },
+            {
+                "name": "tool_get",
+                "description": "Get tool",
+                "inputSchema": {"type": "object", "properties": {}, "required": []},
+                "server": "toolsearch",
+            },
+            {
+                "name": "tool_categories",
+                "description": "Tool categories",
+                "inputSchema": {"type": "object", "properties": {}, "required": []},
+                "server": "toolsearch",
+            },
+            {
+                "name": "k8s-get-pods",
+                "description": "Get pods",
+                "inputSchema": {"type": "object", "properties": {}, "required": []},
+                "server": "builtin",
+            },
+        ]
+
+    async def list_tools(self, skill_id=None):
+        return self.tools
+
+    def authorize_tool_call(self, name, user, arguments=None):
+        return self.policy.authorize(name, user, arguments)
+
+    async def call_tool(self, name, arguments, user=None):
+        if name == "toolsearch":
+            return {
+                "result": json.dumps(
+                    {
+                        "query": arguments["query"],
+                        "total": 1,
+                        "results": [
+                            {
+                                "name": "k8s-get-pods",
+                                "executionPolicy": "executable",
+                                "dangerLevel": "read",
+                            }
+                        ],
+                    }
+                )
+            }
+        if name == "k8s-get-pods":
+            return {"result": {"count": 0, "items": []}}
+        return {"error": f"unexpected tool {name}"}
+
+
+def _catalog(tmp_path):
+    path = tmp_path / "tool_catalog.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": "test",
+                "tools": [
+                    {
+                        "name": "k8s-get-pods",
+                        "title": "获取 Pod 列表",
+                        "category": "kubernetes",
+                        "description": "获取 Kubernetes Pod 列表",
+                        "tags": ["k8s", "pod"],
+                        "dangerLevel": "read",
+                        "server": "builtin",
+                        "executionPolicy": "executable",
+                        "inputSchema": {"type": "object", "properties": {}, "required": []},
+                        "examples": [],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path

@@ -1,20 +1,31 @@
 <template>
   <div class="tool-calls">
     <div v-for="call in calls" :key="call.id" class="tool-call">
-      <n-tag size="small" type="info">🔧 {{ call.function.name }}</n-tag>
+      <n-tag size="small" type="info">{{ call.function.name }}</n-tag>
       <details>
         <summary style="cursor: pointer; font-size: 12px; color: #888; margin-top: 4px">参数</summary>
         <pre class="args">{{ formatArgs(call.function.arguments) }}</pre>
       </details>
+      <ToolCandidateCards v-if="toolSearchPayload(call.id)" :payload="toolSearchPayload(call.id)!" />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { NTag } from 'naive-ui'
-import type { ToolCall } from '@/types'
+import ToolCandidateCards from './ToolCandidateCards.vue'
+import type { ToolCall, ToolResult, ToolSearchResponse } from '@/types'
 
-defineProps<{ calls: ToolCall[] }>()
+const props = defineProps<{ calls: ToolCall[]; results?: ToolResult[] }>()
+
+const resultsByCallId = computed(() => {
+  const map = new Map<string, ToolResult>()
+  for (const result of props.results || []) {
+    map.set(result.tool_call_id, result)
+  }
+  return map
+})
 
 function formatArgs(argsStr: string): string {
   try {
@@ -23,10 +34,37 @@ function formatArgs(argsStr: string): string {
     return argsStr
   }
 }
+
+function toolSearchPayload(callId: string): ToolSearchResponse | null {
+  const toolResult = resultsByCallId.value.get(callId)
+  if (!toolResult || toolResult.tool_name !== 'toolsearch') {
+    return null
+  }
+
+  const payload = unwrapToolPayload(toolResult.result)
+  if (payload && typeof payload === 'object' && ('results' in payload || 'reason' in payload)) {
+    return payload as ToolSearchResponse
+  }
+  return null
+}
+
+function unwrapToolPayload(value: unknown): unknown {
+  if (value && typeof value === 'object' && 'result' in value) {
+    return unwrapToolPayload((value as { result: unknown }).result)
+  }
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value)
+    } catch {
+      return value
+    }
+  }
+  return value
+}
 </script>
 
 <style scoped>
 .tool-calls { margin-top: 8px; }
-.tool-call { margin-bottom: 4px; }
+.tool-call { margin-bottom: 8px; }
 .args { background: #1a1a1a; padding: 6px; border-radius: 4px; font-size: 12px; overflow-x: auto; margin-top: 2px; }
 </style>

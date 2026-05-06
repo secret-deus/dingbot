@@ -32,6 +32,7 @@
       <n-card title="快捷操作" size="small">
         <n-space vertical>
           <n-button block @click="$router.push('/chat')">开始对话</n-button>
+          <n-button block @click="$router.push('/llm-config')">LLM 配置</n-button>
           <n-button block @click="refresh">刷新状态</n-button>
         </n-space>
       </n-card>

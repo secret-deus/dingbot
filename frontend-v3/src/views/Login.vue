@@ -2,11 +2,21 @@
   <div style="display: flex; justify-content: center; align-items: center; height: 100vh; background: #1a1a1a">
     <n-card title="钉钉K8s运维机器人" style="width: 380px">
       <n-form ref="formRef" :model="form" :rules="rules" @submit.prevent="onLogin">
-        <n-form-item label="用户名" path="username">
-          <n-input v-model:value="form.username" placeholder="请输入用户名" />
+        <n-form-item label="用户名" path="username" :label-props="{ for: 'login-username' }">
+          <n-input
+            v-model:value="form.username"
+            placeholder="请输入用户名"
+            :input-props="{ id: 'login-username', name: 'username', autocomplete: 'username' }"
+          />
         </n-form-item>
-        <n-form-item label="密码" path="password">
-          <n-input v-model:value="form.password" type="password" placeholder="请输入密码" show-password-on="click" />
+        <n-form-item label="密码" path="password" :label-props="{ for: 'login-password' }">
+          <n-input
+            v-model:value="form.password"
+            type="password"
+            placeholder="请输入密码"
+            show-password-on="click"
+            :input-props="{ id: 'login-password', name: 'password', autocomplete: 'current-password' }"
+          />
         </n-form-item>
         <n-button type="primary" block :loading="loading" attr-type="submit">登录</n-button>
       </n-form>

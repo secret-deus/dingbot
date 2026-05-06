@@ -1,97 +1,131 @@
-# 钉钉K8s运维机器人
+# 钉钉 K8s 运维机器人
 
-一个基于钉钉的智能Kubernetes运维机器人，支持通过自然语言进行K8s集群管理和运维操作。
+面向 Kubernetes / ECS 运维场景的智能助手。当前仓库已进入 v3 重构线：后端使用 FastAPI，前端使用 Vue 3，工具层通过 MCP 管理，旧实现集中归档在 `archived/`。
 
-## ✨ 核心特性
+## 当前状态
 
-- 🤖 **智能对话**: 自然语言交互，理解运维意图
-- ⚙️ **K8s管理**: Pod、Service、Deployment等资源管理
-- 📊 **实时监控**: 集群状态、资源使用情况监控
-- 🔧 **MCP协议**: 可扩展的工具系统
-- 🌐 **Web界面**: 现代化Vue3聊天界面，流式响应体验
-- 💾 **会话持久化**: 对话历史自动保存
-- 🔐 **数据安全**: IP/主机名/人名脱敏
+可用主线：
 
-## 🚀 快速开始
+- `backend-v2/`：FastAPI API、登录认证、会话和消息持久化、SSE 聊天、MCP 工具聚合、审计日志、定时任务 CRUD。
+- `frontend-v3/`：Vue 3 + Vite + Naive UI，包含登录、仪表盘、聊天、MCP 工具、定时任务、权限/审计页面。
+- `config/`：只提交 `*.example.json` 和说明文档，真实运行时配置留在本地。
+- `mcp-servers/toolsearch/`：本地 stdio MCP server，用于搜索 21 个历史运维工具目录和当前可执行工具。
+- `project_document/specs/`：spec 驱动开发文档和交付计划。
+- `archived/`：v2 后端、旧前端、独立 K8s/ECS MCP 工程和历史测试。
 
-### 1. 安装依赖
+仍在建设中的主线：
+
+- ToolSearch MCP：已恢复旧版 21 个运维工具目录，并将工具发现、执行、权限、确认、审计拆开；后续继续恢复 `catalog_only` 工具的真实执行能力。
+- Scheduler runner：已接入持久化任务执行、手动运行、执行历史和前端状态展示。
+- DingTalk webhook：已接入 markdown 通知和签名 webhook，调度任务可按任务开关发送通知。
+- 回归测试：已覆盖公共端点、MCP stdio、ToolSearch 编排、工具治理、审计、调度和通知 mock；后续继续补浏览器和真实环境冒烟。
+
+## 本地启动
+
+后端：
 
 ```bash
-# Python 需使用 3.11-3.13；如果 Poetry 误用了 3.14，请先切回 3.13
-poetry env use $(which python3.13)
-
-# Python依赖 (使用Poetry)
+cd backend-v2
 poetry install
-
-# 前端依赖 (仅开发时需要；推荐 Node 20/22 LTS，见 .nvmrc)
-cd frontend-v2 && npm install
+poetry run uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-### 2. 配置
+前端开发服务器：
 
 ```bash
-cp backend/config.env.example backend/config.env
-# 编辑 config.env 配置 LLM API Key 等
+cd frontend-v3
+npm install
+# 如果后端不在默认 8000 端口，可设置 VITE_API_TARGET，例如:
+# VITE_API_TARGET=http://127.0.0.1:8001 npm run dev
+npm run dev
+```
 
-# JSON 运行时配置只保留本地文件，不提交真实密钥
+访问地址：
+
+- 后端健康检查：http://127.0.0.1:8000/health
+- 后端 API 文档：http://127.0.0.1:8000/docs
+- 前端开发页：http://127.0.0.1:3000
+
+默认开发登录账号会在后端首次启动且无管理员时创建：
+
+```text
+admin / admin
+```
+
+## 构建与验证
+
+后端测试：
+
+```bash
+cd backend-v2
+poetry run pytest
+```
+
+前端类型检查与构建：
+
+```bash
+cd frontend-v3
+npm run build
+```
+
+ToolSearch MCP：
+
+```bash
+cd mcp-servers/toolsearch
+npm install
+npm run catalog:generate
+npm test
+```
+
+`npm run build` 默认把前端产物输出到 `backend-v2/static/spa`，用于后端集成式部署。Docker 前端镜像会单独构建到容器内的 `/usr/share/nginx/html/spa`。
+
+Docker Compose：
+
+```bash
+cp backend-v2/.env.example backend-v2/.env
+docker compose up --build
+```
+
+Compose 模式下：
+
+- 后端：http://127.0.0.1:8000
+- 前端：http://127.0.0.1:3000/spa/
+
+后端镜像会在构建阶段编译并携带 `mcp-servers/toolsearch`，所以 Docker 运行时可以直接启动 stdio ToolSearch。启用 ToolSearch 时，将 `config/mcp_config.example.json` 复制为 `config/mcp_config.json`，并把 `toolsearch.enabled` 改为 `true`。
+
+## 本地 CI 等价验证
+
+常规验证：
+
+```bash
+scripts/verify.sh
+```
+
+如果本机 Docker runtime 可用，同时验证镜像构建：
+
+```bash
+VERIFY_DOCKER_BUILD=1 scripts/verify.sh
+```
+
+## 配置策略
+
+只提交示例配置：
+
+```bash
 cp config/llm_config.example.json config/llm_config.json
 cp config/mcp_config.example.json config/mcp_config.json
 cp config/skills.example.json config/skills.json
 cp config/scheduled_tasks.example.json config/scheduled_tasks.json
 ```
 
-### 3. 启动
+真实密钥、webhook、云凭证、kubeconfig、本地数据库和日志不得提交。
 
-```bash
-# K8s / ECS 工具已并入主应用进程（backend/src/k8s_mcp、backend/src/ecs_mcp），
-# 默认通过 config/mcp_config.json 的 type=local/provider=k8s|ecs 运行，
-# 无需再单独启动 k8s-mcp / ecs-mcp。
+## 持续交付计划
 
-# 一键启动（仅后端 + 可选其他子进程；见 scripts/start_all.py）
-poetry run start-all
+后续开发按 spec 目录推进：
 
-# 或仅主服务（含构建后的前端静态资源）
-poetry run serve
-```
+- [可持续交付计划](./project_document/DELIVERY_PLAN.md)
+- [ToolSearch MCP Spec](./project_document/specs/toolsearch-mcp/tasks.md)
+- [可持续交付 Spec](./project_document/specs/sustainable-delivery/tasks.md)
 
-独立 MCP 工程已归档至 `archived/`，见 `archived/README.md`。
-
-### 4. 访问
-
-- **主页**: http://localhost:8000
-- **API文档**: http://localhost:8000/docs
-
-## 📁 项目结构
-
-```
-ding-robot/
-├── backend/
-│   └── src/
-│       ├── k8s_mcp/   # 进程内 K8s 工具（原独立 k8s-mcp）
-│       └── ecs_mcp/   # 进程内 ECS 工具（原独立 ecs-mcp）
-├── frontend-v2/       # Vue.js 3 前端
-├── config/            # 统一配置目录
-├── archived/          # 历史独立 MCP Server 工程归档
-└── project_document/  # 项目文档
-```
-
-## ⚡ 常用命令
-
-| 命令 | 功能 |
-|------|------|
-| `poetry run start-all` | 一键启动（后端等；K8s/ECS 已在主进程内） |
-| `poetry run serve` | 仅启动后端服务 |
-| `poetry run dev` | 启动开发环境（后端热重载 + `frontend-v2`） |
-| `poetry run build` | 构建前端 |
-
-## 📚 文档
-
-- **[项目状态与计划](./project_document/PROJECT_STATUS.md)** - 完整项目概述
-- **[技术架构与配置](./project_document/技术架构与配置指南.md)** - 系统架构详解
-- **[重构基线](./project_document/refactor-baseline.md)** - 当前重构目标架构与阶段计划
-- **[Chat Stream Contract](./project_document/chat-stream-contract.md)** - 前后端聊天流式协议契约
-- **[归档说明](./archived/README.md)** - 原独立 k8s-mcp / ecs-mcp
-
-## 📄 许可证
-
-MIT License
+每个交付切片都应包含：spec 更新、实现、测试、构建验证、自测记录和明确的提交范围。

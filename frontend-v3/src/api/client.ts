@@ -68,6 +68,10 @@ export const schedulerApi = {
   update: (id: string, data: Partial<ScheduledTask>) =>
     request<{ id: string }>({ method: 'patch', url: `/scheduler/tasks/${id}`, data }),
   delete: (id: string) => request<void>({ method: 'delete', url: `/scheduler/tasks/${id}` }),
+  run: (id: string) =>
+    request<{ execution_id: string; status: string; result?: string; error?: string }>({
+      method: 'post', url: `/scheduler/tasks/${id}/run`,
+    }),
   executions: (id: string, limit = 20) =>
     request<TaskExecution[]>({ method: 'get', url: `/scheduler/tasks/${id}/executions`, params: { limit } }),
 }
@@ -75,9 +79,19 @@ export const schedulerApi = {
 // --- System ---
 export const systemApi = {
   health: () => request<HealthStatus>({ method: 'get', url: '/config/health' }),
+  mcpConfig: () => request<MCPConfig>({ method: 'get', url: '/config/mcp' }),
+  updateMcpConfig: (data: {
+    k8s?: Partial<Pick<K8sMCPConfig, 'enabled' | 'kubeconfig_path' | 'namespace' | 'in_cluster'>>
+    ecs?: Partial<Pick<ECSMCPConfig, 'enabled' | 'region_id'>> & { access_key_id?: string; access_key_secret?: string }
+  }) => request<MCPConfig>({ method: 'patch', url: '/config/mcp', data }),
+  k8sKnowledgeGraph: (params?: { namespace?: string; all_namespaces?: boolean; auto_sync?: boolean }) =>
+    request<K8sKnowledgeGraph>({ method: 'get', url: '/config/k8s/knowledge-graph', params }),
+  syncK8sKnowledgeGraph: (data: { namespace?: string; all_namespaces?: boolean }) =>
+    request<K8sKnowledgeGraphSyncResult>({ method: 'post', url: '/config/k8s/knowledge-graph/sync', data }),
   llmConfig: () => request<LLMConfig>({ method: 'get', url: '/config/llm' }),
-  updateLlmConfig: (data: Partial<LLMConfig>) =>
-    request<{ updated: string[] }>({ method: 'patch', url: '/config/llm', data }),
+  updateLlmConfig: (data: Partial<LLMConfig> & { api_key?: string; provider?: Partial<LLMProviderConfig> & { api_key?: string }; provider_id?: string }) =>
+    request<{ updated: string[]; restart_required: boolean; active: boolean }>({ method: 'patch', url: '/config/llm', data }),
+  deleteLlmProvider: (id: string) => request<void>({ method: 'delete', url: `/config/llm/providers/${id}` }),
   auditLogs: (params?: { actor?: string; action?: string; limit?: number }) =>
     request<AuditLog[]>({ method: 'get', url: '/config/audit', params }),
 }
@@ -85,5 +99,7 @@ export const systemApi = {
 // Re-export types used in API signatures
 import type {
   Session, Message, MCPTool, ScheduledTask, TaskExecution,
-  AuditLog, LLMConfig, HealthStatus,
+  AuditLog, LLMConfig, LLMProviderConfig, HealthStatus,
+  MCPConfig, K8sMCPConfig, ECSMCPConfig,
+  K8sKnowledgeGraph, K8sKnowledgeGraphSyncResult,
 } from '@/types'

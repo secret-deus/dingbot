@@ -25,6 +25,8 @@ class CreateSessionRequest(BaseModel):
 class SendMessageRequest(BaseModel):
     content: str
     skill_id: Optional[str] = None
+    tool_context_enabled: bool = True
+    llm_provider_id: Optional[str] = None
 
 
 @router.get("/sessions")
@@ -91,19 +93,26 @@ async def stream_chat(
     session_id: str,
     req: SendMessageRequest,
     db: AsyncSession = Depends(get_db),
-    _user: dict = Depends(get_current_user),
+    user: dict = Depends(get_current_user),
 ):
     from app.core.deps import _get_app_state
 
     state = _get_app_state()
     orchestrator = ChatOrchestrator(
         db=db,
-        chat_service=state["chat_service"],
-        mcp_manager=state["mcp_manager"],
+        chat_service=state.get("chat_service"),
+        mcp_manager=state.get("mcp_manager"),
+        current_user=user,
     )
 
     async def _generate():
-        async for event in orchestrator.handle_message(session_id, req.content, req.skill_id):
+        async for event in orchestrator.handle_message(
+            session_id,
+            req.content,
+            req.skill_id,
+            tool_context_enabled=req.tool_context_enabled,
+            llm_provider_id=req.llm_provider_id,
+        ):
             import json
             yield {"event": event.get("type", "message"), "data": json.dumps(event, ensure_ascii=False)}
 

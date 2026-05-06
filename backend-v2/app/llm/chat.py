@@ -10,6 +10,7 @@ from litellm import acompletion
 from loguru import logger
 
 from app.core.config import get_settings
+from app.llm.config_store import LLMProviderRuntime
 from app.llm.prompts import (
     format_tool_result_as_content,
     format_tools_for_prompt,
@@ -21,18 +22,31 @@ litellm.drop_params = True
 
 
 class ChatService:
-    def __init__(self) -> None:
+    def __init__(self, provider: LLMProviderRuntime | None = None) -> None:
+        if provider:
+            self.provider_id = provider.id
+            self.model = provider.model
+            self.api_key = provider.api_key
+            self.base_url = provider.base_url
+            self.temperature = provider.temperature
+            self.max_tokens = provider.max_tokens
+            self.timeout = provider.timeout
+            self.stream = provider.stream
+            return
+
         settings = get_settings()
+        self.provider_id = "env"
         self.model = settings.llm_model
         self.api_key = settings.llm_api_key
         self.base_url = settings.llm_base_url
         self.temperature = settings.llm_temperature
         self.max_tokens = settings.llm_max_tokens
         self.timeout = settings.llm_timeout
+        self.stream = True
 
     def _build_kwargs(self, stream: bool = False) -> dict:
         kwargs: dict = {
-            "model": self.model,
+            "model": self._litellm_model(),
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
             "timeout": self.timeout,
@@ -44,8 +58,15 @@ class ChatService:
             kwargs["api_base"] = self.base_url
         return kwargs
 
-    @staticmethod
+    def _litellm_model(self) -> str:
+        if "/" in self.model:
+            return self.model
+        if self.base_url and self.provider_id in {"openai", "openai-compatible", "env"}:
+            return f"openai/{self.model}"
+        return self.model
+
     def _prepare_messages(
+        self,
         messages: list[dict],
         tools: Optional[list[dict]] = None,
     ) -> list[dict]:
@@ -55,8 +76,7 @@ class ChatService:
             if tools:
                 system_content += "\n\n" + format_tools_for_prompt(tools)
             prepared.insert(0, {"role": "system", "content": system_content})
-        settings = get_settings()
-        return truncate_messages(prepared, max_tokens=settings.llm_max_tokens)
+        return truncate_messages(prepared, max_tokens=self.max_tokens)
 
     async def stream_chat(
         self,
@@ -64,7 +84,7 @@ class ChatService:
         tools: Optional[list[dict]] = None,
     ) -> AsyncGenerator[dict, None]:
         prepared = self._prepare_messages(messages, tools)
-        kwargs = self._build_kwargs(stream=True)
+        kwargs = self._build_kwargs(stream=self.stream)
 
         if tools:
             kwargs["tools"] = self._format_tools(tools)
@@ -74,6 +94,27 @@ class ChatService:
         except Exception as e:
             logger.error("LLM 调用失败: {}", e)
             yield {"type": "error", "message": f"LLM 调用失败: {e}"}
+            return
+
+        if not self.stream:
+            choice = response.choices[0] if response.choices else None
+            message = choice.message if choice else None
+            if message and message.content:
+                yield {"type": "token", "content": message.content}
+            if message and message.tool_calls:
+                for tc in message.tool_calls:
+                    yield {
+                        "type": "tool_call",
+                        "tool_call": {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {
+                                "name": tc.function.name,
+                                "arguments": tc.function.arguments,
+                            },
+                        },
+                    }
+            yield {"type": "done"}
             return
 
         tool_calls_acc: dict[int, dict] = {}

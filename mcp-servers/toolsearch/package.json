@@ -1,0 +1,30 @@
+{
+  "name": "@ding-robot/toolsearch-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local MCP server for searching the Ding Robot operations tool catalog.",
+  "bin": {
+    "toolsearch-mcp": "dist/src/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/src/index.js",
+    "test": "npm run build && node --test dist/src/*.test.js",
+    "catalog:generate": "node scripts/generate-catalog.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "typescript": "^5.8.3"
+  },
+  "overrides": {
+    "ip-address": "^10.2.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

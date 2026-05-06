@@ -24,13 +24,25 @@ const router = createRouter({
       path: '/chat',
       name: 'Chat',
       component: () => import('@/views/Chat.vue'),
-      meta: { title: '智能对话', icon: 'chatbubbles-outline', requiresAuth: true },
+      meta: { title: '智能对话', icon: 'chatbubbles-outline', requiresAuth: true, fullBleed: true },
     },
     {
       path: '/mcp-config',
       name: 'MCPConfig',
       component: () => import('@/views/MCPConfig.vue'),
       meta: { title: 'MCP 工具', icon: 'construct-outline', requiresAuth: true },
+    },
+    {
+      path: '/knowledge-graph',
+      name: 'KnowledgeGraph',
+      component: () => import('@/views/KnowledgeGraph.vue'),
+      meta: { title: '知识图谱', icon: 'git-network-outline', requiresAuth: true },
+    },
+    {
+      path: '/llm-config',
+      name: 'LLMConfig',
+      component: () => import('@/views/LLMConfig.vue'),
+      meta: { title: 'LLM 配置', icon: 'settings-outline', requiresAuth: true },
     },
     {
       path: '/scheduler',

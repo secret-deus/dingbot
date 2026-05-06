@@ -56,11 +56,11 @@ class ExecutionRepository(BaseRepository[TaskExecution]):
         return await self.create(exe)
 
     async def finish_execution(self, exec_id: str, status: str, result: Optional[str] = None, error: Optional[str] = None) -> None:
-        from datetime import datetime
+        from app.db.models import _now
         exe = await self.get_by_id(exec_id)
         if exe:
             exe.status = status
             exe.result = result
             exe.error = error
-            exe.finished_at = datetime.utcnow()
+            exe.finished_at = _now()
             await self.session.flush()
