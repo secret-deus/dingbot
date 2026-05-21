@@ -53,6 +53,93 @@ async def health_check():
     }
 
 
+@router.get("/dashboard")
+async def dashboard_summary(_user: dict = Depends(get_current_user)):
+    from app.core.deps import _get_app_state
+
+    settings = get_settings()
+    state = _get_app_state()
+    llm_runtime = load_llm_runtime()
+    mcp_manager = state.get("mcp_manager")
+    mcp_health = await mcp_manager.health_check() if mcp_manager else {}
+    tools = await mcp_manager.list_tools() if mcp_manager else []
+    scheduler_runner = state.get("scheduler_runner")
+    scheduler = scheduler_runner.status() if scheduler_runner else {"enabled": False, "running": False, "jobs": 0}
+
+    config_path = resolve_repo_path(settings.mcp_config_path)
+    mcp_config = public_mcp_config(*read_mcp_document(config_path))
+    k8s_config = mcp_config["k8s"]
+
+    store = FileKnowledgeGraphStore(settings.k8s_knowledge_graph_path)
+    graph = store.load()
+    graph_summary = store.summarize(graph)
+    coverage = _metrics_coverage(graph)
+
+    total_tools = sum(server.get("tools", 0) for server in mcp_health.values()) or len(tools)
+    available_tools = (
+        sum(server.get("available_tools", 0) for server in mcp_health.values())
+        or len([tool for tool in tools if tool.get("available", True)])
+    )
+    unavailable_tools = max(total_tools - available_tools, 0)
+    k8s_tools = len([tool for tool in tools if tool.get("name", "").startswith("k8s-")])
+
+    cluster_available = bool(k8s_config.get("available"))
+    cluster_name = "minikube" if cluster_available else "Kubernetes 未连接"
+    namespace = k8s_config.get("namespace") or settings.k8s_namespace
+
+    return {
+        "theme": _dashboard_theme(),
+        "icon_pack": _dashboard_icon_pack(),
+        "cluster": {
+            "name": cluster_name,
+            "namespace": namespace,
+            "available": cluster_available,
+            "configured": bool(k8s_config.get("configured")),
+            "mode": "in-cluster" if k8s_config.get("in_cluster") else "kubeconfig",
+            "unavailable_reason": k8s_config.get("unavailable_reason") or "",
+        },
+        "tools": {
+            "total": total_tools,
+            "available": available_tools,
+            "unavailable": unavailable_tools,
+            "kubernetes": k8s_tools,
+        },
+        "knowledge_graph": {
+            "updated_at": graph.get("updated_at"),
+            "summary": graph_summary,
+            "coverage": coverage,
+        },
+        "scheduler": scheduler,
+        "llm": {
+            "enabled": llm_runtime.active,
+            "configured": llm_runtime.configured,
+        },
+        "insights": _dashboard_insights(
+            cluster_available=cluster_available,
+            namespace=namespace,
+            k8s_tools=k8s_tools,
+            total_tools=total_tools,
+            available_tools=available_tools,
+            unavailable_tools=unavailable_tools,
+            graph_summary=graph_summary,
+            coverage=coverage,
+            scheduler=scheduler,
+        ),
+        "resource_map": _dashboard_resource_map(graph_summary, cluster_available),
+        "execution_timeline": _dashboard_timeline(
+            namespace=namespace,
+            cluster_available=cluster_available,
+            graph_summary=graph_summary,
+            llm_enabled=llm_runtime.active,
+        ),
+        "next_actions": [
+            {"id": "inspect", "title": "查看相关资源", "route": "Chat", "tone": "blue", "icon": "bot-core"},
+            {"id": "repair", "title": "生成修复建议", "route": "Chat", "tone": "green", "icon": "execution-flow"},
+            {"id": "audit", "title": "导出审计记录", "route": "MCPConfig", "tone": "slate", "icon": "mcp-toolchain"},
+        ],
+    }
+
+
 @router.get("/tools")
 async def list_tools(_user: dict = Depends(get_current_user)):
     from app.core.deps import _get_app_state
@@ -372,3 +459,127 @@ def _metrics_coverage(graph: dict[str, Any]) -> dict[str, Any]:
         "nodes_with_metrics": len(nodes_with_metrics),
         "coverage": round(len(nodes_with_metrics) / total, 4) if total else 0,
     }
+
+
+def _dashboard_theme() -> dict[str, str]:
+    return {
+        "background": "#070a0f",
+        "shell": "#0d1420",
+        "surface": "#111827",
+        "surface_alt": "#172235",
+        "surface_light": "#f8fafc",
+        "border": "#2a3648",
+        "text": "#f8fafc",
+        "muted": "#9aa8bd",
+        "primary": "#22c55e",
+        "accent": "#38bdf8",
+        "warning": "#f59e0b",
+        "danger": "#ef4444",
+    }
+
+
+def _dashboard_icon_pack() -> dict[str, str]:
+    return {
+        "bot": "bot-core",
+        "kubernetes": "kubernetes-cluster",
+        "mcp": "mcp-toolchain",
+        "graph": "knowledge-map",
+        "timeline": "execution-flow",
+    }
+
+
+def _dashboard_insights(
+    *,
+    cluster_available: bool,
+    namespace: str,
+    k8s_tools: int,
+    total_tools: int,
+    available_tools: int,
+    unavailable_tools: int,
+    graph_summary: dict[str, Any],
+    coverage: dict[str, Any],
+    scheduler: dict[str, Any],
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "kubernetes",
+            "label": "Kubernetes",
+            "title": "集群上下文已就绪" if cluster_available else "等待连接集群",
+            "detail": f"{namespace} / {k8s_tools} 个 K8s 工具",
+            "tone": "green" if cluster_available else "amber",
+            "icon": "kubernetes-cluster",
+        },
+        {
+            "id": "mcp-tools",
+            "label": "MCP Tools",
+            "title": f"{available_tools}/{total_tools} 可执行",
+            "detail": f"{unavailable_tools} 个工具不可用" if unavailable_tools else "工具链全量可用",
+            "tone": "amber" if unavailable_tools else "green",
+            "icon": "mcp-toolchain",
+        },
+        {
+            "id": "knowledge-graph",
+            "label": "Knowledge Graph",
+            "title": f"{graph_summary.get('nodes', 0)} 节点 / {graph_summary.get('edges', 0)} 关系",
+            "detail": f"指标覆盖 {round(float(coverage.get('coverage', 0)) * 100)}%",
+            "tone": "blue" if graph_summary.get("nodes") else "slate",
+            "icon": "knowledge-map",
+        },
+        {
+            "id": "scheduler",
+            "label": "Scheduler",
+            "title": f"{scheduler.get('jobs', 0)} 个活跃任务",
+            "detail": "调度器运行中" if scheduler.get("running") else "调度器未运行或未启用",
+            "tone": "green" if scheduler.get("running") else "slate",
+            "icon": "execution-flow",
+        },
+    ]
+
+
+def _dashboard_resource_map(graph_summary: dict[str, Any], cluster_available: bool) -> list[dict[str, Any]]:
+    node_types = graph_summary.get("node_types", {})
+    return [
+        {"kind": "Deployment", "count": node_types.get("deployment", 0), "tone": "blue", "icon": "knowledge-map"},
+        {"kind": "ReplicaSet", "count": node_types.get("replicaset", 0), "tone": "blue", "icon": "execution-flow"},
+        {"kind": "Pod", "count": node_types.get("pod", 0), "tone": "green" if cluster_available else "slate", "icon": "kubernetes-cluster"},
+        {"kind": "Event", "count": graph_summary.get("edges", 0), "tone": "amber", "icon": "mcp-toolchain"},
+    ]
+
+
+def _dashboard_timeline(
+    *,
+    namespace: str,
+    cluster_available: bool,
+    graph_summary: dict[str, Any],
+    llm_enabled: bool,
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "question",
+            "title": "用户提问",
+            "detail": f"查看 {namespace} namespace 当前状态",
+            "tone": "blue",
+            "icon": "bot-core",
+        },
+        {
+            "id": "pods",
+            "title": "调用 k8s-get-pods",
+            "detail": "Kubernetes 工具可执行" if cluster_available else "等待 K8s 配置",
+            "tone": "green" if cluster_available else "amber",
+            "icon": "kubernetes-cluster",
+        },
+        {
+            "id": "events",
+            "title": "调用 k8s-get-events",
+            "detail": f"图谱已有 {graph_summary.get('nodes', 0)} 个节点" if graph_summary.get("nodes") else "可在知识图谱页同步资源",
+            "tone": "green" if graph_summary.get("nodes") else "slate",
+            "icon": "knowledge-map",
+        },
+        {
+            "id": "answer",
+            "title": "生成结论",
+            "detail": "LLM 已启用，可生成自然语言结论" if llm_enabled else "LLM 未启用，展示结构化证据",
+            "tone": "green" if llm_enabled else "amber",
+            "icon": "execution-flow",
+        },
+    ]

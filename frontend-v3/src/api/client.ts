@@ -79,6 +79,7 @@ export const schedulerApi = {
 // --- System ---
 export const systemApi = {
   health: () => request<HealthStatus>({ method: 'get', url: '/config/health' }),
+  dashboard: () => request<DashboardSummary>({ method: 'get', url: '/config/dashboard' }),
   mcpConfig: () => request<MCPConfig>({ method: 'get', url: '/config/mcp' }),
   updateMcpConfig: (data: {
     k8s?: Partial<Pick<K8sMCPConfig, 'enabled' | 'kubeconfig_path' | 'namespace' | 'in_cluster'>>
@@ -102,4 +103,5 @@ import type {
   AuditLog, LLMConfig, LLMProviderConfig, HealthStatus,
   MCPConfig, K8sMCPConfig, ECSMCPConfig,
   K8sKnowledgeGraph, K8sKnowledgeGraphSyncResult,
+  DashboardSummary,
 } from '@/types'

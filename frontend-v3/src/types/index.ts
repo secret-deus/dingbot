@@ -261,3 +261,102 @@ export interface HealthStatus {
     dingtalk_enabled?: boolean
   }
 }
+
+export type DashboardTone = 'green' | 'amber' | 'red' | 'blue' | 'slate'
+
+export interface DashboardTheme {
+  background: string
+  shell: string
+  surface: string
+  surface_alt: string
+  surface_light: string
+  border: string
+  text: string
+  muted: string
+  primary: string
+  accent: string
+  warning: string
+  danger: string
+}
+
+export interface DashboardIconPack {
+  bot: string
+  kubernetes: string
+  mcp: string
+  graph: string
+  timeline: string
+}
+
+export interface DashboardCluster {
+  name: string
+  namespace: string
+  available: boolean
+  configured: boolean
+  mode: string
+  unavailable_reason?: string
+}
+
+export interface DashboardTools {
+  total: number
+  available: number
+  unavailable: number
+  kubernetes: number
+}
+
+export interface DashboardInsight {
+  id: string
+  label: string
+  title: string
+  detail: string
+  tone: DashboardTone
+  icon: string
+}
+
+export interface DashboardResourceNode {
+  kind: string
+  count: number
+  tone: DashboardTone
+  icon: string
+}
+
+export interface DashboardTimelineItem {
+  id: string
+  title: string
+  detail: string
+  tone: DashboardTone
+  icon: string
+}
+
+export interface DashboardAction {
+  id: string
+  title: string
+  route: string
+  tone: DashboardTone
+  icon: string
+}
+
+export interface DashboardSummary {
+  theme: DashboardTheme
+  icon_pack: DashboardIconPack
+  cluster: DashboardCluster
+  tools: DashboardTools
+  knowledge_graph: {
+    updated_at?: string | null
+    summary: KnowledgeGraphSummary
+    coverage: KnowledgeGraphCoverage
+  }
+  scheduler: {
+    enabled: boolean
+    running: boolean
+    jobs: number
+    dingtalk_enabled?: boolean
+  }
+  llm: {
+    enabled: boolean
+    configured: boolean
+  }
+  insights: DashboardInsight[]
+  resource_map: DashboardResourceNode[]
+  execution_timeline: DashboardTimelineItem[]
+  next_actions: DashboardAction[]
+}

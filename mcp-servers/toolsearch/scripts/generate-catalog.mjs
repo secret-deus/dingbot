@@ -60,6 +60,7 @@ const executableBuiltins = new Set([
   "k8s-delete-resource",
   "k8s-exec-pod",
   "ecs-list-instances",
+  "ecs-describe-instance-monitor-data",
   "ecs-inspect",
 ]);
 
@@ -195,6 +196,7 @@ const tools = blueprint.map(([name, title, description, tags, properties, exampl
   const category = source.category ?? (name.startsWith("ecs-") ? "ecs" : "kubernetes");
   const executionPolicy = executableBuiltins.has(name) ? "executable" : "catalog_only";
   const blueprintSchema = schemaFromProperties(name, properties);
+  const sourceSchema = source.inputSchema ?? (name === "ecs-describe-instance-monitor-data" ? source.input_schema : undefined);
   return {
     name,
     title,
@@ -204,7 +206,7 @@ const tools = blueprint.map(([name, title, description, tags, properties, exampl
     dangerLevel: dangerLevels.get(name) ?? "read",
     server: executionPolicy === "executable" ? "builtin" : "catalog",
     executionPolicy,
-    inputSchema: mergeInputSchema(source.inputSchema, blueprintSchema),
+    inputSchema: mergeInputSchema(sourceSchema, blueprintSchema),
     examples,
     source: {
       catalog: sourceTools.has(name) ? "config/mcp_config.json" : "blueprint",

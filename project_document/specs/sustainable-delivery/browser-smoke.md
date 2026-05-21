@@ -2,6 +2,8 @@
 
 Date: 2026-05-06
 
+> Historical note: this report records the S3/S4 browser evidence at the time it was run. Later ToolSearch recovery changed the catalog from `21` total / `10` catalog-only to `55` total / `0` catalog-only.
+
 ## Runtime
 
 - Backend: `DATABASE_URL=sqlite+aiosqlite:////Users/xhang/Documents/ding-robot/backend-v2/data/app.db SCHEDULER_ENABLED=false MCP_CONFIG_PATH=/tmp/ding-robot-mcp-toolsearch-run.json poetry -C backend-v2 run uvicorn app.main:app --host 127.0.0.1 --port 8001`

@@ -7,6 +7,13 @@
 - Tester: Codex
 - Result: PASS
 
+## Current Status Update - 2026-05-18
+
+- ToolSearch production audit is currently clean after updating the locked transitive `hono` version to `4.12.19`.
+- Tool execution recovery is currently complete for the generated catalog: `55` total, `55` executable, `0` catalog-only.
+- Local full gate passed on 2026-05-18: backend 41 tests, frontend build, ToolSearch 7 tests, ToolSearch audit, Compose config, and diff check.
+- Full Compose/browser smoke remains a release-candidate validation item.
+
 ## Environment
 
 - Branch: `codex/refactor-baseline`
@@ -46,9 +53,9 @@
 | Severity | Issue | Owner | Status |
 | --- | --- | --- | --- |
 | Medium | Full `docker compose up --build` browser smoke was not rerun in S5 because the changed scope is backend image packaging and release gates. | Project | Follow-up when validating an end-to-end release candidate |
-| Medium | Frontend Docker build `npm ci` reports 2 moderate vulnerabilities. | Project | Existing follow-up tracked under ToolSearch task 10 Vite/esbuild audit remediation path |
+| Medium | Historical frontend Docker build `npm ci` dependency advisory state. | Project | Superseded by the 2026-05-18 local gate; ToolSearch production audit is clean. |
 
 ## Decision
 
 - Release decision: PASS for S5 release pipeline and backend ToolSearch Docker runtime.
-- Follow-up tasks: recover `catalog_only` executable tools and run full Compose browser smoke before a release candidate.
+- Follow-up tasks: run full Compose browser smoke and real ECS credential smoke before a release candidate.

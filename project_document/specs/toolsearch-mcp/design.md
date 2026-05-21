@@ -163,22 +163,18 @@ Initial synonym examples:
 
 Phase 2 can replace or augment this with BM25 or MiniSearch after the phase 1 baseline is stable.
 
-## Current Tool Inventory Gap
+## Current Tool Inventory
 
-Current `backend-v2` built-ins:
+Current generated catalog:
 
 ```text
-k8s-get-pods
-k8s-get-services
-k8s-get-deployments
-k8s-get-nodes
-k8s-get-logs
-k8s-describe-pod
-k8s-get-events
-k8s-cluster-summary
+total: 55
+executable: 55
+catalog_only: 0
+categories: kubernetes=52, ecs=3
 ```
 
-Current old catalog tools in `config/mcp_config.json`:
+The old 21-tool catalog from `config/mcp_config.json` is preserved inside the generated 55-tool catalog. The current old-catalog set includes:
 
 ```text
 k8s-get-pods
@@ -204,7 +200,7 @@ ecs-list-instances
 ecs-inspect
 ```
 
-The first implementation should preserve all 21 old catalog entries. Missing executable handlers should be marked `catalog_only` until implemented.
+Future missing executable handlers should be marked `catalog_only` until implemented, but the current generated catalog has no `catalog_only` entries.
 
 ## Security Design
 

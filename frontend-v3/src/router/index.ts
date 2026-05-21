@@ -18,7 +18,7 @@ const router = createRouter({
       path: '/dashboard',
       name: 'Dashboard',
       component: () => import('@/views/Dashboard.vue'),
-      meta: { title: '运维概览', icon: 'speedometer-outline', requiresAuth: true },
+      meta: { title: '运维概览', icon: 'speedometer-outline', requiresAuth: true, fullBleed: true },
     },
     {
       path: '/chat',

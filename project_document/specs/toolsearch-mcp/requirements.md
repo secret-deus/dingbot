@@ -2,7 +2,7 @@
 
 ## Background
 
-The current rewrite already has `backend-v2` and `frontend-v3`, but the tool layer is still too thin for an operations assistant. `backend-v2` currently exposes 8 built-in Kubernetes tools, with ECS tools enabled only when credentials are configured. The old root `config/mcp_config.json` still describes 21 tools, including richer Kubernetes metrics, topology, endpoint, history, and ECS monitor tools.
+The current rewrite has `backend-v2` and `frontend-v3`, and ToolSearch now reconciles the old root `config/mcp_config.json` catalog with current built-in tools. The old catalog still describes 21 historically important tools, including richer Kubernetes metrics, topology, endpoint, history, and ECS monitor tools; the generated runtime catalog currently contains 55 executable tool entries.
 
 ToolSearch should become a local MCP server that searches the internal tool catalog on demand. It must not execute real operations. Its job is to return the most relevant tool candidates, their purpose, input schema, category, server, risk level, and execution policy so the LLM can select the next real tool with less context pressure.
 

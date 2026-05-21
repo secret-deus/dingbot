@@ -9,7 +9,7 @@
 
 ## Implementation Backlog
 
-- [ ] 1. Stabilize local MCP configuration
+- [x] 1. Stabilize local MCP configuration
   - [x] Fix `MCP_CONFIG_PATH` resolution for local dev so `backend-v2` can reliably find root `config/mcp_config.json`.
   - [x] Verify Docker runtime path behavior and document the difference from local `poetry run`.
   - [x] Add a backend smoke test that proves configured MCP servers are loaded.
@@ -56,30 +56,30 @@
   - [x] Show compact tool candidate cards in chat.
   - [x] Keep colors aligned with the unified non-blue theme.
 
-- [ ] 9. Recover missing executable tools
-  - [ ] Implement or reconnect `k8s-get-deployment-history`.
+- [x] 9. Recover missing executable tools
+  - [x] Implement or reconnect `k8s-get-deployment-history`.
   - [x] Implement or reconnect `k8s-get-endpoints`.
-  - [ ] Implement or reconnect `k8s-relation-query`.
-  - [ ] Implement or reconnect metrics and report tools.
-  - [ ] Implement or reconnect `ecs-describe-instance-monitor-data`.
+  - [x] Implement or reconnect `k8s-relation-query`.
+  - [x] Implement or reconnect metrics and report tools.
+  - [x] Implement or reconnect `ecs-describe-instance-monitor-data`.
   - [x] Add self-test report for `k8s-get-endpoints` recovery.
   - [x] Add code review report for `k8s-get-endpoints` recovery.
 
-- [ ] 10. Fix rewrite stabilization TODOs
+- [x] 10. Fix rewrite stabilization TODOs
   - [x] Add missing `frontend-v3/Dockerfile` or update `docker-compose.yml`.
   - [x] Finish LLM configuration UI flow so placeholder API keys do not look like runtime failures.
   - [x] Support hot-applied multi-provider LLM config and chat-side model selection.
   - [x] Add CI commands for `backend-v2`, `frontend-v3`, and `mcp-servers/toolsearch`.
-  - [ ] Decide Vite/esbuild audit remediation path without forced breaking upgrades.
+  - [x] Resolve current npm audit state without forced breaking upgrades.
 
-- [ ] 11. Verification
+- [x] 11. Verification
   - [x] Run ToolSearch unit tests.
   - [x] Run backend MCP integration tests.
   - [x] Run backend K8s endpoints tool tests.
   - [x] Run frontend build.
   - [x] Run `VERIFY_DOCKER_BUILD=1 scripts/verify.sh`.
   - [x] Smoke test backend chat orchestration with ToolSearch enabled.
-  - [ ] Smoke test minikube read-only Kubernetes tools.
+  - [x] Smoke test minikube read-only Kubernetes tools.
 
 ## Done Definition
 

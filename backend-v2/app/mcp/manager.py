@@ -182,8 +182,11 @@ class MCPManager:
                 self._servers[srv["name"]] = conn
 
         self._rebuild_cache()
-        logger.info("MCP 连接就绪: {} 个远程服务器, {} 个内置工具",
-                     len(self._servers), len(self._builtin.list_tools()))
+        logger.info(
+            "MCP 连接就绪: {} 个远程服务器, {} 个内置工具",
+            len(self._servers),
+            len(self._builtin.list_tools()),
+        )
 
     async def disconnect_all(self) -> None:
         for conn in self._servers.values():
@@ -217,6 +220,13 @@ class MCPManager:
             return await self._builtin.call(name, arguments)
         if server_name and server_name in self._servers:
             return await self._servers[server_name].call_tool(name, arguments)
+        if decision.metadata is not None:
+            return {
+                "error": "tool_unavailable",
+                "reason": "tool_not_loaded",
+                "message": f"工具 {name} 已在 catalog 中标记为可执行，但当前运行时未加载对应处理器",
+                "tool": name,
+            }
         return {"error": f"工具 {name} 未找到"}
 
     def authorize_tool_call(
@@ -241,7 +251,9 @@ class MCPManager:
             "connected": True,
             "tools": len(builtin_tools),
             "available_tools": sum(1 for tool in builtin_tools if tool.get("available", True)),
-            "unavailable_tools": sum(1 for tool in builtin_tools if not tool.get("available", True)),
+            "unavailable_tools": sum(
+                1 for tool in builtin_tools if not tool.get("available", True)
+            ),
         }
         return result
 
@@ -314,5 +326,7 @@ class MCPManager:
                 prefixes = skill.get("allowed_prefixes", [])
                 if not prefixes:
                     return self._tools_cache
-                return [t for t in self._tools_cache if any(t["name"].startswith(p) for p in prefixes)]
+                return [
+                    t for t in self._tools_cache if any(t["name"].startswith(p) for p in prefixes)
+                ]
         return self._tools_cache

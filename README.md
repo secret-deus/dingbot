@@ -9,13 +9,13 @@
 - `backend-v2/`：FastAPI API、登录认证、会话和消息持久化、SSE 聊天、MCP 工具聚合、审计日志、定时任务 CRUD。
 - `frontend-v3/`：Vue 3 + Vite + Naive UI，包含登录、仪表盘、聊天、MCP 工具、定时任务、权限/审计页面。
 - `config/`：只提交 `*.example.json` 和说明文档，真实运行时配置留在本地。
-- `mcp-servers/toolsearch/`：本地 stdio MCP server，用于搜索 21 个历史运维工具目录和当前可执行工具。
+- `mcp-servers/toolsearch/`：本地 stdio MCP server，用于搜索 55 个当前运维工具目录和可执行工具。
 - `project_document/specs/`：spec 驱动开发文档和交付计划。
 - `archived/`：v2 后端、旧前端、独立 K8s/ECS MCP 工程和历史测试。
 
 仍在建设中的主线：
 
-- ToolSearch MCP：已恢复旧版 21 个运维工具目录，并将工具发现、执行、权限、确认、审计拆开；后续继续恢复 `catalog_only` 工具的真实执行能力。
+- ToolSearch MCP：已恢复旧版 21 个运维工具目录并扩展到 55 个可执行工具；工具发现、执行、权限、确认、审计已拆开。
 - Scheduler runner：已接入持久化任务执行、手动运行、执行历史和前端状态展示。
 - DingTalk webhook：已接入 markdown 通知和签名 webhook，调度任务可按任务开关发送通知。
 - 回归测试：已覆盖公共端点、MCP stdio、ToolSearch 编排、工具治理、审计、调度和通知 mock；后续继续补浏览器和真实环境冒烟。

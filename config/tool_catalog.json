@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "generatedAt": "2026-05-06T09:41:06.861Z",
+  "generatedAt": "2026-05-18T06:19:08.570Z",
   "source": [
     "config/mcp_config.json",
     "backend-v2/app/mcp/builtin.py",
@@ -1979,14 +1979,14 @@
         "监控"
       ],
       "dangerLevel": "read",
-      "server": "catalog",
-      "executionPolicy": "catalog_only",
+      "server": "builtin",
+      "executionPolicy": "executable",
       "inputSchema": {
         "type": "object",
         "properties": {
           "instance_id": {
             "type": "string",
-            "description": "ECS 实例 ID"
+            "description": "ECS实例ID"
           },
           "metric_name": {
             "type": "string",
@@ -1994,18 +1994,44 @@
           },
           "start_time": {
             "type": "string",
-            "description": "开始时间"
+            "description": "ISO8601 UTC，示例 2024-10-29T23:00:00Z"
           },
           "end_time": {
             "type": "string",
-            "description": "结束时间"
+            "description": "ISO8601 UTC，默认当前UTC"
+          },
+          "region_id": {
+            "type": "string",
+            "description": "地域ID（可覆盖配置）"
+          },
+          "relative_range": {
+            "type": "string",
+            "description": "相对范围: 1h/6h/24h/7d/30d，与end_time组合"
+          },
+          "period": {
+            "type": "integer",
+            "enum": [
+              60,
+              600,
+              3600
+            ],
+            "description": "不填自动选择"
+          },
+          "metrics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "需要字段过滤"
+          },
+          "max_points": {
+            "type": "integer",
+            "default": 400,
+            "description": "最大返回点数，超出进行下采样"
           }
         },
         "required": [
-          "instance_id",
-          "metric_name",
-          "start_time",
-          "end_time"
+          "instance_id"
         ]
       },
       "examples": [
@@ -2013,7 +2039,7 @@
       ],
       "source": {
         "catalog": "config/mcp_config.json",
-        "builtin": false
+        "builtin": true
       }
     },
     {

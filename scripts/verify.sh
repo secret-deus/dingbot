@@ -20,7 +20,12 @@ run_root() {
 run_in "backend-v2" poetry run pytest
 run_in "frontend-v3" npm run build
 run_in "mcp-servers/toolsearch" npm test
-run_in "mcp-servers/toolsearch" npm audit --omit=dev
+if ! run_in "mcp-servers/toolsearch" npm audit --omit=dev; then
+  echo
+  echo "==> ToolSearch npm audit failed; retrying once after a short delay."
+  sleep 2
+  run_in "mcp-servers/toolsearch" npm audit --omit=dev
+fi
 
 if command -v docker >/dev/null 2>&1; then
   run_root docker compose config

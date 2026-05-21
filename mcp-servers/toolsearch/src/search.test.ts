@@ -18,6 +18,7 @@ test("loads the normalized 55-tool catalog", () => {
   assert.equal(getTool(catalog, "k8s-delete-resource")?.dangerLevel, "dangerous");
   assert.equal(getTool(catalog, "k8s-scale-deployment")?.dangerLevel, "write");
   assert.equal(getTool(catalog, "k8s-get-deployment-history")?.executionPolicy, "executable");
+  assert.equal(getTool(catalog, "ecs-describe-instance-monitor-data")?.executionPolicy, "executable");
 });
 
 test("ranks pod log queries first", () => {
@@ -62,5 +63,6 @@ test("summarizes categories and execution policies", () => {
   const summary = summarizeCatalog(catalog);
   assert.equal(summary.total, 55);
   assert.deepEqual(summary.categories.find((item) => item.name === "ecs"), { name: "ecs", count: 3 });
-  assert.deepEqual(summary.executionPolicies.find((item) => item.name === "catalog_only"), { name: "catalog_only", count: 1 });
+  assert.equal(summary.executionPolicies.find((item) => item.name === "catalog_only"), undefined);
+  assert.deepEqual(summary.executionPolicies.find((item) => item.name === "executable"), { name: "executable", count: 55 });
 });

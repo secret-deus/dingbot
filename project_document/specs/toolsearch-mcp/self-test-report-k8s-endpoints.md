@@ -7,6 +7,12 @@
 - Tester: Codex
 - Result: PASS
 
+## Current Status Update - 2026-05-18
+
+- This report is historical evidence for the `k8s-get-endpoints` slice.
+- Current ToolSearch catalog state is now `55` total, `55` executable, `0` catalog-only after later recovery work.
+- Live Kubernetes/minikube smoke passed in the later 2026-05-18 validation slice; see `self-test-report-ecs-monitor.md`.
+
 ## Scope
 
 - Added `k8s-get-endpoints` to the built-in K8s registry.
@@ -25,12 +31,12 @@
 
 ## Result Details
 
-- ToolSearch catalog total remains 21.
+- At this historical checkpoint, ToolSearch catalog total remained 21; current catalog is 55.
 - Executable tools increased from 10 to 11.
 - `catalog_only` tools decreased from 11 to 10.
 - `k8s-get-endpoints` now uses server `builtin` and execution policy `executable`.
 
 ## Residual Risk
 
-- A live Kubernetes/minikube smoke test was not run in this slice. The implementation is covered with a fake CoreV1Api unit test and should be validated against a real cluster before release candidate sign-off.
-- Frontend Docker build still reports 2 moderate npm vulnerabilities during `npm ci`; this remains tracked as the existing Vite/esbuild audit remediation follow-up.
+- A live Kubernetes/minikube smoke test was not run in this slice. It was completed in the later 2026-05-18 validation slice.
+- The later 2026-05-18 local gate reports ToolSearch audit clean with 0 vulnerabilities.

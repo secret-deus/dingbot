@@ -43,13 +43,18 @@ class K8sClient:
 
     def is_configured(self) -> bool:
         if not self.in_cluster:
-            config_path = Path(self.kubeconfig_path).expanduser() if self.kubeconfig_path else Path.home() / ".kube" / "config"
+            config_path = (
+                Path(self.kubeconfig_path).expanduser()
+                if self.kubeconfig_path
+                else Path.home() / ".kube" / "config"
+            )
             if not config_path.exists():
                 self._availability_error = f"kubeconfig 文件不存在: {config_path}"
                 return False
 
         try:
             from kubernetes import client, config
+
             if self.in_cluster:
                 config.load_incluster_config()
             elif self.kubeconfig_path:
@@ -65,6 +70,8 @@ class K8sClient:
             return False
 
     def unavailable_reason(self) -> str:
+        if self._config_loaded:
+            return ""
         if self._availability_error:
             return self._availability_error
         if self.in_cluster:
@@ -76,6 +83,7 @@ class K8sClient:
     def _get_v1(self) -> Any:
         if self._v1 is None:
             from kubernetes import client
+
             self._ensure_config_loaded()
             self._v1 = client.CoreV1Api()
         return self._v1
@@ -83,6 +91,7 @@ class K8sClient:
     def _get_apps_v1(self) -> Any:
         if self._apps_v1 is None:
             from kubernetes import client
+
             self._ensure_config_loaded()
             self._apps_v1 = client.AppsV1Api()
         return self._apps_v1
@@ -90,6 +99,7 @@ class K8sClient:
     def _get_networking_v1(self) -> Any:
         if self._networking_v1 is None:
             from kubernetes import client
+
             self._ensure_config_loaded()
             self._networking_v1 = client.NetworkingV1Api()
         return self._networking_v1
@@ -97,6 +107,7 @@ class K8sClient:
     def _get_batch_v1(self) -> Any:
         if self._batch_v1 is None:
             from kubernetes import client
+
             self._ensure_config_loaded()
             self._batch_v1 = client.BatchV1Api()
         return self._batch_v1
@@ -104,6 +115,7 @@ class K8sClient:
     def _get_autoscaling_v2(self) -> Any:
         if self._autoscaling_v2 is None:
             from kubernetes import client
+
             self._ensure_config_loaded()
             self._autoscaling_v2 = client.AutoscalingV2Api()
         return self._autoscaling_v2
@@ -111,6 +123,7 @@ class K8sClient:
     def _get_rbac_v1(self) -> Any:
         if self._rbac_v1 is None:
             from kubernetes import client
+
             self._ensure_config_loaded()
             self._rbac_v1 = client.RbacAuthorizationV1Api()
         return self._rbac_v1
@@ -118,6 +131,7 @@ class K8sClient:
     def _get_storage_v1(self) -> Any:
         if self._storage_v1 is None:
             from kubernetes import client
+
             self._ensure_config_loaded()
             self._storage_v1 = client.StorageV1Api()
         return self._storage_v1
@@ -125,6 +139,7 @@ class K8sClient:
     def _get_policy_v1(self) -> Any:
         if self._policy_v1 is None:
             from kubernetes import client
+
             self._ensure_config_loaded()
             self._policy_v1 = client.PolicyV1Api()
         return self._policy_v1
@@ -132,6 +147,7 @@ class K8sClient:
     def _get_custom_objects(self) -> Any:
         if self._custom_objects is None:
             from kubernetes import client
+
             self._ensure_config_loaded()
             self._custom_objects = client.CustomObjectsApi()
         return self._custom_objects
@@ -140,6 +156,7 @@ class K8sClient:
         if self._config_loaded:
             return
         from kubernetes import config
+
         if self.in_cluster:
             config.load_incluster_config()
         elif self.kubeconfig_path:
@@ -172,14 +189,16 @@ class K8sClient:
             pods = v1.list_namespaced_pod(namespace=ns, label_selector=label_selector, limit=100)
         items = []
         for p in pods.items:
-            items.append({
-                "name": p.metadata.name,
-                "namespace": p.metadata.namespace,
-                "status": p.status.phase,
-                "node": p.spec.node_name,
-                "restarts": sum(cs.restart_count for cs in (p.status.container_statuses or [])),
-                "age": str(p.metadata.creation_timestamp),
-            })
+            items.append(
+                {
+                    "name": p.metadata.name,
+                    "namespace": p.metadata.namespace,
+                    "status": p.status.phase,
+                    "node": p.spec.node_name,
+                    "restarts": sum(cs.restart_count for cs in (p.status.container_statuses or [])),
+                    "age": str(p.metadata.creation_timestamp),
+                }
+            )
         return {"count": len(items), "items": items}
 
     async def k8s_get_services(self, **kwargs: Any) -> dict:
@@ -219,22 +238,28 @@ class K8sClient:
         for endpoint in endpoints:
             subsets = []
             for subset in endpoint.subsets or []:
-                subsets.append({
-                    "addresses": [self._format_endpoint_address(addr) for addr in (subset.addresses or [])],
-                    "not_ready_addresses": [
-                        self._format_endpoint_address(addr)
-                        for addr in (subset.not_ready_addresses or [])
-                    ],
-                    "ports": [
-                        {"name": port.name, "port": port.port, "protocol": port.protocol}
-                        for port in (subset.ports or [])
-                    ],
-                })
-            items.append({
-                "name": endpoint.metadata.name,
-                "namespace": endpoint.metadata.namespace,
-                "subsets": subsets,
-            })
+                subsets.append(
+                    {
+                        "addresses": [
+                            self._format_endpoint_address(addr) for addr in (subset.addresses or [])
+                        ],
+                        "not_ready_addresses": [
+                            self._format_endpoint_address(addr)
+                            for addr in (subset.not_ready_addresses or [])
+                        ],
+                        "ports": [
+                            {"name": port.name, "port": port.port, "protocol": port.protocol}
+                            for port in (subset.ports or [])
+                        ],
+                    }
+                )
+            items.append(
+                {
+                    "name": endpoint.metadata.name,
+                    "namespace": endpoint.metadata.namespace,
+                    "subsets": subsets,
+                }
+            )
         return {"count": len(items), "items": items}
 
     async def k8s_get_deployments(self, **kwargs: Any) -> dict:
@@ -242,9 +267,16 @@ class K8sClient:
         ns = self._ns(kwargs)
         deps = apps.list_namespaced_deployment(namespace=ns, limit=100)
         items = [
-            {"name": d.metadata.name, "replicas": d.spec.replicas,
-             "available": d.status.available_replicas or 0,
-             "image": d.spec.template.spec.containers[0].image if d.spec.template.spec.containers else ""}
+            {
+                "name": d.metadata.name,
+                "replicas": d.spec.replicas,
+                "available": d.status.available_replicas or 0,
+                "image": (
+                    d.spec.template.spec.containers[0].image
+                    if d.spec.template.spec.containers
+                    else ""
+                ),
+            }
             for d in deps.items
         ]
         return {"count": len(items), "items": items}
@@ -258,42 +290,69 @@ class K8sClient:
 
         deployment = apps.read_namespaced_deployment(name=deployment_name, namespace=ns)
         selector = self._label_selector_from_match_labels(
-            getattr(getattr(getattr(deployment, "spec", None), "selector", None), "match_labels", None)
+            getattr(
+                getattr(getattr(deployment, "spec", None), "selector", None), "match_labels", None
+            )
         )
-        replica_sets = apps.list_namespaced_replica_set(namespace=ns, label_selector=selector, limit=200).items
+        replica_sets = apps.list_namespaced_replica_set(
+            namespace=ns, label_selector=selector, limit=200
+        ).items
         items = []
         for replica_set in replica_sets:
             metadata = getattr(replica_set, "metadata", None)
             owners = self._format_owner_refs(getattr(metadata, "owner_references", None) or [])
-            if not any(owner.get("kind") == "Deployment" and owner.get("name") == deployment_name for owner in owners):
+            if not any(
+                owner.get("kind") == "Deployment" and owner.get("name") == deployment_name
+                for owner in owners
+            ):
                 continue
             annotations = getattr(metadata, "annotations", None) or {}
-            items.append({
-                "revision": self._as_int(annotations.get("deployment.kubernetes.io/revision"), default=0),
-                "replicaset": getattr(metadata, "name", None),
-                "namespace": getattr(metadata, "namespace", None),
-                "change_cause": annotations.get("kubernetes.io/change-cause", ""),
-                "desired": getattr(getattr(replica_set, "spec", None), "replicas", None) or 0,
-                "ready": getattr(getattr(replica_set, "status", None), "ready_replicas", None) or 0,
-                "available": getattr(getattr(replica_set, "status", None), "available_replicas", None) or 0,
-                "images": self._pod_template_images(getattr(getattr(replica_set, "spec", None), "template", None)),
-                "created_at": self._stringify_time(getattr(metadata, "creation_timestamp", None)),
-            })
+            items.append(
+                {
+                    "revision": self._as_int(
+                        annotations.get("deployment.kubernetes.io/revision"), default=0
+                    ),
+                    "replicaset": getattr(metadata, "name", None),
+                    "namespace": getattr(metadata, "namespace", None),
+                    "change_cause": annotations.get("kubernetes.io/change-cause", ""),
+                    "desired": getattr(getattr(replica_set, "spec", None), "replicas", None) or 0,
+                    "ready": getattr(getattr(replica_set, "status", None), "ready_replicas", None)
+                    or 0,
+                    "available": getattr(
+                        getattr(replica_set, "status", None), "available_replicas", None
+                    )
+                    or 0,
+                    "images": self._pod_template_images(
+                        getattr(getattr(replica_set, "spec", None), "template", None)
+                    ),
+                    "created_at": self._stringify_time(
+                        getattr(metadata, "creation_timestamp", None)
+                    ),
+                }
+            )
 
         items.sort(key=lambda item: item.get("revision") or 0)
-        deployment_annotations = getattr(getattr(deployment, "metadata", None), "annotations", None) or {}
+        deployment_annotations = (
+            getattr(getattr(deployment, "metadata", None), "annotations", None) or {}
+        )
         return {
             "deployment": deployment_name,
             "namespace": ns,
             "selector": selector,
-            "current_revision": self._as_int(deployment_annotations.get("deployment.kubernetes.io/revision"), default=0),
+            "current_revision": self._as_int(
+                deployment_annotations.get("deployment.kubernetes.io/revision"), default=0
+            ),
             "count": len(items),
             "items": items,
         }
 
     async def k8s_rollout_status(self, **kwargs: Any) -> dict:
-        workload_type = self._normalize_resource_type(kwargs.get("workload_type") or kwargs.get("resource_type") or "deployment")
-        name = kwargs.get("name") or kwargs.get("deployment_name") or kwargs.get("workload_name") or ""
+        workload_type = self._normalize_resource_type(
+            kwargs.get("workload_type") or kwargs.get("resource_type") or "deployment"
+        )
+        name = (
+            kwargs.get("name") or kwargs.get("deployment_name") or kwargs.get("workload_name") or ""
+        )
         ns = self._ns(kwargs)
         if not name:
             return {"error": "name 参数必填"}
@@ -312,7 +371,9 @@ class K8sClient:
         apps = self._get_apps_v1()
         ns = self._ns(kwargs)
         label_selector = kwargs.get("label_selector", "")
-        result = apps.list_namespaced_stateful_set(namespace=ns, label_selector=label_selector, limit=100)
+        result = apps.list_namespaced_stateful_set(
+            namespace=ns, label_selector=label_selector, limit=100
+        )
         items = [self._format_statefulset(item) for item in result.items]
         return {"count": len(items), "items": items}
 
@@ -320,7 +381,9 @@ class K8sClient:
         apps = self._get_apps_v1()
         ns = self._ns(kwargs)
         label_selector = kwargs.get("label_selector", "")
-        result = apps.list_namespaced_daemon_set(namespace=ns, label_selector=label_selector, limit=100)
+        result = apps.list_namespaced_daemon_set(
+            namespace=ns, label_selector=label_selector, limit=100
+        )
         items = [self._format_daemonset(item) for item in result.items]
         return {"count": len(items), "items": items}
 
@@ -336,7 +399,9 @@ class K8sClient:
         batch = self._get_batch_v1()
         ns = self._ns(kwargs)
         label_selector = kwargs.get("label_selector", "")
-        result = batch.list_namespaced_cron_job(namespace=ns, label_selector=label_selector, limit=100)
+        result = batch.list_namespaced_cron_job(
+            namespace=ns, label_selector=label_selector, limit=100
+        )
         items = [self._format_cronjob(item) for item in result.items]
         return {"count": len(items), "items": items}
 
@@ -388,9 +453,16 @@ class K8sClient:
         v1 = self._get_v1()
         nodes = v1.list_node(limit=100)
         items = [
-            {"name": n.metadata.name, "status": n.status.conditions[-1].type if n.status.conditions else "Unknown",
-             "roles": [k.replace("node-role.kubernetes.io/", "") for k in (n.metadata.labels or {}) if k.startswith("node-role")],
-             "version": n.status.node_info.kubelet_version if n.status.node_info else ""}
+            {
+                "name": n.metadata.name,
+                "status": n.status.conditions[-1].type if n.status.conditions else "Unknown",
+                "roles": [
+                    k.replace("node-role.kubernetes.io/", "")
+                    for k in (n.metadata.labels or {})
+                    if k.startswith("node-role")
+                ],
+                "version": n.status.node_info.kubelet_version if n.status.node_info else "",
+            }
             for n in nodes.items
         ]
         return {"count": len(items), "items": items}
@@ -549,8 +621,10 @@ class K8sClient:
             return {"error": "pod_name 参数必填"}
         pod = v1.read_namespaced_pod(name=pod_name, namespace=ns)
         return {
-            "name": pod.metadata.name, "namespace": pod.metadata.namespace,
-            "status": pod.status.phase, "node": pod.spec.node_name,
+            "name": pod.metadata.name,
+            "namespace": pod.metadata.namespace,
+            "status": pod.status.phase,
+            "node": pod.spec.node_name,
             "containers": [{"name": c.name, "image": c.image} for c in pod.spec.containers],
             "events": str(pod.metadata.creation_timestamp),
         }
@@ -595,13 +669,17 @@ class K8sClient:
             "total_memory_mib": round(total_memory_bytes / 1024 / 1024, 2),
             "nodes": nodes,
             "top_pods_by_cpu": sorted(pods, key=lambda item: item["cpu_mcores"], reverse=True)[:10],
-            "top_pods_by_memory": sorted(pods, key=lambda item: item["memory_bytes"], reverse=True)[:10],
+            "top_pods_by_memory": sorted(pods, key=lambda item: item["memory_bytes"], reverse=True)[
+                :10
+            ],
         }
 
     async def k8s_prometheus_app_metrics(self, **kwargs: Any) -> dict:
         settings = get_settings()
         prometheus_url = str(getattr(settings, "prometheus_base_url", "") or "").strip().rstrip("/")
-        app_name = kwargs.get("app_name") or kwargs.get("deployment_name") or kwargs.get("name") or ""
+        app_name = (
+            kwargs.get("app_name") or kwargs.get("deployment_name") or kwargs.get("name") or ""
+        )
         namespace = kwargs.get("namespace") or self.default_namespace
         if not app_name:
             return {"error": "app_name 参数必填"}
@@ -615,27 +693,30 @@ class K8sClient:
         namespace_value = self._promql_string(namespace)
         queries = {
             "cpu_5m_cores_by_pod": (
-                'sum by (pod) (rate(container_cpu_usage_seconds_total{'
+                "sum by (pod) (rate(container_cpu_usage_seconds_total{"
                 f'namespace="{namespace_value}",pod=~"{pod_name_regex}",container!="",image!=""'
-                '}[5m]))'
+                "}[5m]))"
             ),
             "memory_working_set_bytes_by_pod": (
-                'sum by (pod) (container_memory_working_set_bytes{'
+                "sum by (pod) (container_memory_working_set_bytes{"
                 f'namespace="{namespace_value}",pod=~"{pod_name_regex}",container!="",image!=""'
-                '})'
+                "})"
             ),
             "restart_increase_1h_by_pod": (
-                'sum by (pod) (increase(kube_pod_container_status_restarts_total{'
+                "sum by (pod) (increase(kube_pod_container_status_restarts_total{"
                 f'namespace="{namespace_value}",pod=~"{pod_name_regex}"'
-                '}[1h]))'
+                "}[1h]))"
             ),
         }
         results: dict[str, Any] = {}
         try:
             import httpx
+
             async with httpx.AsyncClient(timeout=10) as client:
                 for key, query in queries.items():
-                    response = await client.get(f"{prometheus_url}/api/v1/query", params={"query": query})
+                    response = await client.get(
+                        f"{prometheus_url}/api/v1/query", params={"query": query}
+                    )
                     response.raise_for_status()
                     payload = response.json()
                     if payload.get("status") != "success":
@@ -724,7 +805,11 @@ class K8sClient:
             "resource_name": resource_name,
             "namespace": namespace,
             "metrics": node.get("metrics") if node else None,
-            "message": "当前图谱中暂无指标数据；需要接入 Prometheus 后填充 metrics 字段。" if node and not node.get("metrics") else "",
+            "message": (
+                "当前图谱中暂无指标数据；需要接入 Prometheus 后填充 metrics 字段。"
+                if node and not node.get("metrics")
+                else ""
+            ),
             "node": node,
         }
 
@@ -732,7 +817,9 @@ class K8sClient:
         namespace = kwargs.get("namespace") or self.default_namespace
         self._ensure_knowledge_graph(namespace=namespace)
         coverage = self._knowledge_graph_store().metrics_coverage()
-        coverage["message"] = "当前为本地图谱拓扑覆盖率；Prometheus 指标接入后会显示资源指标覆盖率。"
+        coverage["message"] = (
+            "当前为本地图谱拓扑覆盖率；Prometheus 指标接入后会显示资源指标覆盖率。"
+        )
         return coverage
 
     async def k8s_resource_analysis_report(self, **kwargs: Any) -> dict:
@@ -755,7 +842,8 @@ class K8sClient:
         if app_name:
             report["app_name"] = app_name
             report["issues"] = [
-                issue for issue in report["issues"]
+                issue
+                for issue in report["issues"]
                 if issue.get("name") == app_name or issue.get("target") == app_name
             ]
             report["issue_count"] = len(report["issues"])
@@ -820,7 +908,9 @@ class K8sClient:
         return await self.k8s_patch_resource(**kwargs)
 
     async def k8s_patch_resource(self, **kwargs: Any) -> dict:
-        resource_type = self._normalize_resource_type(kwargs.get("resource_type") or kwargs.get("kind"))
+        resource_type = self._normalize_resource_type(
+            kwargs.get("resource_type") or kwargs.get("kind")
+        )
         name = kwargs.get("name") or kwargs.get("resource_name") or ""
         ns = self._ns(kwargs)
         patch = self._parse_patch_body(kwargs.get("patch") or kwargs.get("body"))
@@ -843,7 +933,9 @@ class K8sClient:
         }
 
     async def k8s_delete_resource(self, **kwargs: Any) -> dict:
-        resource_type = self._normalize_resource_type(kwargs.get("resource_type") or kwargs.get("kind"))
+        resource_type = self._normalize_resource_type(
+            kwargs.get("resource_type") or kwargs.get("kind")
+        )
         name = kwargs.get("name") or kwargs.get("resource_name") or ""
         ns = self._ns(kwargs)
         if not resource_type:
@@ -873,7 +965,10 @@ class K8sClient:
             "nodes": len(nodes.items),
             "pods": len(pods.items),
             "deployments": len(deps.items),
-            "pod_phases": {p: sum(1 for pod in pods.items if pod.status.phase == p) for p in {"Running", "Pending", "Failed", "Succeeded"}},
+            "pod_phases": {
+                p: sum(1 for pod in pods.items if pod.status.phase == p)
+                for p in {"Running", "Pending", "Failed", "Succeeded"}
+            },
         }
 
     def _knowledge_graph_store(self) -> FileKnowledgeGraphStore:
@@ -906,15 +1001,21 @@ class K8sClient:
         edges = []
 
         for node in nodes:
-            graph_node = self._graph_node("node", node, namespace=None, attributes=self._node_attributes(node))
+            graph_node = self._graph_node(
+                "node", node, namespace=None, attributes=self._node_attributes(node)
+            )
             graph_nodes.append(graph_node)
 
         for deployment in deployments:
-            graph_node = self._graph_node("deployment", deployment, attributes=self._deployment_attributes(deployment))
+            graph_node = self._graph_node(
+                "deployment", deployment, attributes=self._deployment_attributes(deployment)
+            )
             graph_nodes.append(graph_node)
 
         for replica_set in replica_sets:
-            graph_node = self._graph_node("replicaset", replica_set, attributes=self._replicaset_attributes(replica_set))
+            graph_node = self._graph_node(
+                "replicaset", replica_set, attributes=self._replicaset_attributes(replica_set)
+            )
             graph_nodes.append(graph_node)
             edges.extend(self._owner_edges("replicaset", replica_set))
 
@@ -924,15 +1025,19 @@ class K8sClient:
             edges.extend(self._owner_edges("pod", pod))
             node_name = getattr(getattr(pod, "spec", None), "node_name", None)
             if node_name:
-                edges.append({
-                    "source": graph_node["id"],
-                    "target": graph_node_id("node", None, node_name),
-                    "type": "scheduled_on",
-                })
+                edges.append(
+                    {
+                        "source": graph_node["id"],
+                        "target": graph_node_id("node", None, node_name),
+                        "type": "scheduled_on",
+                    }
+                )
 
         pod_nodes = [node for node in graph_nodes if node["kind"] == "pod"]
         for service in services:
-            service_node = self._graph_node("service", service, attributes=self._service_attributes(service))
+            service_node = self._graph_node(
+                "service", service, attributes=self._service_attributes(service)
+            )
             graph_nodes.append(service_node)
             selector = service_node["attributes"].get("selector") or {}
             if selector:
@@ -940,21 +1045,29 @@ class K8sClient:
                     if pod_node.get("namespace") != service_node.get("namespace"):
                         continue
                     if self._labels_match(selector, pod_node.get("labels", {})):
-                        edges.append({
-                            "source": service_node["id"],
-                            "target": pod_node["id"],
-                            "type": "selects",
-                        })
+                        edges.append(
+                            {
+                                "source": service_node["id"],
+                                "target": pod_node["id"],
+                                "type": "selects",
+                            }
+                        )
 
         for ingress in ingresses:
-            ingress_node = self._graph_node("ingress", ingress, attributes=self._ingress_attributes(ingress))
+            ingress_node = self._graph_node(
+                "ingress", ingress, attributes=self._ingress_attributes(ingress)
+            )
             graph_nodes.append(ingress_node)
             for service_name in ingress_node["attributes"].get("backend_services", []):
-                edges.append({
-                    "source": ingress_node["id"],
-                    "target": graph_node_id("service", ingress_node.get("namespace"), service_name),
-                    "type": "routes_to",
-                })
+                edges.append(
+                    {
+                        "source": ingress_node["id"],
+                        "target": graph_node_id(
+                            "service", ingress_node.get("namespace"), service_name
+                        ),
+                        "type": "routes_to",
+                    }
+                )
 
         return {
             "nodes": self._dedupe_graph_nodes(graph_nodes),
@@ -981,7 +1094,9 @@ class K8sClient:
             "namespace": getattr(metadata, "namespace", None),
             "type": getattr(spec, "type", None),
             "cluster_ip": getattr(spec, "cluster_ip", None),
-            "external_ips": getattr(spec, "external_i_ps", None) or getattr(spec, "external_ips", None) or [],
+            "external_ips": getattr(spec, "external_i_ps", None)
+            or getattr(spec, "external_ips", None)
+            or [],
             "selector": getattr(spec, "selector", None) or {},
             "ports": [
                 {
@@ -1007,7 +1122,9 @@ class K8sClient:
             "ready": getattr(status, "ready_replicas", None) or 0,
             "available": getattr(status, "available_replicas", None) or 0,
             "current": getattr(status, "replicas", None) or 0,
-            "owners": K8sClient._format_owner_refs(getattr(metadata, "owner_references", None) or []),
+            "owners": K8sClient._format_owner_refs(
+                getattr(metadata, "owner_references", None) or []
+            ),
             "labels": getattr(metadata, "labels", None) or {},
         }
 
@@ -1023,16 +1140,24 @@ class K8sClient:
                 backend = getattr(path, "backend", None)
                 service = getattr(backend, "service", None) if backend else None
                 port = getattr(service, "port", None) if service else None
-                paths.append({
-                    "path": getattr(path, "path", None),
-                    "path_type": getattr(path, "path_type", None),
-                    "service": getattr(service, "name", None) if service else None,
-                    "service_port": (getattr(port, "number", None) or getattr(port, "name", None)) if port else None,
-                })
-            rules.append({
-                "host": getattr(rule, "host", None),
-                "paths": paths,
-            })
+                paths.append(
+                    {
+                        "path": getattr(path, "path", None),
+                        "path_type": getattr(path, "path_type", None),
+                        "service": getattr(service, "name", None) if service else None,
+                        "service_port": (
+                            (getattr(port, "number", None) or getattr(port, "name", None))
+                            if port
+                            else None
+                        ),
+                    }
+                )
+            rules.append(
+                {
+                    "host": getattr(rule, "host", None),
+                    "paths": paths,
+                }
+            )
 
         return {
             "name": getattr(metadata, "name", None),
@@ -1098,7 +1223,9 @@ class K8sClient:
             "completion_mode": getattr(spec, "completion_mode", None),
             "start_time": K8sClient._stringify_time(getattr(status, "start_time", None)),
             "completion_time": K8sClient._stringify_time(getattr(status, "completion_time", None)),
-            "owners": K8sClient._format_owner_refs(getattr(metadata, "owner_references", None) or []),
+            "owners": K8sClient._format_owner_refs(
+                getattr(metadata, "owner_references", None) or []
+            ),
             "labels": getattr(metadata, "labels", None) or {},
         }
 
@@ -1114,8 +1241,12 @@ class K8sClient:
             "schedule": getattr(spec, "schedule", None),
             "suspend": getattr(spec, "suspend", None) or False,
             "active": [getattr(item, "name", None) for item in active],
-            "last_schedule_time": K8sClient._stringify_time(getattr(status, "last_schedule_time", None)),
-            "last_successful_time": K8sClient._stringify_time(getattr(status, "last_successful_time", None)),
+            "last_schedule_time": K8sClient._stringify_time(
+                getattr(status, "last_schedule_time", None)
+            ),
+            "last_successful_time": K8sClient._stringify_time(
+                getattr(status, "last_successful_time", None)
+            ),
             "labels": getattr(metadata, "labels", None) or {},
         }
 
@@ -1137,7 +1268,9 @@ class K8sClient:
             "max_replicas": getattr(spec, "max_replicas", None),
             "current_replicas": getattr(status, "current_replicas", None) or 0,
             "desired_replicas": getattr(status, "desired_replicas", None) or 0,
-            "current_metrics": K8sClient._serialize_k8s_obj(getattr(status, "current_metrics", None) or []),
+            "current_metrics": K8sClient._serialize_k8s_obj(
+                getattr(status, "current_metrics", None) or []
+            ),
             "conditions": K8sClient._format_conditions(getattr(status, "conditions", None) or []),
         }
 
@@ -1208,7 +1341,9 @@ class K8sClient:
             "namespace": getattr(metadata, "namespace", None),
             "secrets": [getattr(item, "name", None) for item in secrets],
             "image_pull_secrets": [getattr(item, "name", None) for item in image_pull_secrets],
-            "automount_service_account_token": getattr(service_account, "automount_service_account_token", None),
+            "automount_service_account_token": getattr(
+                service_account, "automount_service_account_token", None
+            ),
             "labels": getattr(metadata, "labels", None) or {},
         }
 
@@ -1224,7 +1359,11 @@ class K8sClient:
             "volume_name": getattr(spec, "volume_name", None),
             "storage_class": getattr(spec, "storage_class_name", None),
             "access_modes": getattr(spec, "access_modes", None) or [],
-            "requested_storage": (getattr(spec, "resources", None) and getattr(getattr(spec, "resources"), "requests", None) or {}).get("storage"),
+            "requested_storage": (
+                getattr(spec, "resources", None)
+                and getattr(getattr(spec, "resources"), "requests", None)
+                or {}
+            ).get("storage"),
             "capacity": (getattr(status, "capacity", None) or {}).get("storage"),
             "labels": getattr(metadata, "labels", None) or {},
         }
@@ -1414,7 +1553,9 @@ class K8sClient:
         return parsed
 
     @classmethod
-    def _list_resources(cls, api: Any, resource: str, namespace: str, all_namespaces: bool) -> list[Any]:
+    def _list_resources(
+        cls, api: Any, resource: str, namespace: str, all_namespaces: bool
+    ) -> list[Any]:
         if all_namespaces:
             method = getattr(api, f"list_{resource}_for_all_namespaces", None)
             if method:
@@ -1450,7 +1591,8 @@ class K8sClient:
         metadata = getattr(node, "metadata", None)
         ready_condition = next(
             (
-                condition for condition in (getattr(status, "conditions", None) or [])
+                condition
+                for condition in (getattr(status, "conditions", None) or [])
                 if getattr(condition, "type", None) == "Ready"
             ),
             None,
@@ -1494,7 +1636,9 @@ class K8sClient:
         return {
             "phase": getattr(status, "phase", None),
             "node": getattr(spec, "node_name", None),
-            "restarts": sum(cs.restart_count for cs in (getattr(status, "container_statuses", None) or [])),
+            "restarts": sum(
+                cs.restart_count for cs in (getattr(status, "container_statuses", None) or [])
+            ),
         }
 
     @classmethod
@@ -1510,12 +1654,14 @@ class K8sClient:
     @classmethod
     def _ingress_attributes(cls, ingress: Any) -> dict:
         formatted = cls._format_ingress(ingress)
-        backend_services = sorted({
-            path["service"]
-            for rule in formatted["rules"]
-            for path in rule["paths"]
-            if path.get("service")
-        })
+        backend_services = sorted(
+            {
+                path["service"]
+                for rule in formatted["rules"]
+                for path in rule["paths"]
+                if path.get("service")
+            }
+        )
         return {
             "class_name": formatted["class_name"],
             "rules": formatted["rules"],
@@ -1535,11 +1681,13 @@ class K8sClient:
             owner_name = getattr(owner, "name", None)
             if not owner_kind or not owner_name:
                 continue
-            edges.append({
-                "source": graph_node_id(owner_kind, namespace, owner_name),
-                "target": child_id,
-                "type": "owns",
-            })
+            edges.append(
+                {
+                    "source": graph_node_id(owner_kind, namespace, owner_name),
+                    "target": child_id,
+                    "type": "owns",
+                }
+            )
         return edges
 
     @staticmethod
@@ -1712,14 +1860,16 @@ class K8sClient:
             memory = K8sClient._parse_memory_bytes(usage.get("memory", "0"))
             total_cpu += cpu
             total_memory += memory
-            containers.append({
-                "name": container.get("name"),
-                "cpu": usage.get("cpu", "0"),
-                "memory": usage.get("memory", "0"),
-                "cpu_mcores": cpu,
-                "memory_bytes": memory,
-                "memory_mib": round(memory / 1024 / 1024, 2),
-            })
+            containers.append(
+                {
+                    "name": container.get("name"),
+                    "cpu": usage.get("cpu", "0"),
+                    "memory": usage.get("memory", "0"),
+                    "cpu_mcores": cpu,
+                    "memory_bytes": memory,
+                    "memory_mib": round(memory / 1024 / 1024, 2),
+                }
+            )
         return {
             "name": item.get("metadata", {}).get("name"),
             "namespace": item.get("metadata", {}).get("namespace"),
@@ -1752,19 +1902,19 @@ class K8sClient:
         suffix = (match.group(2) or "").lower()
         binary = {
             "ki": 1024,
-            "mi": 1024 ** 2,
-            "gi": 1024 ** 3,
-            "ti": 1024 ** 4,
-            "pi": 1024 ** 5,
-            "ei": 1024 ** 6,
+            "mi": 1024**2,
+            "gi": 1024**3,
+            "ti": 1024**4,
+            "pi": 1024**5,
+            "ei": 1024**6,
         }
         decimal = {
             "k": 1000,
-            "m": 1000 ** 2,
-            "g": 1000 ** 3,
-            "t": 1000 ** 4,
-            "p": 1000 ** 5,
-            "e": 1000 ** 6,
+            "m": 1000**2,
+            "g": 1000**3,
+            "t": 1000**4,
+            "p": 1000**5,
+            "e": 1000**6,
         }
         return int(number * (binary.get(suffix) or decimal.get(suffix) or 1))
 
@@ -1790,38 +1940,48 @@ class K8sClient:
                 desired = attrs.get("desired", 0)
                 available = attrs.get("available", 0)
                 if desired > available:
-                    issues.append({
-                        "severity": "warning",
-                        "kind": "deployment",
-                        "name": node.get("name"),
-                        "namespace": node.get("namespace"),
-                        "reason": "deployment_available_replicas_low",
-                        "message": f"Deployment 期望 {desired} 副本，可用 {available} 副本。",
-                    })
-            elif node.get("kind") == "service":
-                selected = [edge for edge in outgoing.get(node["id"], []) if edge.get("type") == "selects"]
-                if not selected:
-                    issues.append({
-                        "severity": "warning",
-                        "kind": "service",
-                        "name": node.get("name"),
-                        "namespace": node.get("namespace"),
-                        "reason": "service_selects_no_pods",
-                        "message": "Service selector 当前没有匹配到 Pod。",
-                    })
-            elif node.get("kind") == "ingress":
-                for edge in [edge for edge in outgoing.get(node["id"], []) if edge.get("type") == "routes_to"]:
-                    target = node_by_id.get(edge.get("target"))
-                    if not target:
-                        issues.append({
+                    issues.append(
+                        {
                             "severity": "warning",
-                            "kind": "ingress",
+                            "kind": "deployment",
                             "name": node.get("name"),
                             "namespace": node.get("namespace"),
-                            "target": edge.get("target"),
-                            "reason": "ingress_backend_service_missing",
-                            "message": "Ingress 指向的 Service 在图谱中不存在。",
-                        })
+                            "reason": "deployment_available_replicas_low",
+                            "message": f"Deployment 期望 {desired} 副本，可用 {available} 副本。",
+                        }
+                    )
+            elif node.get("kind") == "service":
+                selected = [
+                    edge for edge in outgoing.get(node["id"], []) if edge.get("type") == "selects"
+                ]
+                if not selected:
+                    issues.append(
+                        {
+                            "severity": "warning",
+                            "kind": "service",
+                            "name": node.get("name"),
+                            "namespace": node.get("namespace"),
+                            "reason": "service_selects_no_pods",
+                            "message": "Service selector 当前没有匹配到 Pod。",
+                        }
+                    )
+            elif node.get("kind") == "ingress":
+                for edge in [
+                    edge for edge in outgoing.get(node["id"], []) if edge.get("type") == "routes_to"
+                ]:
+                    target = node_by_id.get(edge.get("target"))
+                    if not target:
+                        issues.append(
+                            {
+                                "severity": "warning",
+                                "kind": "ingress",
+                                "name": node.get("name"),
+                                "namespace": node.get("namespace"),
+                                "target": edge.get("target"),
+                                "reason": "ingress_backend_service_missing",
+                                "message": "Ingress 指向的 Service 在图谱中不存在。",
+                            }
+                        )
         return issues
 
     @staticmethod
@@ -1983,6 +2143,7 @@ class K8sClient:
         timeout: int,
     ) -> str:
         from kubernetes.stream import stream
+
         return stream(
             v1.connect_get_namespaced_pod_exec,
             pod_name,

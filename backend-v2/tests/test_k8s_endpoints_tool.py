@@ -136,19 +136,58 @@ def test_builtin_registry_exposes_k8s_get_endpoints_schema():
     assert tools["k8s-scale-deployment"]["dangerLevel"] == "write"
 
 
+def test_k8s_unavailable_reason_is_empty_after_config_loaded():
+    client = K8sClient(default_namespace="default")
+    client._config_loaded = True
+
+    assert client.unavailable_reason() == ""
+
+
 def test_knowledge_graph_api_helpers_filter_namespace_and_coverage():
     graph = {
         "metadata": {"namespace": "prod", "all_namespaces": False},
         "nodes": [
-            {"id": "node:_cluster:minikube", "kind": "node", "name": "minikube", "namespace": None, "metrics": {}},
-            {"id": "deployment:prod:web", "kind": "deployment", "name": "web", "namespace": "prod", "metrics": {"cpu": 1}},
-            {"id": "pod:prod:web-1", "kind": "pod", "name": "web-1", "namespace": "prod", "metrics": {}},
-            {"id": "deployment:test:web", "kind": "deployment", "name": "web", "namespace": "test", "metrics": {}},
+            {
+                "id": "node:_cluster:minikube",
+                "kind": "node",
+                "name": "minikube",
+                "namespace": None,
+                "metrics": {},
+            },
+            {
+                "id": "deployment:prod:web",
+                "kind": "deployment",
+                "name": "web",
+                "namespace": "prod",
+                "metrics": {"cpu": 1},
+            },
+            {
+                "id": "pod:prod:web-1",
+                "kind": "pod",
+                "name": "web-1",
+                "namespace": "prod",
+                "metrics": {},
+            },
+            {
+                "id": "deployment:test:web",
+                "kind": "deployment",
+                "name": "web",
+                "namespace": "test",
+                "metrics": {},
+            },
         ],
         "edges": [
             {"source": "deployment:prod:web", "target": "pod:prod:web-1", "type": "owns"},
-            {"source": "pod:prod:web-1", "target": "node:_cluster:minikube", "type": "scheduled_on"},
-            {"source": "deployment:test:web", "target": "node:_cluster:minikube", "type": "scheduled_on"},
+            {
+                "source": "pod:prod:web-1",
+                "target": "node:_cluster:minikube",
+                "type": "scheduled_on",
+            },
+            {
+                "source": "deployment:test:web",
+                "target": "node:_cluster:minikube",
+                "type": "scheduled_on",
+            },
         ],
     }
 
@@ -237,7 +276,9 @@ async def test_k8s_write_and_exec_tools_call_expected_handlers(monkeypatch):
         namespace="prod",
         patch='{"metadata":{"annotations":{"owner":"ops"}}}',
     )
-    deleted = await client.k8s_delete_resource(resource_type="service", name="web", namespace="prod")
+    deleted = await client.k8s_delete_resource(
+        resource_type="service", name="web", namespace="prod"
+    )
     executed = await client.k8s_exec_pod(
         pod_name="web-abc",
         namespace="prod",
@@ -321,7 +362,9 @@ async def test_k8s_common_inventory_tools_redact_and_format_resources():
 
     namespaces = await client.k8s_get_namespaces()
     configmaps = await client.k8s_get_configmaps(namespace="prod")
-    configmap = await client.k8s_describe_configmap(configmap_name="web-config", namespace="prod", include_data=True)
+    configmap = await client.k8s_describe_configmap(
+        configmap_name="web-config", namespace="prod", include_data=True
+    )
     secrets = await client.k8s_get_secrets(namespace="prod")
     serviceaccounts = await client.k8s_get_serviceaccounts(namespace="prod")
     pvcs = await client.k8s_get_pvcs(namespace="prod")
@@ -413,8 +456,11 @@ async def test_k8s_knowledge_graph_tools_sync_and_query(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_builtin_registry_marks_k8s_tools_unavailable_without_kubeconfig(monkeypatch, tmp_path):
+async def test_builtin_registry_marks_k8s_tools_unavailable_without_kubeconfig(
+    monkeypatch, tmp_path
+):
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("MCP_CONFIG_PATH", str(tmp_path / "missing-mcp.json"))
     monkeypatch.delenv("KUBECONFIG_PATH", raising=False)
 
     registry = BuiltinToolRegistry()
@@ -539,7 +585,9 @@ class _FakeAppsV1:
         self.deployment_read_args = {"name": name, "namespace": namespace}
         return _deployment(name=name, namespace=namespace)
 
-    def list_namespaced_replica_set(self, namespace: str, label_selector: str = "", limit: int = 100):
+    def list_namespaced_replica_set(
+        self, namespace: str, label_selector: str = "", limit: int = 100
+    ):
         self.rs_list_args = {
             "namespace": namespace,
             "label_selector": label_selector,
@@ -547,15 +595,27 @@ class _FakeAppsV1:
         }
         return SimpleNamespace(items=[_replica_set(name="web-6d8f", namespace=namespace)])
 
-    def list_namespaced_stateful_set(self, namespace: str, label_selector: str = "", limit: int = 100):
-        self.statefulset_list_args = {"namespace": namespace, "label_selector": label_selector, "limit": limit}
+    def list_namespaced_stateful_set(
+        self, namespace: str, label_selector: str = "", limit: int = 100
+    ):
+        self.statefulset_list_args = {
+            "namespace": namespace,
+            "label_selector": label_selector,
+            "limit": limit,
+        }
         return SimpleNamespace(items=[_statefulset(name="db", namespace=namespace)])
 
     def read_namespaced_stateful_set(self, name: str, namespace: str):
         return _statefulset(name=name, namespace=namespace)
 
-    def list_namespaced_daemon_set(self, namespace: str, label_selector: str = "", limit: int = 100):
-        self.daemonset_list_args = {"namespace": namespace, "label_selector": label_selector, "limit": limit}
+    def list_namespaced_daemon_set(
+        self, namespace: str, label_selector: str = "", limit: int = 100
+    ):
+        self.daemonset_list_args = {
+            "namespace": namespace,
+            "label_selector": label_selector,
+            "limit": limit,
+        }
         return SimpleNamespace(items=[_daemonset(name="node-agent", namespace=namespace)])
 
     def read_namespaced_daemon_set(self, name: str, namespace: str):
@@ -605,7 +665,9 @@ class _FakeRbacV1:
         return SimpleNamespace(items=[_role(name="pod-reader", namespace=namespace)])
 
     def list_namespaced_role_binding(self, namespace: str, limit: int):
-        return SimpleNamespace(items=[_role_binding(name="pod-reader-binding", namespace=namespace)])
+        return SimpleNamespace(
+            items=[_role_binding(name="pod-reader-binding", namespace=namespace)]
+        )
 
     def list_cluster_role(self, limit: int):
         return SimpleNamespace(items=[_role(name="view", namespace=None)])
@@ -709,13 +771,18 @@ def _replica_set(name: str, namespace: str):
             name=name,
             namespace=namespace,
             labels={"app": "web"},
-            annotations={"deployment.kubernetes.io/revision": "3", "kubernetes.io/change-cause": "rollout image"},
+            annotations={
+                "deployment.kubernetes.io/revision": "3",
+                "kubernetes.io/change-cause": "rollout image",
+            },
             owner_references=[SimpleNamespace(kind="Deployment", name="web", controller=True)],
             creation_timestamp="2026-05-06T00:00:00Z",
         ),
         spec=SimpleNamespace(
             replicas=2,
-            template=SimpleNamespace(spec=SimpleNamespace(containers=[SimpleNamespace(image="nginx:1.27")])),
+            template=SimpleNamespace(
+                spec=SimpleNamespace(containers=[SimpleNamespace(image="nginx:1.27")])
+            ),
         ),
         status=SimpleNamespace(replicas=2, ready_replicas=2, available_replicas=1),
     )
@@ -763,7 +830,14 @@ def _deployment(name: str, namespace: str):
             ready_replicas=1,
             updated_replicas=1,
             observed_generation=4,
-            conditions=[SimpleNamespace(type="Available", status="False", reason="MinimumReplicasUnavailable", message="")],
+            conditions=[
+                SimpleNamespace(
+                    type="Available",
+                    status="False",
+                    reason="MinimumReplicasUnavailable",
+                    message="",
+                )
+            ],
         ),
     )
 
@@ -777,14 +851,20 @@ def _pod(name: str, namespace: str):
             owner_references=[SimpleNamespace(kind="ReplicaSet", name="web-6d8f", controller=True)],
             creation_timestamp="2026-05-06T00:00:00Z",
         ),
-        spec=SimpleNamespace(node_name="minikube", containers=[SimpleNamespace(name="app", image="nginx")]),
-        status=SimpleNamespace(phase="Running", container_statuses=[SimpleNamespace(restart_count=0)]),
+        spec=SimpleNamespace(
+            node_name="minikube", containers=[SimpleNamespace(name="app", image="nginx")]
+        ),
+        status=SimpleNamespace(
+            phase="Running", container_statuses=[SimpleNamespace(restart_count=0)]
+        ),
     )
 
 
 def _namespace(name: str):
     return SimpleNamespace(
-        metadata=SimpleNamespace(name=name, labels={"env": "prod"}, creation_timestamp="2026-05-06T00:00:00Z"),
+        metadata=SimpleNamespace(
+            name=name, labels={"env": "prod"}, creation_timestamp="2026-05-06T00:00:00Z"
+        ),
         status=SimpleNamespace(phase="Active"),
     )
 
@@ -885,7 +965,9 @@ def _role(name: str, namespace: str | None):
 def _role_binding(name: str, namespace: str | None):
     return SimpleNamespace(
         metadata=SimpleNamespace(name=name, namespace=namespace, labels={}),
-        role_ref=SimpleNamespace(kind="ClusterRole", name="view", api_group="rbac.authorization.k8s.io"),
+        role_ref=SimpleNamespace(
+            kind="ClusterRole", name="view", api_group="rbac.authorization.k8s.io"
+        ),
         subjects=[SimpleNamespace(kind="ServiceAccount", name="web", namespace="prod")],
     )
 
@@ -921,7 +1003,9 @@ def _statefulset(name: str, namespace: str):
         spec=SimpleNamespace(
             replicas=2,
             service_name="db-headless",
-            template=SimpleNamespace(spec=SimpleNamespace(containers=[SimpleNamespace(image="postgres:16")])),
+            template=SimpleNamespace(
+                spec=SimpleNamespace(containers=[SimpleNamespace(image="postgres:16")])
+            ),
         ),
         status=SimpleNamespace(
             ready_replicas=2,
@@ -936,7 +1020,11 @@ def _statefulset(name: str, namespace: str):
 def _daemonset(name: str, namespace: str):
     return SimpleNamespace(
         metadata=SimpleNamespace(name=name, namespace=namespace, labels={"app": "node-agent"}),
-        spec=SimpleNamespace(template=SimpleNamespace(spec=SimpleNamespace(containers=[SimpleNamespace(image="agent:1")]))),
+        spec=SimpleNamespace(
+            template=SimpleNamespace(
+                spec=SimpleNamespace(containers=[SimpleNamespace(image="agent:1")])
+            )
+        ),
         status=SimpleNamespace(
             desired_number_scheduled=2,
             current_number_scheduled=2,
@@ -951,7 +1039,9 @@ def _job(name: str, namespace: str):
     return SimpleNamespace(
         metadata=SimpleNamespace(name=name, namespace=namespace, labels={}, owner_references=[]),
         spec=SimpleNamespace(completions=1, parallelism=1, completion_mode="NonIndexed"),
-        status=SimpleNamespace(active=0, succeeded=1, failed=0, start_time=None, completion_time="2026-05-06T00:01:00Z"),
+        status=SimpleNamespace(
+            active=0, succeeded=1, failed=0, start_time=None, completion_time="2026-05-06T00:01:00Z"
+        ),
     )
 
 
@@ -959,7 +1049,11 @@ def _cronjob(name: str, namespace: str):
     return SimpleNamespace(
         metadata=SimpleNamespace(name=name, namespace=namespace, labels={}),
         spec=SimpleNamespace(schedule="*/5 * * * *", suspend=False),
-        status=SimpleNamespace(active=[], last_schedule_time="2026-05-06T00:00:00Z", last_successful_time="2026-05-06T00:01:00Z"),
+        status=SimpleNamespace(
+            active=[],
+            last_schedule_time="2026-05-06T00:00:00Z",
+            last_successful_time="2026-05-06T00:01:00Z",
+        ),
     )
 
 

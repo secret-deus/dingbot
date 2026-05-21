@@ -15,8 +15,8 @@
 
 ## 当前优先级
 
-1. Tool execution recovery：逐步把 `catalog_only` 工具恢复为可执行实现。
-2. Full Compose smoke：按需启动 `docker compose up --build` 验证前后端联动。
+1. Full Compose smoke：按需启动 `docker compose up --build` 验证前后端联动。
+2. Real ECS smoke：在具备阿里云凭证的环境验证 `ecs-describe-instance-monitor-data`。
 3. 发布自测：按 `project_document/specs/sustainable-delivery/release-checklist.md` 和 `self-test-report-template.md` 固化每个切片结果。
 
 ## 工作规则
@@ -31,7 +31,7 @@
 
 | 风险 | 影响 | 处理 |
 | --- | --- | --- |
-| Tool inventory 从旧版 21 个缩到当前 8 个 K8s 工具 | 运维能力倒退 | 用 ToolSearch catalog 先恢复可发现性，再逐步恢复执行 |
+| Tool inventory 从旧版 21 个缩到当前 8 个 K8s 工具 | 运维能力倒退 | 已用 ToolSearch catalog 恢复并扩展到 55 个可执行工具 |
 | Scheduler 只有 CRUD 没有 runner | UI 显示可配置但不会执行 | 已在 S4 接入 runner、手动运行和执行历史 |
 | DingTalk 仅有配置字段 | 通知开关误导用户 | 已在 S4 接入 webhook service 和 mock-backed 测试 |
 | Docker 后端镜像缺少 ToolSearch runtime | Compose 下启用 ToolSearch 会启动失败 | 已在 S5 改为根构建上下文并把 Node 22/ToolSearch dist 打入后端镜像 |

@@ -3,6 +3,7 @@
 Local stdio MCP server for searching the Ding Robot operations tool catalog.
 
 ToolSearch is discovery-only. It returns metadata about tools and never calls Kubernetes, ECS, shell commands, or webhook APIs.
+The current generated catalog contains 55 executable tool entries.
 
 ## Commands
 

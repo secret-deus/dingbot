@@ -108,9 +108,9 @@ Validation rules:
 Current generated catalog:
 
 ```text
-total: 21
-executable: 11
-catalog_only: 10
+total: 55
+executable: 55
+catalog_only: 0
 ```
 
 ## 5. Search API
@@ -165,8 +165,8 @@ Returns category names and counts:
 ```json
 {
   "categories": [
-    { "name": "kubernetes", "total": 18, "executable": 8 },
-    { "name": "ecs", "total": 3, "executable": 2 }
+    { "name": "kubernetes", "total": 52, "executable": 52 },
+    { "name": "ecs", "total": 3, "executable": 3 }
   ]
 }
 ```
@@ -289,6 +289,7 @@ Fallback behavior:
 1. If ToolSearch is unavailable, use current built-in tool list.
 2. If a candidate is `catalog_only`, explain that the tool exists in catalog but is not executable yet.
 3. If LLM selects an unknown tool, reject and audit the failed selection.
+4. If the catalog marks a tool executable but the current runtime did not load its handler, return `tool_unavailable` with reason `tool_not_loaded`.
 
 Implemented chat orchestration:
 
