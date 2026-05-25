@@ -108,8 +108,8 @@ Validation rules:
 Current generated catalog:
 
 ```text
-total: 55
-executable: 55
+total: 68
+executable: 68
 catalog_only: 0
 ```
 

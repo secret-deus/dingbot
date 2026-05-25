@@ -69,7 +69,8 @@ async def get_messages(
     await db.commit()
     return [
         {"id": m.id, "role": m.role.value, "content": m.content,
-         "tool_calls": m.tool_calls, "created_at": str(m.created_at)}
+         "tool_calls": m.tool_calls, "tool_results": m.tool_results,
+         "created_at": str(m.created_at)}
         for m in msgs
     ]
 

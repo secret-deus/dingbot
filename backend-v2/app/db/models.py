@@ -91,6 +91,7 @@ class Message(Base):
     role: Mapped[MessageRole] = mapped_column(Enum(MessageRole), nullable=False)
     content: Mapped[str] = mapped_column(Text, default="")
     tool_calls: Mapped[Optional[dict]] = mapped_column(JSON, default=None)
+    tool_results: Mapped[Optional[dict]] = mapped_column(JSON, default=None)
     tool_call_id: Mapped[Optional[str]] = mapped_column(String(64), default=None)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 

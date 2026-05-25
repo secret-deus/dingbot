@@ -168,13 +168,13 @@ Phase 2 can replace or augment this with BM25 or MiniSearch after the phase 1 ba
 Current generated catalog:
 
 ```text
-total: 55
-executable: 55
+total: 68
+executable: 68
 catalog_only: 0
-categories: kubernetes=52, ecs=3
+categories: kubernetes=52, ecs=3, aliyun=13
 ```
 
-The old 21-tool catalog from `config/mcp_config.json` is preserved inside the generated 55-tool catalog. The current old-catalog set includes:
+The old 21-tool catalog from `config/mcp_config.json` is preserved inside the generated catalog. The current old-catalog set includes:
 
 ```text
 k8s-get-pods

@@ -11,15 +11,33 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.db.models import MessageRole
 from app.db.repositories.audit_repo import AuditRepository
-from app.db.repositories.session_repo import SessionRepository, MessageRepository
+from app.db.repositories.session_repo import MessageRepository, SessionRepository
 from app.llm.chat import ChatService
 from app.llm.config_store import LLMRuntimeConfig, load_llm_runtime
 from app.llm.security import DataMasker
 from app.mcp.manager import MCPManager
 
-
 DISCOVERY_CONTEXT_TOOLS = {"toolsearch", "tool_get", "tool_categories"}
+DISCOVERY_RESULT_TOOLS = {"toolsearch", "tool_get"}
 MAX_TOOL_CALL_ROUNDS = 6
+K8S_INSPECTION_KEYWORDS = (
+    "巡检",
+    "健康检查",
+    "health check",
+    "inspection",
+)
+K8S_INSPECTION_REQUIRED_TOOLS = {
+    "k8s-cluster-summary",
+    "k8s-get-nodes",
+    "k8s-get-cluster-metrics",
+}
+TOOL_LOOP_STOP_MESSAGES = {
+    "duplicate_tool_call": "模型重复请求相同工具，已停止继续调用工具。",
+    "discovery_sufficient": "工具检索结果已返回，已停止继续调用工具。",
+    "inspection_sufficient": "集群巡检所需的核心工具结果已齐备。",
+    "tool_round_limit": "工具调用轮次已达到上限。",
+    "llm_error_after_tools": "模型在工具执行后没有完成最终回答。",
+}
 K8S_CLUSTER_CONTEXT_KEYWORDS = (
     "集群",
     "k8s",
@@ -150,7 +168,10 @@ class ChatOrchestrator:
         tool_calls_made = []
         tool_results_made = []
         tool_round_limit_reached = False
+        tool_loop_stop_reason = None
+        llm_error_after_tools = None
         discovery_only = self._discovery_only_intent(content_for_llm)
+        seen_tool_call_keys = set()
 
         if chat is None:
             response_text = self._disabled_llm_message(runtime_config, llm_provider_id)
@@ -167,60 +188,120 @@ class ChatOrchestrator:
 
         for _round in range(MAX_TOOL_CALL_ROUNDS):
             made_tool_call = False
+            round_text = ""
             async for event in chat.stream_chat(messages=messages, tools=tools):
                 if event["type"] == "token":
-                    response_text += event["content"]
+                    round_text += event["content"]
                     yield {"type": "token", "content": event["content"]}
 
                 elif event["type"] == "tool_call":
-                    made_tool_call = True
-                    tool_calls_made.append(event["tool_call"])
-                    yield {"type": "tool_call", "tool_call": event["tool_call"]}
+                    tool_call = event["tool_call"]
+                    tool_call_key = self._tool_call_key(tool_call)
+                    if tool_call_key in seen_tool_call_keys:
+                        tool_loop_stop_reason = "duplicate_tool_call"
+                        break
 
-                    tool_result = await self._execute_tool(event["tool_call"])
-                    if event["tool_call"]["function"]["name"] in DISCOVERY_CONTEXT_TOOLS:
+                    seen_tool_call_keys.add(tool_call_key)
+                    made_tool_call = True
+                    tool_calls_made.append(tool_call)
+                    yield {"type": "tool_call", "tool_call": tool_call}
+
+                    tool_result = await self._execute_tool(tool_call)
+                    if tool_call["function"]["name"] in DISCOVERY_CONTEXT_TOOLS:
                         tool_result = self._annotate_discovery_result(
                             tool_result,
                             tool_pool,
                             unavailable_tools,
                         )
-                    tool_results_made.append({
-                        "tool": event["tool_call"]["function"]["name"],
+                    tool_results_made.append(
+                        {
+                            "tool": tool_call["function"]["name"],
+                            "tool_call_id": tool_call["id"],
+                            "tool_name": tool_call["function"]["name"],
+                            "result": tool_result,
+                        }
+                    )
+                    yield {
+                        "type": "tool_result",
+                        "tool_call_id": tool_call["id"],
                         "result": tool_result,
-                    })
-                    yield {"type": "tool_result", "tool_call_id": event["tool_call"]["id"], "result": tool_result}
+                    }
 
-                    messages.append({"role": "assistant", "content": None, "tool_calls": [event["tool_call"]]})
-                    messages.append({"role": "tool", "tool_call_id": event["tool_call"]["id"], "content": json.dumps(tool_result, ensure_ascii=False)})
+                    assistant_message = {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [tool_call],
+                    }
+                    if event.get("reasoning_content"):
+                        assistant_message["reasoning_content"] = event["reasoning_content"]
+                    messages.append(assistant_message)
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call["id"],
+                            "content": json.dumps(tool_result, ensure_ascii=False),
+                        }
+                    )
+                    if discovery_only and tool_call["function"]["name"] in DISCOVERY_RESULT_TOOLS:
+                        tool_loop_stop_reason = "discovery_sufficient"
+                        break
                     if not discovery_only:
                         tools = self._expand_tools_after_result(tools, tool_pool, tool_result)
+                    if self._should_finalize_after_tools(content_for_llm, tool_results_made):
+                        tool_loop_stop_reason = "inspection_sufficient"
+                        break
 
                 elif event["type"] == "error":
+                    if tool_results_made:
+                        llm_error_after_tools = event["message"]
+                        break
                     yield {"type": "error", "message": event["message"]}
+                    return
 
+            if llm_error_after_tools:
+                tool_loop_stop_reason = "llm_error_after_tools"
+                break
+            if tool_loop_stop_reason:
+                break
             if not made_tool_call:
+                response_text += round_text
                 break
         else:
             tool_round_limit_reached = True
+            tool_loop_stop_reason = "tool_round_limit"
 
         final_text = masker.unmask(response_text) if masker else response_text
         if not final_text.strip() and tool_results_made:
-            final_text = self._tool_result_fallback(
-                tool_results_made,
-                tool_round_limit_reached=tool_round_limit_reached,
+            generated_text = await self._generate_final_answer_from_tool_results(
+                chat=chat,
+                user_content=content_for_llm,
+                tool_results=tool_results_made,
+                stop_reason=tool_loop_stop_reason,
             )
-            if final_text:
-                yield {"type": "token", "content": final_text}
+            final_text = masker.unmask(generated_text) if masker else generated_text
+            if not final_text.strip():
+                final_text = self._tool_result_fallback(
+                    tool_results_made,
+                    tool_round_limit_reached=tool_round_limit_reached,
+                    stop_reason=tool_loop_stop_reason,
+                )
+            yield {"type": "token", "content": final_text}
 
         await self.message_repo.add_message(
-            session_id, MessageRole.ASSISTANT, final_text, seq + 1,
+            session_id,
+            MessageRole.ASSISTANT,
+            final_text,
+            seq + 1,
             tool_calls=tool_calls_made if tool_calls_made else None,
+            tool_results=tool_results_made if tool_results_made else None,
         )
         await self.db.commit()
 
         yield {"type": "done", "session_id": session_id}
 
-    def _resolve_chat(self, provider_id: Optional[str]) -> tuple[Optional[ChatService], Optional[LLMRuntimeConfig]]:
+    def _resolve_chat(
+        self, provider_id: Optional[str]
+    ) -> tuple[Optional[ChatService], Optional[LLMRuntimeConfig]]:
         if self.chat is not None:
             return self.chat, None
 
@@ -228,6 +309,103 @@ class ChatOrchestrator:
         if not runtime_config.active or runtime_config.provider is None:
             return None, runtime_config
         return ChatService(runtime_config.provider), runtime_config
+
+    async def _generate_final_answer_from_tool_results(
+        self,
+        chat: ChatService,
+        user_content: str,
+        tool_results: list[dict],
+        stop_reason: Optional[str],
+    ) -> str:
+        if not hasattr(chat, "chat"):
+            return ""
+
+        result_summary = self._successful_tool_result_summary(
+            tool_results,
+            include_discovery=stop_reason == "discovery_sufficient",
+        )
+        if not result_summary:
+            return ""
+
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "你是 Kubernetes 运维助手。现在是最终总结阶段，不能再调用工具，"
+                    "只能基于用户问题和已提供的工具结果摘要生成中文结论。"
+                ),
+            },
+            {
+                "role": "user",
+                "content": self._final_answer_prompt(
+                    user_content=user_content,
+                    result_summary=result_summary,
+                    stop_reason=stop_reason,
+                ),
+            },
+        ]
+        result = await chat.chat(messages, tools=None)
+        if not isinstance(result, dict):
+            return ""
+        if result.get("error"):
+            logger.warning("最终工具结果总结调用失败: {}", result["error"])
+            return ""
+        if result.get("tool_calls"):
+            logger.warning("最终工具结果总结阶段仍返回工具调用，已忽略")
+            return ""
+        return result.get("content") or ""
+
+    @staticmethod
+    def _final_answer_prompt(
+        user_content: str,
+        result_summary: str,
+        stop_reason: Optional[str],
+    ) -> str:
+        reason = TOOL_LOOP_STOP_MESSAGES.get(stop_reason or "", "工具已执行完成。")
+        return (
+            f"用户原始问题：{user_content}\n\n"
+            f"收敛原因：{reason}\n\n"
+            f"工具结果摘要：\n{result_summary}\n\n"
+            "请直接生成最终回答。要求：\n"
+            "1. 不要说还需要调用工具；\n"
+            "2. 不要编造工具摘要中没有的数据；\n"
+            "3. 如果是巡检，给出健康结论、关键指标、异常/风险点和下一步建议；\n"
+            "4. 输出中文，结构清晰。"
+        )
+
+    @staticmethod
+    def _tool_call_key(tool_call: dict) -> str:
+        function = tool_call.get("function") or {}
+        name = function.get("name") or ""
+        raw_arguments = function.get("arguments") or ""
+        try:
+            arguments = (
+                json.loads(raw_arguments) if isinstance(raw_arguments, str) else raw_arguments
+            )
+        except json.JSONDecodeError:
+            normalized_arguments = str(raw_arguments)
+        else:
+            normalized_arguments = json.dumps(arguments, ensure_ascii=False, sort_keys=True)
+        return f"{name}:{normalized_arguments}"
+
+    @staticmethod
+    def _should_finalize_after_tools(user_content: str, tool_results: list[dict]) -> bool:
+        content = user_content.lower()
+        if not any(keyword in content for keyword in K8S_INSPECTION_KEYWORDS):
+            return False
+        if not any(keyword in content for keyword in K8S_CLUSTER_CONTEXT_KEYWORDS):
+            return False
+        successful_tools = {
+            item.get("tool")
+            for item in tool_results
+            if not ChatOrchestrator._tool_result_has_error(item)
+        }
+        return K8S_INSPECTION_REQUIRED_TOOLS.issubset(successful_tools)
+
+    @staticmethod
+    def _tool_result_has_error(tool_result_item: dict) -> bool:
+        payload = ChatOrchestrator._unwrap_tool_result(tool_result_item.get("result"))
+        return isinstance(payload, dict) and bool(payload.get("error"))
 
     @staticmethod
     def _build_masker(runtime_config: Optional[LLMRuntimeConfig]) -> Optional[DataMasker]:
@@ -245,9 +423,19 @@ class ChatOrchestrator:
         if runtime_config and not runtime_config.enabled:
             return "LLM 服务未启用。请到 LLM 配置页开启 LLM，保存后新消息会立即使用当前配置。"
         if runtime_config and runtime_config.provider and not runtime_config.provider.enabled:
-            return f"模型配置 {runtime_config.provider.name} 已停用。请在对话页切换模型，或到 LLM 配置页启用它。"
-        if runtime_config and runtime_config.provider and not runtime_config.provider.api_key_configured:
-            return f"模型配置 {runtime_config.provider.name} 未配置 API Key。请到 LLM 配置页填写密钥，保存后新消息会立即生效。"
+            return (
+                f"模型配置 {runtime_config.provider.name} 已停用。"
+                "请在对话页切换模型，或到 LLM 配置页启用它。"
+            )
+        if (
+            runtime_config
+            and runtime_config.provider
+            and not runtime_config.provider.api_key_configured
+        ):
+            return (
+                f"模型配置 {runtime_config.provider.name} 未配置 API Key。"
+                "请到 LLM 配置页填写密钥，保存后新消息会立即生效。"
+            )
         return "LLM 服务未配置。请到 LLM 配置页添加模型配置，保存后新消息会立即生效。"
 
     async def _build_messages(self, session_id: str) -> list[dict]:
@@ -280,7 +468,11 @@ class ChatOrchestrator:
         }
         all_tools = [tool for tool in listed_tools if self._tool_available_for_chat(tool)]
         scoped_tools = (
-            [tool for tool in await self.mcp.list_tools(skill_id) if self._tool_available_for_chat(tool)]
+            [
+                tool
+                for tool in await self.mcp.list_tools(skill_id)
+                if self._tool_available_for_chat(tool)
+            ]
             if skill_id
             else all_tools
         )
@@ -292,9 +484,7 @@ class ChatOrchestrator:
             return scoped_tools, scoped_by_name, unavailable_tools
 
         discovery_tools = [
-            all_by_name[name]
-            for name in sorted(DISCOVERY_CONTEXT_TOOLS)
-            if name in all_by_name
+            all_by_name[name] for name in sorted(DISCOVERY_CONTEXT_TOOLS) if name in all_by_name
         ]
         anchor_tools = self._intent_anchor_tools(user_content, scoped_by_name)
         tool_pool = dict(scoped_by_name)
@@ -497,30 +687,47 @@ class ChatOrchestrator:
     def _tool_result_fallback(
         tool_results: list[dict],
         tool_round_limit_reached: bool = False,
+        stop_reason: Optional[str] = None,
     ) -> str:
         error_results = [
-            item for item in tool_results
+            item
+            for item in tool_results
             if isinstance(item.get("result"), dict) and item["result"].get("error")
         ]
         if not error_results:
-            successful_summary = ChatOrchestrator._successful_tool_result_summary(tool_results)
+            successful_summary = ChatOrchestrator._successful_tool_result_summary(
+                tool_results,
+                include_discovery=stop_reason == "discovery_sufficient",
+            )
             if successful_summary:
                 prefix = "工具已执行完成，但模型没有返回文本结果。"
-                if tool_round_limit_reached:
+                if stop_reason == "duplicate_tool_call":
+                    prefix = "模型重复请求相同工具，已停止继续调用。下面是已获得的工具结果摘要。"
+                elif stop_reason == "discovery_sufficient":
+                    prefix = "工具检索结果已返回，下面是候选工具摘要。"
+                elif stop_reason == "inspection_sufficient":
+                    prefix = "集群巡检所需的核心工具结果已齐备，下面是已获得的工具结果摘要。"
+                elif tool_round_limit_reached:
                     prefix = "工具调用轮次已达到上限，下面是已获得的工具结果摘要。"
                 return f"{prefix}\n\n{successful_summary}"
 
-            unavailable_candidates = ChatOrchestrator._unavailable_candidates_from_results(tool_results)
+            unavailable_candidates = ChatOrchestrator._unavailable_candidates_from_results(
+                tool_results
+            )
             if unavailable_candidates:
                 name, reason = unavailable_candidates[-1]
                 if name.startswith("k8s-"):
                     return (
                         f"当前 Kubernetes 工具不可用：{reason} "
-                        "配置 KUBECONFIG_PATH 并确保集群 API 可访问后再重试，或关闭“工具上下文”进行普通对话。"
+                        "配置 KUBECONFIG_PATH 并确保集群 API 可访问后再重试，"
+                        "或关闭“工具上下文”进行普通对话。"
                     )
                 return f"{name} 当前不可用：{reason}"
             if tool_round_limit_reached:
-                return "工具检索没有收敛到可执行结果，已停止继续调用。你可以换一种更具体的问题，或关闭“工具上下文”进行普通对话。"
+                return (
+                    "工具检索没有收敛到可执行结果，已停止继续调用。"
+                    "你可以换一种更具体的问题，或关闭“工具上下文”进行普通对话。"
+                )
             return "工具已执行完成，但模型没有返回文本结果。"
 
         last_error = error_results[-1]
@@ -538,7 +745,9 @@ class ChatOrchestrator:
         unavailable = []
         for item in tool_results:
             result = item.get("result")
-            parsed = ChatOrchestrator._parse_tool_payload(result) if isinstance(result, dict) else None
+            parsed = (
+                ChatOrchestrator._parse_tool_payload(result) if isinstance(result, dict) else None
+            )
             if parsed is None:
                 continue
             payload, _ = parsed
@@ -553,11 +762,14 @@ class ChatOrchestrator:
         return unavailable
 
     @staticmethod
-    def _successful_tool_result_summary(tool_results: list[dict]) -> str:
+    def _successful_tool_result_summary(
+        tool_results: list[dict],
+        include_discovery: bool = False,
+    ) -> str:
         lines = []
         for item in tool_results:
             tool_name = item.get("tool", "")
-            if tool_name in DISCOVERY_CONTEXT_TOOLS:
+            if tool_name in DISCOVERY_CONTEXT_TOOLS and not include_discovery:
                 continue
             payload = ChatOrchestrator._unwrap_tool_result(item.get("result"))
             if not isinstance(payload, dict) or payload.get("error"):
@@ -581,6 +793,20 @@ class ChatOrchestrator:
 
     @staticmethod
     def _summarize_tool_payload(tool_name: str, payload: dict) -> str:
+        if tool_name == "toolsearch":
+            results = payload.get("results") or []
+            preview = ", ".join(
+                f"{item.get('name')}({item.get('title') or item.get('category') or '候选'})"
+                for item in results[:5]
+                if isinstance(item, dict)
+            )
+            suffix = f"；候选：{preview}" if preview else ""
+            return f"- `toolsearch`: query={payload.get('query')}, total={payload.get('total', len(results))}{suffix}"
+        if tool_name == "tool_get":
+            return (
+                f"- `tool_get`: name={payload.get('name')}, "
+                f"title={payload.get('title') or payload.get('description') or '未提供'}"
+            )
         if tool_name == "k8s-cluster-summary":
             phases = payload.get("pod_phases") or {}
             return (
@@ -609,12 +835,18 @@ class ChatOrchestrator:
             return f"- `k8s-get-deployments`: count={payload.get('count', len(items))}；{preview}"
         if tool_name == "k8s-get-services":
             items = payload.get("items") or []
-            preview = ", ".join(f"{item.get('namespace', '-')}/{item.get('name')}:{item.get('type')}" for item in items[:8])
+            preview = ", ".join(
+                f"{item.get('namespace', '-')}/{item.get('name')}:{item.get('type')}"
+                for item in items[:8]
+            )
             return f"- `k8s-get-services`: count={payload.get('count', len(items))}；{preview}"
         if tool_name == "k8s-get-events":
             items = payload.get("items") or []
             warnings = [item for item in items if item.get("type") == "Warning"]
-            return f"- `k8s-get-events`: count={payload.get('count', len(items))}, warnings={len(warnings)}"
+            return (
+                f"- `k8s-get-events`: count={payload.get('count', len(items))}, "
+                f"warnings={len(warnings)}"
+            )
         if tool_name == "k8s-get-cluster-metrics":
             return (
                 f"- `k8s-get-cluster-metrics`: nodes={payload.get('node_count')}, "

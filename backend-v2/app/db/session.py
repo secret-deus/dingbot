@@ -3,6 +3,7 @@
 from collections.abc import AsyncGenerator
 
 from sqlalchemy import event
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import get_settings
@@ -64,6 +65,12 @@ async def init_db() -> None:
     engine = _get_engine()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        settings = get_settings()
+        if settings.database_url.startswith("sqlite"):
+            columns = await conn.execute(text("PRAGMA table_info(messages)"))
+            column_names = {row[1] for row in columns.fetchall()}
+            if "tool_results" not in column_names:
+                await conn.execute(text("ALTER TABLE messages ADD COLUMN tool_results JSON"))
 
 
 async def close_db() -> None:

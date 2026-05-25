@@ -99,11 +99,12 @@ class ChatService:
         if not self.stream:
             choice = response.choices[0] if response.choices else None
             message = choice.message if choice else None
+            reasoning_content = self._extract_reasoning_content(message)
             if message and message.content:
                 yield {"type": "token", "content": message.content}
             if message and message.tool_calls:
                 for tc in message.tool_calls:
-                    yield {
+                    event = {
                         "type": "tool_call",
                         "tool_call": {
                             "id": tc.id,
@@ -114,15 +115,22 @@ class ChatService:
                             },
                         },
                     }
+                    if reasoning_content:
+                        event["reasoning_content"] = reasoning_content
+                    yield event
             yield {"type": "done"}
             return
 
         tool_calls_acc: dict[int, dict] = {}
+        reasoning_content_acc = ""
 
         async for chunk in response:
             delta = chunk.choices[0].delta if chunk.choices else None
             if delta is None:
                 continue
+
+            if reasoning_delta := self._extract_reasoning_content(delta):
+                reasoning_content_acc += reasoning_delta
 
             if delta.content:
                 yield {"type": "token", "content": delta.content}
@@ -146,7 +154,10 @@ class ChatService:
 
             if chunk.choices and chunk.choices[0].finish_reason == "tool_calls":
                 for tc in sorted(tool_calls_acc.values(), key=lambda x: x.get("id", "")):
-                    yield {"type": "tool_call", "tool_call": tc}
+                    event = {"type": "tool_call", "tool_call": tc}
+                    if reasoning_content_acc:
+                        event["reasoning_content"] = reasoning_content_acc
+                    yield event
 
         yield {"type": "done"}
 
@@ -180,6 +191,8 @@ class ChatService:
                 }
                 for tc in choice.message.tool_calls
             ]
+        if reasoning_content := self._extract_reasoning_content(choice.message):
+            result["reasoning_content"] = reasoning_content
         return result
 
     @staticmethod
@@ -195,3 +208,22 @@ class ChatService:
                 },
             })
         return formatted
+
+    @staticmethod
+    def _extract_reasoning_content(message: object) -> str:
+        if message is None:
+            return ""
+        value = None
+        if isinstance(message, dict):
+            value = message.get("reasoning_content")
+        else:
+            value = getattr(message, "reasoning_content", None)
+            if value is None and hasattr(message, "get"):
+                value = message.get("reasoning_content")
+        if value is None:
+            for extra_name in ("provider_specific_fields", "model_extra", "additional_kwargs"):
+                extra = message.get(extra_name) if isinstance(message, dict) else getattr(message, extra_name, None)
+                if isinstance(extra, dict) and isinstance(extra.get("reasoning_content"), str):
+                    value = extra["reasoning_content"]
+                    break
+        return value if isinstance(value, str) else ""

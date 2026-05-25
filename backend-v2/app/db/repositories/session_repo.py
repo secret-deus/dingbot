@@ -58,6 +58,7 @@ class MessageRepository(BaseRepository[Message]):
         content: str,
         seq: int,
         tool_calls: Optional[dict] = None,
+        tool_results: Optional[dict] = None,
         tool_call_id: Optional[str] = None,
     ) -> Message:
         msg = Message(
@@ -66,6 +67,7 @@ class MessageRepository(BaseRepository[Message]):
             content=content,
             seq=seq,
             tool_calls=tool_calls,
+            tool_results=tool_results,
             tool_call_id=tool_call_id,
         )
         return await self.create(msg)
