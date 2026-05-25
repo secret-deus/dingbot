@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: backend-v2/Dockerfile
     ports:
-      - "8000:8000"
+      - "${BACKEND_PORT:-8000}:8000"
     volumes:
       - ./backend-v2/data:/app/data
       - ./backend-v2/logs:/app/logs
@@ -23,7 +23,7 @@ services:
       context: ./frontend-v3
       dockerfile: Dockerfile
     ports:
-      - "3000:80"
+      - "${FRONTEND_PORT:-3000}:80"
     depends_on:
       backend:
         condition: service_healthy

@@ -32,6 +32,10 @@ npm run build
 For Docker Compose, the backend image builds and includes the ToolSearch runtime.
 The same relative command path works from `/app` in the container:
 `mcp-servers/toolsearch/dist/src/index.js`.
+If a local MCP management page saved an absolute host Node path, cwd, or
+`TOOL_CATALOG_PATH`, the backend normalizes missing repo-local paths against the
+current runtime root. Prefer `command: "node"` and repo-relative args in shared
+examples; keep machine-specific absolute paths in ignored runtime config only.
 
 K8s, ECS, and Aliyun tools are in-process builtin tool groups, not standalone
 SSE MCP servers. Configure them under `builtin.k8s`, `builtin.ecs`, and

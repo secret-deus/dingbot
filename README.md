@@ -92,6 +92,13 @@ Compose 模式下：
 - 后端：http://127.0.0.1:8000
 - 前端：http://127.0.0.1:3000/spa/
 
+如果本机端口被占用，可以只覆盖宿主机映射端口，容器内部仍使用
+backend `8000` 和 frontend `80`：
+
+```bash
+BACKEND_PORT=8010 FRONTEND_PORT=3010 docker compose up --build
+```
+
 后端镜像会在构建阶段编译并携带 `mcp-servers/toolsearch`，所以 Docker 运行时可以直接启动 stdio ToolSearch。启用 ToolSearch 时，将 `config/mcp_config.example.json` 复制为 `config/mcp_config.json`，并把 `toolsearch.enabled` 改为 `true`。
 
 阿里云只读 Adapter 配置在 `config/mcp_config.json` 的 `builtin.aliyun` 下，也可以用环境变量覆盖。`ALIYUN_ALLOWED_REGIONS`、`ALIYUN_REQUIRED_TAGS`、`ALIYUN_ALLOWED_INSTANCE_IDS` 和 `ALIYUN_SLS_MAPPINGS` 在环境变量中需要使用 JSON 格式。

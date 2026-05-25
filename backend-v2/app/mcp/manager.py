@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Any, Optional
 
@@ -67,10 +69,10 @@ class MCPServerConnection:
             from mcp import ClientSession
             from mcp.client.stdio import StdioServerParameters, stdio_client
 
-            command = self.config.get("command", "")
-            args = self.config.get("args", [])
+            command = self._resolve_stdio_command(self.config.get("command", ""))
+            args = self._resolve_stdio_args(self.config.get("args", []))
             cwd = self._resolve_optional_path(self.config.get("cwd"))
-            env = self.config.get("env")
+            env = self._resolve_stdio_env(self.config.get("env"))
             server_params = StdioServerParameters(
                 command=command,
                 args=args,
@@ -142,7 +144,59 @@ class MCPServerConnection:
 
     @staticmethod
     def _repo_root() -> Path:
-        return Path(__file__).resolve().parents[3]
+        current = Path(__file__).resolve()
+        for parent in current.parents:
+            if (parent / "config").exists() and (parent / "mcp-servers").exists():
+                return parent
+        return current.parents[3]
+
+    @classmethod
+    def _resolve_stdio_command(cls, command: str) -> str:
+        if not command:
+            return command
+        command_path = Path(command)
+        if not command_path.is_absolute() or command_path.exists():
+            return command
+
+        translated = cls._translate_missing_repo_path(command_path)
+        if translated:
+            return str(translated)
+        if command_path.name == "node":
+            node_command = cls._working_node_command()
+            if node_command:
+                logger.warning("MCP stdio Node 命令路径不可用，改用可执行的 Node")
+                return node_command
+        return command
+
+    @classmethod
+    def _resolve_stdio_args(cls, args: list[str]) -> list[str]:
+        resolved = []
+        for arg in args:
+            if isinstance(arg, str):
+                path = Path(arg)
+                if path.is_absolute() and not path.exists():
+                    translated = cls._translate_missing_repo_path(path)
+                    if translated:
+                        resolved.append(str(translated))
+                        continue
+            resolved.append(arg)
+        return resolved
+
+    @classmethod
+    def _resolve_stdio_env(cls, env: Optional[dict]) -> Optional[dict]:
+        if not env:
+            return env
+        resolved = {}
+        for key, value in env.items():
+            if isinstance(value, str):
+                path = Path(value)
+                if path.is_absolute() and not path.exists():
+                    translated = cls._translate_missing_repo_path(path)
+                    if translated:
+                        resolved[key] = str(translated)
+                        continue
+            resolved[key] = value
+        return resolved
 
     @classmethod
     def _resolve_optional_path(cls, value: Optional[str]) -> Optional[Path]:
@@ -150,11 +204,61 @@ class MCPServerConnection:
             return None
         path = Path(value)
         if path.is_absolute():
-            return path
+            return cls._translate_missing_repo_path(path) or cls._repo_root()
         cwd_path = Path.cwd() / path
         if cwd_path.exists():
             return cwd_path
         return cls._repo_root() / path
+
+    @classmethod
+    def _translate_missing_repo_path(cls, path: Path) -> Optional[Path]:
+        if path.exists():
+            return path
+        repo_root = cls._repo_root()
+        parts = path.parts
+        for index, part in enumerate(parts):
+            if part != repo_root.name:
+                continue
+            suffix = parts[index + 1 :]
+            candidate = repo_root.joinpath(*suffix) if suffix else repo_root
+            if candidate.exists():
+                logger.debug("MCP 路径 {} 不存在，按当前仓库路径解析为 {}", path, candidate)
+                return candidate
+        for index, part in enumerate(parts):
+            if part not in {"backend-v2", "config", "frontend-v3", "mcp-servers"}:
+                continue
+            candidate = repo_root.joinpath(*parts[index:])
+            if candidate.exists():
+                logger.debug("MCP 路径 {} 不存在，按当前仓库路径解析为 {}", path, candidate)
+                return candidate
+        return None
+
+    @staticmethod
+    def _working_node_command() -> Optional[str]:
+        candidates = []
+        path_node = shutil.which("node")
+        if path_node:
+            candidates.append(Path(path_node))
+        candidates.extend(Path.home().glob(".nvm/versions/node/*/bin/node"))
+
+        seen = set()
+        for candidate in candidates:
+            candidate_str = str(candidate)
+            if candidate_str in seen:
+                continue
+            seen.add(candidate_str)
+            try:
+                subprocess.run(
+                    [candidate_str, "--version"],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+            except Exception:
+                continue
+            return candidate_str
+        return None
 
 
 class MCPManager:

@@ -12,74 +12,75 @@
 
 ## Implementation Backlog
 
-- [ ] 1. Stabilize local release command entrypoint
-  - [ ] Verify `PATH=/Users/xhang/.nvm/versions/node/v24.14.0/bin:$PATH scripts/verify.sh`
+- [x] 1. Stabilize local release command entrypoint
+  - [x] Verify `PATH=/Users/xhang/.nvm/versions/node/v24.14.0/bin:$PATH scripts/verify.sh`
     from a clean shell.
-  - [ ] Decide whether to document the nvm Node path or make `scripts/verify.sh` select it
+  - [x] Decide whether to document the nvm Node path or make `scripts/verify.sh` select it
     automatically when present.
-  - [ ] Keep failures visible; do not silently skip ToolSearch tests or audit.
-  - [ ] Update README/config docs only if the command path changes.
+  - [x] Keep failures visible; do not silently skip ToolSearch tests or audit.
+  - [x] Update README/config docs only if the command path changes.
 
-- [ ] 2. Run Docker Compose release smoke
-  - [ ] Run `docker compose config`.
-  - [ ] Run `docker compose build`.
-  - [ ] Run `docker compose up --build`.
-  - [ ] Verify backend health in the Compose runtime.
-  - [ ] Verify frontend is reachable at `http://127.0.0.1:3000/spa/`.
-  - [ ] Verify backend container logs show ToolSearch startup and catalog counts.
-  - [ ] Stop Compose cleanly and record the command used.
+- [x] 2. Run Docker Compose release smoke
+  - [x] Run `docker compose config`.
+  - [x] Run `docker compose build`.
+  - [x] Run `docker compose up --build`.
+  - [x] Verify backend health in the Compose runtime.
+  - [x] Verify frontend is reachable at `http://127.0.0.1:3010/spa/` with
+    `FRONTEND_PORT=3010` because local dev frontend owns `3000`.
+  - [x] Verify backend container logs show ToolSearch startup and catalog counts.
+  - [x] Stop Compose cleanly and record the command used.
 
-- [ ] 3. Browser smoke core pages
-  - [ ] Login as `admin/admin`.
-  - [ ] Open `/spa/mcp-config` and verify ToolSearch connected, catalog total, executable
+- [x] 3. Browser smoke core pages
+  - [x] Login as `admin/admin`.
+  - [x] Open `/spa/mcp-config` and verify ToolSearch connected, catalog total, executable
     count, catalog-only count, and Aliyun tool count.
-  - [ ] Open `/spa/chat` and submit:
+  - [x] Open `/spa/chat` and submit:
     `只搜索工具：有哪些工具可以查询阿里云轻量应用服务器？先不要执行具体资源查询。`
-  - [ ] Verify ToolSearch execution details render and the top candidate includes
+  - [x] Verify ToolSearch execution details render and the top candidate includes
     `aliyun-swas-list-instances`.
-  - [ ] Open `/spa/scheduler`, create a harmless RC smoke task, run it manually, and verify
+  - [x] Open `/spa/scheduler`, create a harmless RC smoke task, run it manually, and verify
     execution history fields.
-  - [ ] Capture screenshots or write exact smoke notes under this spec directory.
+  - [x] Capture screenshots or write exact smoke notes under this spec directory.
 
-- [ ] 4. Credential and state hygiene check
-  - [ ] Confirm runtime credentials are held only in ignored local config or process
+- [x] 4. Credential and state hygiene check
+  - [x] Confirm runtime credentials are held only in ignored local config or process
     environment.
-  - [ ] Run `git status --short` and classify every changed file.
-  - [ ] Run a targeted secret scan on staged/report files.
-  - [ ] Confirm no SQLite DB, logs, kubeconfig, AccessKey, JWT, or webhook token is staged.
-  - [ ] Record credential rotation expectation for any key pasted during manual testing.
+  - [x] Run `git status --short` and classify every changed file.
+  - [x] Run a targeted secret scan on staged/report files.
+  - [x] Confirm no SQLite DB, logs, kubeconfig, AccessKey, JWT, or webhook token is staged.
+  - [x] Record credential rotation expectation for any key pasted during manual testing.
 
-- [ ] 5. Real-resource gap verification
-  - [ ] If an ECS instance ID is available, verify `aliyun-ecs-describe-instance`.
-  - [ ] If an ECS instance ID is available, verify `aliyun-cms-get-ecs-metrics`.
-  - [ ] If an LB instance ID is available, verify `aliyun-lb-describe-health`.
-  - [ ] If SLS mappings are available, verify `aliyun-sls-list-logstores`,
+- [x] 5. Real-resource gap verification
+  - [x] If an ECS instance ID is available, verify `aliyun-ecs-describe-instance`.
+  - [x] If an ECS instance ID is available, verify `aliyun-cms-get-ecs-metrics`.
+  - [x] If an LB instance ID is available, verify `aliyun-lb-describe-health`.
+  - [x] If SLS mappings are available, verify `aliyun-sls-list-logstores`,
     `aliyun-sls-query-logs`, and `aliyun-sls-query-error-summary`.
-  - [ ] If inputs are not available, mark each check skipped with the missing input.
+  - [x] If inputs are not available, mark each check skipped with the missing input.
 
-- [ ] 6. Write RC self-test report
-  - [ ] Create `project_document/specs/release-candidate-hardening/self-test-report-rc1.md`
+- [x] 6. Write RC self-test report
+  - [x] Create `project_document/specs/release-candidate-hardening/self-test-report-rc1.md`
     from the sustainable-delivery report shape.
-  - [ ] Include branch, commit, runtime ports, automated checks, browser smoke, Compose
+  - [x] Include branch, commit, runtime ports, automated checks, browser smoke, Compose
     result, DingTalk state, skipped checks, and residual risks.
-  - [ ] Link or embed screenshots/smoke notes.
-  - [ ] Update `project_document/DELIVERY_PLAN.md` current priority status.
+  - [x] Link or embed screenshots/smoke notes.
+  - [x] Update `project_document/DELIVERY_PLAN.md` current priority status.
 
-- [ ] 7. Local commit only
-  - [ ] Run final `git diff --check`.
-  - [ ] Run final secret scan against changed files.
-  - [ ] Commit source/docs/report changes locally.
-  - [ ] Do not push unless explicitly requested.
+- [x] 7. Local commit only
+  - [x] Run final `git diff --check`.
+  - [x] Run final secret scan against changed files.
+  - [x] Commit source/docs/report changes locally.
+  - [x] Do not push unless explicitly requested.
 
 ## Verification
 
-- [ ] `PATH=/Users/xhang/.nvm/versions/node/v24.14.0/bin:$PATH scripts/verify.sh`
-- [ ] `docker compose config`
-- [ ] `docker compose build`
-- [ ] `docker compose up --build`
-- [ ] Browser smoke for login, MCP config, chat ToolSearch candidates, and scheduler
-- [ ] `git diff --check`
-- [ ] Targeted secret scan on changed files
+- [x] `PATH=/Users/xhang/.nvm/versions/node/v24.14.0/bin:$PATH scripts/verify.sh`
+- [x] `docker compose config`
+- [x] `docker compose build`
+- [x] `docker compose up --build`
+- [x] Browser smoke for login, MCP config, chat ToolSearch candidates, and scheduler
+- [x] `git diff --check`
+- [x] Targeted secret scan on changed files
 
 ## Done Definition
 
