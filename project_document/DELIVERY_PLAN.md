@@ -15,9 +15,12 @@
 
 ## 当前优先级
 
-1. Full Compose smoke：按需启动 `docker compose up --build` 验证前后端联动。
-2. Real ECS smoke：在具备阿里云凭证的环境验证 `ecs-describe-instance-monitor-data`。
-3. 发布自测：按 `project_document/specs/sustainable-delivery/release-checklist.md` 和 `self-test-report-template.md` 固化每个切片结果。
+1. RC1 发布候选收口：按 `project_document/specs/release-candidate-hardening/tasks.md`
+   执行本地验证、Compose smoke、浏览器 smoke、secret scan 和自测报告。
+2. Real Aliyun resource smoke：在具备 ECS/LB/SLS 具体资源 ID 或映射后，验证 detail、
+   metrics、load-balancer health 和 SLS log tools。
+3. 产品化治理：在 RC1 后再推进真实权限管理 API、审计筛选、DingTalk 实发验收和
+   危险操作确认流设计。
 
 ## 工作规则
 
@@ -37,3 +40,4 @@
 | Docker 后端镜像缺少 ToolSearch runtime | Compose 下启用 ToolSearch 会启动失败 | 已在 S5 改为根构建上下文并把 Node 22/ToolSearch dist 打入后端镜像 |
 | 后端测试覆盖不足 | 重构容易回归 | 从公共端点测试扩展到 auth/session/MCP |
 | 前端 bundle 偏大 | 首屏加载慢 | S3/S5 做 manualChunks 和路由级拆包 |
+| 本地验证依赖错误 Node.js | `scripts/verify.sh` 在部分 shell 下可能找不到 `tsc` 或触发 Homebrew Node 动态库错误 | RC1 先固定验证入口，再决定文档化或脚本化 Node 选择 |
