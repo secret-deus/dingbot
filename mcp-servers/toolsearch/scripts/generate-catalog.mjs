@@ -62,6 +62,19 @@ const executableBuiltins = new Set([
   "ecs-list-instances",
   "ecs-describe-instance-monitor-data",
   "ecs-inspect",
+  "aliyun-ecs-list-instances",
+  "aliyun-ecs-describe-instance",
+  "aliyun-ecs-list-security-groups",
+  "aliyun-ecs-describe-security-group-rules",
+  "aliyun-cms-get-ecs-metrics",
+  "aliyun-cms-get-alerts",
+  "aliyun-cms-get-event-history",
+  "aliyun-sls-list-logstores",
+  "aliyun-sls-query-logs",
+  "aliyun-sls-query-error-summary",
+  "aliyun-lb-list-instances",
+  "aliyun-lb-describe-health",
+  "aliyun-swas-list-instances",
 ]);
 
 const dangerLevels = new Map([
@@ -86,6 +99,19 @@ const optionalProperties = new Map([
   ["k8s-resource-metrics-query", new Set(["namespace", "resource_type"])],
   ["k8s-update-knowledge-graph-metrics", new Set(["namespace", "all_namespaces"])],
   ["k8s-resource-monitor", new Set(["app_name", "namespace"])],
+  ["aliyun-ecs-list-instances", new Set(["region_id", "status", "name", "tag_filters", "page_size"])],
+  ["aliyun-ecs-describe-instance", new Set(["region_id"])],
+  ["aliyun-ecs-list-security-groups", new Set(["region_id", "vpc_id", "instance_id"])],
+  ["aliyun-ecs-describe-security-group-rules", new Set(["region_id", "direction"])],
+  ["aliyun-cms-get-ecs-metrics", new Set(["region_id", "metrics", "relative_range", "period"])],
+  ["aliyun-cms-get-alerts", new Set(["region_id", "resource_id", "state", "relative_range"])],
+  ["aliyun-cms-get-event-history", new Set(["region_id", "resource_id", "relative_range", "event_type"])],
+  ["aliyun-sls-list-logstores", new Set(["service", "env", "region_id"])],
+  ["aliyun-sls-query-logs", new Set(["service", "env", "query", "relative_range", "limit"])],
+  ["aliyun-sls-query-error-summary", new Set(["env", "relative_range"])],
+  ["aliyun-lb-list-instances", new Set(["region_id", "type", "name", "tag_filters"])],
+  ["aliyun-lb-describe-health", new Set(["region_id", "type"])],
+  ["aliyun-swas-list-instances", new Set(["region_id", "status", "name", "tag_filters", "page_size"])],
 ]);
 
 const blueprint = [
@@ -144,6 +170,19 @@ const blueprint = [
   ["ecs-describe-instance-monitor-data", "查询 ECS 实例监控", "查询 ECS 实例监控数据，自动 Period/分片聚合，返回 summary 与采样数据", ["ecs", "aliyun", "instance", "monitor", "cpu", "memory", "监控"], { instance_id: "ECS 实例 ID", metric_name: "指标名称", start_time: "开始时间", end_time: "结束时间" }, ["查询 ECS 实例 CPU 监控数据"]],
   ["ecs-list-instances", "列出 ECS 实例", "列出 ECS 实例，返回实例 ID 清单与少量元数据", ["ecs", "aliyun", "instance", "instances", "列表", "主机"], { page_size: "每页数量" }, ["列出当前地域 ECS 实例"]],
   ["ecs-inspect", "批量巡检 ECS 实例", "批量巡检 ECS 实例，生成风险摘要与报告", ["ecs", "aliyun", "inspect", "巡检", "风险", "报告"], { instance_ids: "逗号分隔的 ECS 实例 ID 列表" }, ["巡检指定 ECS 实例并生成风险摘要"]],
+  ["aliyun-ecs-list-instances", "查询 ECS 实例列表", "按地域、状态、名称和标签查询 ECS 实例列表", ["aliyun", "ecs", "instance", "instances", "云服务器", "主机", "实例"], { region_id: "地域 ID", status: "实例状态", name: "实例名称关键词", tag_filters: "额外标签过滤", page_size: "最大返回数量" }, ["查询生产环境 ECS 实例列表"]],
+  ["aliyun-ecs-describe-instance", "查询 ECS 实例详情", "查询单台 ECS 实例详情", ["aliyun", "ecs", "instance", "describe", "详情", "云服务器"], { instance_id: "ECS 实例 ID", region_id: "地域 ID" }, ["查询 i-xxx 实例详情"]],
+  ["aliyun-ecs-list-security-groups", "查询 ECS 安全组", "查询 ECS 安全组列表", ["aliyun", "ecs", "security group", "安全组", "网络", "权限"], { region_id: "地域 ID", vpc_id: "VPC ID", instance_id: "ECS 实例 ID" }, ["查询实例关联安全组"]],
+  ["aliyun-ecs-describe-security-group-rules", "查询 ECS 安全组规则", "查询安全组入方向或出方向规则", ["aliyun", "ecs", "security group", "rule", "安全组规则", "端口"], { security_group_id: "安全组 ID", region_id: "地域 ID", direction: "ingress 或 egress" }, ["查看安全组入方向规则"]],
+  ["aliyun-cms-get-ecs-metrics", "查询 ECS 监控指标", "查询 ECS CPU、内存、磁盘、网络等监控指标", ["aliyun", "cms", "cloudmonitor", "metrics", "监控", "指标", "cpu", "内存"], { instance_id: "ECS 实例 ID", region_id: "地域 ID", metrics: "指标名列表", relative_range: "相对时间范围", period: "采样周期" }, ["查询 ECS 最近 1 小时 CPU 指标"]],
+  ["aliyun-cms-get-alerts", "查询 CloudMonitor 告警", "查询 CloudMonitor 告警状态", ["aliyun", "cms", "cloudmonitor", "alert", "告警", "报警"], { region_id: "地域 ID", resource_id: "资源 ID", state: "告警状态", relative_range: "相对时间范围" }, ["查询 ECS 相关告警"]],
+  ["aliyun-cms-get-event-history", "查询 CloudMonitor 事件", "查询 CloudMonitor 事件历史", ["aliyun", "cms", "cloudmonitor", "event", "事件", "云监控"], { region_id: "地域 ID", resource_id: "资源 ID", relative_range: "相对时间范围", event_type: "事件类型" }, ["查询最近云监控事件"]],
+  ["aliyun-sls-list-logstores", "查询 SLS Logstore 映射", "列出已配置服务对应的 SLS project/logstore", ["aliyun", "sls", "logstore", "日志", "服务日志"], { service: "服务名", env: "环境", region_id: "地域 ID" }, ["列出 ding-robot 日志映射"]],
+  ["aliyun-sls-query-logs", "查询 SLS 日志", "按服务映射查询 SLS 日志", ["aliyun", "sls", "logs", "日志", "错误日志", "exception", "error"], { service: "服务名", env: "环境", query: "查询语句", relative_range: "相对时间范围", limit: "最大行数" }, ["查询 ding-robot 最近 30 分钟错误日志"]],
+  ["aliyun-sls-query-error-summary", "汇总 SLS 错误日志", "按服务映射查询并汇总错误日志", ["aliyun", "sls", "error", "summary", "错误", "异常", "日志摘要"], { service: "服务名", env: "环境", relative_range: "相对时间范围" }, ["汇总生产服务错误日志"]],
+  ["aliyun-lb-list-instances", "查询负载均衡实例", "查询 SLB/ALB/NLB 实例列表", ["aliyun", "slb", "alb", "nlb", "load balancer", "负载均衡"], { region_id: "地域 ID", type: "slb/alb/nlb", name: "名称关键词", tag_filters: "额外标签过滤" }, ["查询负载均衡实例"]],
+  ["aliyun-lb-describe-health", "查询负载均衡后端健康", "查询 SLB/ALB/NLB 监听和后端健康状态", ["aliyun", "slb", "alb", "nlb", "health", "健康检查", "后端"], { load_balancer_id: "负载均衡实例 ID", region_id: "地域 ID", type: "slb/alb/nlb" }, ["查询负载均衡后端健康状态"]],
+  ["aliyun-swas-list-instances", "查询轻量应用服务器实例", "按地域、状态、名称和标签查询轻量应用服务器实例列表", ["aliyun", "swas", "simple application server", "轻量应用服务器", "轻量服务器"], { region_id: "地域 ID", status: "实例状态", name: "实例名称关键词", tag_filters: "额外标签过滤", page_size: "最大返回数量" }, ["查询轻量应用服务器实例"]],
 ];
 
 function readSourceTools() {
@@ -168,7 +207,7 @@ function schemaFromProperties(name, properties) {
     properties: Object.fromEntries(
       Object.entries(properties).map(([name, description]) => [
         name,
-        { type: name === "tail_lines" || name === "page_size" || name === "replicas" || name === "timeout_seconds" || name === "depth" ? "integer" : name === "notify_dingtalk" || name === "all_namespaces" || name === "include_data" ? "boolean" : name === "patch" ? "object" : "string", description },
+        { type: name === "tail_lines" || name === "page_size" || name === "replicas" || name === "timeout_seconds" || name === "depth" ? "integer" : name === "notify_dingtalk" || name === "all_namespaces" || name === "include_data" ? "boolean" : name === "patch" || name === "tag_filters" ? "object" : "string", description },
       ]),
     ),
     required,
@@ -193,7 +232,7 @@ function mergeInputSchema(sourceSchema, blueprintSchema) {
 const sourceTools = readSourceTools();
 const tools = blueprint.map(([name, title, description, tags, properties, examples]) => {
   const source = sourceTools.get(name) ?? {};
-  const category = source.category ?? (name.startsWith("ecs-") ? "ecs" : "kubernetes");
+  const category = source.category ?? (name.startsWith("aliyun-") ? "aliyun" : name.startsWith("ecs-") ? "ecs" : "kubernetes");
   const executionPolicy = executableBuiltins.has(name) ? "executable" : "catalog_only";
   const blueprintSchema = schemaFromProperties(name, properties);
   const sourceSchema = source.inputSchema ?? (name === "ecs-describe-instance-monitor-data" ? source.input_schema : undefined);

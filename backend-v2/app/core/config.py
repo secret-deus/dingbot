@@ -71,6 +71,16 @@ class AppSettings(BaseSettings):
     alibaba_access_key_secret: Optional[str] = Field(default=None, alias="ALIBABA_CLOUD_ACCESS_KEY_SECRET")
     alibaba_region_id: str = Field(default="cn-hangzhou", alias="ALIBABA_CLOUD_REGION_ID")
 
+    # --- 阿里云只读 Adapter ---
+    aliyun_mcp_enabled: bool = Field(default=False, alias="ALIYUN_MCP_ENABLED")
+    aliyun_access_key_id: Optional[str] = Field(default=None, alias="ALIYUN_ACCESS_KEY_ID")
+    aliyun_access_key_secret: Optional[str] = Field(default=None, alias="ALIYUN_ACCESS_KEY_SECRET")
+    aliyun_default_region_id: str = Field(default="cn-hangzhou", alias="ALIYUN_DEFAULT_REGION_ID")
+    aliyun_allowed_regions: list[str] = Field(default_factory=list, alias="ALIYUN_ALLOWED_REGIONS")
+    aliyun_required_tags: dict[str, list[str]] = Field(default_factory=dict, alias="ALIYUN_REQUIRED_TAGS")
+    aliyun_allowed_instance_ids: list[str] = Field(default_factory=list, alias="ALIYUN_ALLOWED_INSTANCE_IDS")
+    aliyun_sls_mappings: list[dict[str, Any]] = Field(default_factory=list, alias="ALIYUN_SLS_MAPPINGS")
+
     # --- 钉钉 ---
     dingtalk_webhook_url: Optional[str] = Field(default=None, alias="DINGTALK_WEBHOOK_URL")
     dingtalk_secret: Optional[str] = Field(default=None, alias="DINGTALK_SECRET")
@@ -95,6 +105,12 @@ def get_settings() -> AppSettings:
         settings.alibaba_access_key_id = None
     if _is_placeholder_secret(settings.alibaba_access_key_secret):
         settings.alibaba_access_key_secret = None
+    if _is_placeholder_secret(settings.aliyun_access_key_id):
+        settings.aliyun_access_key_id = None
+    if _is_placeholder_secret(settings.aliyun_access_key_secret):
+        settings.aliyun_access_key_secret = None
+    if not settings.aliyun_allowed_regions:
+        settings.aliyun_allowed_regions = [settings.aliyun_default_region_id]
     return settings
 
 
@@ -156,6 +172,8 @@ def _apply_mcp_json_config(settings: AppSettings) -> None:
     builtin = config.get("builtin", {}) if isinstance(config.get("builtin"), dict) else {}
     k8s = builtin.get("k8s", {}) if isinstance(builtin.get("k8s"), dict) else {}
     ecs = builtin.get("ecs", {}) if isinstance(builtin.get("ecs"), dict) else {}
+    aliyun = builtin.get("aliyun", {}) if isinstance(builtin.get("aliyun"), dict) else {}
+    aliyun_sls = aliyun.get("sls", {}) if isinstance(aliyun.get("sls"), dict) else {}
 
     mapping: dict[str, tuple[str, Any]] = {
         "k8s_mcp_enabled": ("K8S_MCP_ENABLED", k8s.get("enabled")),
@@ -168,6 +186,14 @@ def _apply_mcp_json_config(settings: AppSettings) -> None:
         "alibaba_access_key_id": ("ALIBABA_CLOUD_ACCESS_KEY_ID", ecs.get("access_key_id")),
         "alibaba_access_key_secret": ("ALIBABA_CLOUD_ACCESS_KEY_SECRET", ecs.get("access_key_secret")),
         "alibaba_region_id": ("ALIBABA_CLOUD_REGION_ID", ecs.get("region_id")),
+        "aliyun_mcp_enabled": ("ALIYUN_MCP_ENABLED", aliyun.get("enabled")),
+        "aliyun_access_key_id": ("ALIYUN_ACCESS_KEY_ID", aliyun.get("access_key_id")),
+        "aliyun_access_key_secret": ("ALIYUN_ACCESS_KEY_SECRET", aliyun.get("access_key_secret")),
+        "aliyun_default_region_id": ("ALIYUN_DEFAULT_REGION_ID", aliyun.get("default_region_id")),
+        "aliyun_allowed_regions": ("ALIYUN_ALLOWED_REGIONS", aliyun.get("allowed_regions")),
+        "aliyun_required_tags": ("ALIYUN_REQUIRED_TAGS", aliyun.get("required_tags")),
+        "aliyun_allowed_instance_ids": ("ALIYUN_ALLOWED_INSTANCE_IDS", aliyun.get("allowed_instance_ids")),
+        "aliyun_sls_mappings": ("ALIYUN_SLS_MAPPINGS", aliyun_sls.get("mappings")),
     }
     for field_name, (env_name, value) in mapping.items():
         if value is None or _has_process_env_value(env_name):

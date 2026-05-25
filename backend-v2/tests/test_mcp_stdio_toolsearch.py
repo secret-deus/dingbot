@@ -21,6 +21,8 @@ async def test_mcp_manager_loads_toolsearch_stdio(tmp_path):
     node_path = _working_node()
     if node_path is None:
         pytest.skip("Node.js is required for ToolSearch stdio smoke test")
+    catalog_payload = json.loads((repo_root / "config/tool_catalog.json").read_text(encoding="utf-8"))
+    expected_catalog_total = len(catalog_payload["tools"])
 
     config_path = tmp_path / "mcp_config.json"
     config_path.write_text(
@@ -64,7 +66,7 @@ async def test_mcp_manager_loads_toolsearch_stdio(tmp_path):
         assert unavailable["tool"] == "ecs-describe-instance-monitor-data"
 
         health = await manager.health_check()
-        assert health["toolsearch"]["catalog_total"] == 55
+        assert health["toolsearch"]["catalog_total"] == expected_catalog_total
     finally:
         await manager.disconnect_all()
 

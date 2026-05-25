@@ -31,7 +31,7 @@ passlib = {version = "^1.7.4", extras = ["bcrypt"]}
 kubernetes = "^31.0.0"
 # Alibaba Cloud ECS
 alibabacloud-ecs20140526 = "^3.0.0"
-alibabacloud-tea-openapi = "^0.3.0"
+alibabacloud-tea-openapi = "^0.4.3"
 # DingTalk
 httpx = "^0.28.0"
 # SSE
@@ -42,6 +42,12 @@ loguru = "^0.7.0"
 aiofiles = "^24.1.0"
 greenlet = "^3.5.0"
 bcrypt = ">=4.0.0"
+alibabacloud-cms20190101 = "^4.0.9"
+alibabacloud-slb20140515 = "^3.3.31"
+alibabacloud-sls20201230 = "^5.12.1"
+alibabacloud-alb20200616 = "^1.3.1"
+alibabacloud-nlb20220430 = "^4.1.3"
+alibabacloud-swas-open20200601 = "^4.0.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"

@@ -9,6 +9,7 @@ from loguru import logger
 from app.core.config import get_settings
 from app.mcp.tools.k8s import K8sClient
 from app.mcp.tools.ecs import ECSClient
+from app.mcp.tools.aliyun import AliyunReadOnlyRegistry, AliyunRuntimeConfig
 
 
 class BuiltinToolRegistry:
@@ -17,6 +18,7 @@ class BuiltinToolRegistry:
         self._tool_defs: list[dict] = []
         self._k8s: K8sClient | None = None
         self._ecs: ECSClient | None = None
+        self._aliyun: AliyunReadOnlyRegistry | None = None
         self._initialized = False
 
     def _ensure_initialized(self) -> None:
@@ -46,6 +48,9 @@ class BuiltinToolRegistry:
                 ),
                 unavailable_reason="未配置 ALIBABA_CLOUD_ACCESS_KEY_ID / ALIBABA_CLOUD_ACCESS_KEY_SECRET",
             )
+
+        self._aliyun = AliyunReadOnlyRegistry(AliyunRuntimeConfig.from_settings())
+        self._register_aliyun_tools()
 
     def _register_k8s_tools(self) -> None:
         available = bool(self._k8s and self._k8s.is_configured())
@@ -577,6 +582,13 @@ class BuiltinToolRegistry:
             self._tool_defs.append(tool_def)
             self._handlers[name] = self._ecs
 
+    def _register_aliyun_tools(self) -> None:
+        if not self._aliyun:
+            return
+        for tool_def in self._aliyun.list_tools():
+            self._tool_defs.append(tool_def)
+            self._handlers[tool_def["name"]] = self._aliyun
+
     def list_tools(self) -> list[dict]:
         self._ensure_initialized()
         return list(self._tool_defs)
@@ -613,4 +625,6 @@ class BuiltinToolRegistry:
             return "kubeconfig_not_configured"
         if name.startswith("ecs-"):
             return "ecs_credentials_not_configured"
+        if name.startswith("aliyun-"):
+            return "aliyun_credentials_not_configured"
         return "tool_not_configured"

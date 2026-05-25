@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-
 _MONITOR_METRICS = {
     "CPU": ("cpu", "percent"),
     "InternetRX": ("internet_rx", "Kbit"),
@@ -51,15 +50,15 @@ class ECSClient:
         if target_region == self.region_id and self._client is not None:
             return self._client
 
-        from alibabacloud_tea_openapi import models as open_api_models
         from alibabacloud_ecs20140526 import client as ecs_client
+        from alibabacloud_tea_openapi import models as open_api_models
 
         config = open_api_models.Config(
             access_key_id=self.access_key_id,
             access_key_secret=self.access_key_secret,
         )
         config.endpoint = f"ecs.{target_region}.aliyuncs.com"
-        client = ecs_client(config)
+        client = ecs_client.Client(config)
         if target_region == self.region_id:
             self._client = client
         return client
@@ -67,9 +66,10 @@ class ECSClient:
     async def ecs_list_instances(self, **kwargs: Any) -> dict:
         from alibabacloud_ecs20140526 import models as ecs_models
 
-        client = self._get_client()
+        region_id = str(kwargs.get("region_id") or self.region_id).strip() or self.region_id
+        client = self._get_client(region_id)
         page_size = kwargs.get("page_size", 20)
-        request = ecs_models.DescribeInstancesRequest(region_id=self.region_id, page_size=page_size)
+        request = ecs_models.DescribeInstancesRequest(region_id=region_id, page_size=page_size)
         response = client.describe_instances(request)
         body = response.body
         items = []
@@ -91,6 +91,7 @@ class ECSClient:
                         if inst.vpc_attributes and inst.vpc_attributes.private_ip_address
                         else []
                     ),
+                    "tags": _sdk_tags_to_dict(getattr(inst, "tags", None)),
                 }
             )
         return {"total": body.total_count if body else 0, "items": items}
@@ -98,12 +99,13 @@ class ECSClient:
     async def ecs_describe_instance(self, **kwargs: Any) -> dict:
         from alibabacloud_ecs20140526 import models as ecs_models
 
-        client = self._get_client()
+        region_id = str(kwargs.get("region_id") or self.region_id).strip() or self.region_id
+        client = self._get_client(region_id)
         instance_id = kwargs.get("instance_id", "")
         if not instance_id:
             return {"error": "instance_id 参数必填"}
         request = ecs_models.DescribeInstancesRequest(
-            region_id=self.region_id,
+            region_id=region_id,
             instance_ids=f'["{instance_id}"]',
         )
         response = client.describe_instances(request)
@@ -121,6 +123,7 @@ class ECSClient:
             "memory": inst.memory,
             "os": inst.os_name_en if hasattr(inst, "os_name_en") else "",
             "created": inst.creation_time,
+            "tags": _sdk_tags_to_dict(getattr(inst, "tags", None)),
         }
 
     async def ecs_describe_instance_monitor_data(self, **kwargs: Any) -> dict:
@@ -238,6 +241,19 @@ def _safe_positive_int(value: Any, default: int) -> int:
     except (TypeError, ValueError):
         return default
     return parsed if parsed > 0 else default
+
+
+def _sdk_tags_to_dict(tags: Any) -> dict[str, str]:
+    raw_tags = getattr(tags, "tag", None) if tags is not None else None
+    if not raw_tags:
+        return {}
+    result = {}
+    for tag in raw_tags:
+        key = getattr(tag, "tag_key", None) or getattr(tag, "key", None)
+        value = getattr(tag, "tag_value", None) or getattr(tag, "value", None)
+        if key:
+            result[str(key)] = str(value or "")
+    return result
 
 
 def _resolve_period(value: Any, start_time: datetime, end_time: datetime, max_points: int) -> int:

@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "generatedAt": "2026-05-18T06:19:08.570Z",
+  "generatedAt": "2026-05-25T03:19:08.760Z",
   "source": [
     "config/mcp_config.json",
     "backend-v2/app/mcp/builtin.py",
@@ -2109,6 +2109,606 @@
       ],
       "source": {
         "catalog": "config/mcp_config.json",
+        "builtin": true
+      }
+    },
+    {
+      "name": "aliyun-ecs-list-instances",
+      "title": "查询 ECS 实例列表",
+      "category": "aliyun",
+      "description": "按地域、状态、名称和标签查询 ECS 实例列表",
+      "tags": [
+        "aliyun",
+        "ecs",
+        "instance",
+        "instances",
+        "云服务器",
+        "主机",
+        "实例"
+      ],
+      "dangerLevel": "read",
+      "server": "builtin",
+      "executionPolicy": "executable",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "region_id": {
+            "type": "string",
+            "description": "地域 ID"
+          },
+          "status": {
+            "type": "string",
+            "description": "实例状态"
+          },
+          "name": {
+            "type": "string",
+            "description": "实例名称关键词"
+          },
+          "tag_filters": {
+            "type": "object",
+            "description": "额外标签过滤"
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "最大返回数量"
+          }
+        },
+        "required": []
+      },
+      "examples": [
+        "查询生产环境 ECS 实例列表"
+      ],
+      "source": {
+        "catalog": "blueprint",
+        "builtin": true
+      }
+    },
+    {
+      "name": "aliyun-ecs-describe-instance",
+      "title": "查询 ECS 实例详情",
+      "category": "aliyun",
+      "description": "查询单台 ECS 实例详情",
+      "tags": [
+        "aliyun",
+        "ecs",
+        "instance",
+        "describe",
+        "详情",
+        "云服务器"
+      ],
+      "dangerLevel": "read",
+      "server": "builtin",
+      "executionPolicy": "executable",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "ECS 实例 ID"
+          },
+          "region_id": {
+            "type": "string",
+            "description": "地域 ID"
+          }
+        },
+        "required": [
+          "instance_id"
+        ]
+      },
+      "examples": [
+        "查询 i-xxx 实例详情"
+      ],
+      "source": {
+        "catalog": "blueprint",
+        "builtin": true
+      }
+    },
+    {
+      "name": "aliyun-ecs-list-security-groups",
+      "title": "查询 ECS 安全组",
+      "category": "aliyun",
+      "description": "查询 ECS 安全组列表",
+      "tags": [
+        "aliyun",
+        "ecs",
+        "security group",
+        "安全组",
+        "网络",
+        "权限"
+      ],
+      "dangerLevel": "read",
+      "server": "builtin",
+      "executionPolicy": "executable",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "region_id": {
+            "type": "string",
+            "description": "地域 ID"
+          },
+          "vpc_id": {
+            "type": "string",
+            "description": "VPC ID"
+          },
+          "instance_id": {
+            "type": "string",
+            "description": "ECS 实例 ID"
+          }
+        },
+        "required": []
+      },
+      "examples": [
+        "查询实例关联安全组"
+      ],
+      "source": {
+        "catalog": "blueprint",
+        "builtin": true
+      }
+    },
+    {
+      "name": "aliyun-ecs-describe-security-group-rules",
+      "title": "查询 ECS 安全组规则",
+      "category": "aliyun",
+      "description": "查询安全组入方向或出方向规则",
+      "tags": [
+        "aliyun",
+        "ecs",
+        "security group",
+        "rule",
+        "安全组规则",
+        "端口"
+      ],
+      "dangerLevel": "read",
+      "server": "builtin",
+      "executionPolicy": "executable",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "security_group_id": {
+            "type": "string",
+            "description": "安全组 ID"
+          },
+          "region_id": {
+            "type": "string",
+            "description": "地域 ID"
+          },
+          "direction": {
+            "type": "string",
+            "description": "ingress 或 egress"
+          }
+        },
+        "required": [
+          "security_group_id"
+        ]
+      },
+      "examples": [
+        "查看安全组入方向规则"
+      ],
+      "source": {
+        "catalog": "blueprint",
+        "builtin": true
+      }
+    },
+    {
+      "name": "aliyun-cms-get-ecs-metrics",
+      "title": "查询 ECS 监控指标",
+      "category": "aliyun",
+      "description": "查询 ECS CPU、内存、磁盘、网络等监控指标",
+      "tags": [
+        "aliyun",
+        "cms",
+        "cloudmonitor",
+        "metrics",
+        "监控",
+        "指标",
+        "cpu",
+        "内存"
+      ],
+      "dangerLevel": "read",
+      "server": "builtin",
+      "executionPolicy": "executable",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "ECS 实例 ID"
+          },
+          "region_id": {
+            "type": "string",
+            "description": "地域 ID"
+          },
+          "metrics": {
+            "type": "string",
+            "description": "指标名列表"
+          },
+          "relative_range": {
+            "type": "string",
+            "description": "相对时间范围"
+          },
+          "period": {
+            "type": "string",
+            "description": "采样周期"
+          }
+        },
+        "required": [
+          "instance_id"
+        ]
+      },
+      "examples": [
+        "查询 ECS 最近 1 小时 CPU 指标"
+      ],
+      "source": {
+        "catalog": "blueprint",
+        "builtin": true
+      }
+    },
+    {
+      "name": "aliyun-cms-get-alerts",
+      "title": "查询 CloudMonitor 告警",
+      "category": "aliyun",
+      "description": "查询 CloudMonitor 告警状态",
+      "tags": [
+        "aliyun",
+        "cms",
+        "cloudmonitor",
+        "alert",
+        "告警",
+        "报警"
+      ],
+      "dangerLevel": "read",
+      "server": "builtin",
+      "executionPolicy": "executable",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "region_id": {
+            "type": "string",
+            "description": "地域 ID"
+          },
+          "resource_id": {
+            "type": "string",
+            "description": "资源 ID"
+          },
+          "state": {
+            "type": "string",
+            "description": "告警状态"
+          },
+          "relative_range": {
+            "type": "string",
+            "description": "相对时间范围"
+          }
+        },
+        "required": []
+      },
+      "examples": [
+        "查询 ECS 相关告警"
+      ],
+      "source": {
+        "catalog": "blueprint",
+        "builtin": true
+      }
+    },
+    {
+      "name": "aliyun-cms-get-event-history",
+      "title": "查询 CloudMonitor 事件",
+      "category": "aliyun",
+      "description": "查询 CloudMonitor 事件历史",
+      "tags": [
+        "aliyun",
+        "cms",
+        "cloudmonitor",
+        "event",
+        "事件",
+        "云监控"
+      ],
+      "dangerLevel": "read",
+      "server": "builtin",
+      "executionPolicy": "executable",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "region_id": {
+            "type": "string",
+            "description": "地域 ID"
+          },
+          "resource_id": {
+            "type": "string",
+            "description": "资源 ID"
+          },
+          "relative_range": {
+            "type": "string",
+            "description": "相对时间范围"
+          },
+          "event_type": {
+            "type": "string",
+            "description": "事件类型"
+          }
+        },
+        "required": []
+      },
+      "examples": [
+        "查询最近云监控事件"
+      ],
+      "source": {
+        "catalog": "blueprint",
+        "builtin": true
+      }
+    },
+    {
+      "name": "aliyun-sls-list-logstores",
+      "title": "查询 SLS Logstore 映射",
+      "category": "aliyun",
+      "description": "列出已配置服务对应的 SLS project/logstore",
+      "tags": [
+        "aliyun",
+        "sls",
+        "logstore",
+        "日志",
+        "服务日志"
+      ],
+      "dangerLevel": "read",
+      "server": "builtin",
+      "executionPolicy": "executable",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "service": {
+            "type": "string",
+            "description": "服务名"
+          },
+          "env": {
+            "type": "string",
+            "description": "环境"
+          },
+          "region_id": {
+            "type": "string",
+            "description": "地域 ID"
+          }
+        },
+        "required": []
+      },
+      "examples": [
+        "列出 ding-robot 日志映射"
+      ],
+      "source": {
+        "catalog": "blueprint",
+        "builtin": true
+      }
+    },
+    {
+      "name": "aliyun-sls-query-logs",
+      "title": "查询 SLS 日志",
+      "category": "aliyun",
+      "description": "按服务映射查询 SLS 日志",
+      "tags": [
+        "aliyun",
+        "sls",
+        "logs",
+        "日志",
+        "错误日志",
+        "exception",
+        "error"
+      ],
+      "dangerLevel": "read",
+      "server": "builtin",
+      "executionPolicy": "executable",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "service": {
+            "type": "string",
+            "description": "服务名"
+          },
+          "env": {
+            "type": "string",
+            "description": "环境"
+          },
+          "query": {
+            "type": "string",
+            "description": "查询语句"
+          },
+          "relative_range": {
+            "type": "string",
+            "description": "相对时间范围"
+          },
+          "limit": {
+            "type": "string",
+            "description": "最大行数"
+          }
+        },
+        "required": []
+      },
+      "examples": [
+        "查询 ding-robot 最近 30 分钟错误日志"
+      ],
+      "source": {
+        "catalog": "blueprint",
+        "builtin": true
+      }
+    },
+    {
+      "name": "aliyun-sls-query-error-summary",
+      "title": "汇总 SLS 错误日志",
+      "category": "aliyun",
+      "description": "按服务映射查询并汇总错误日志",
+      "tags": [
+        "aliyun",
+        "sls",
+        "error",
+        "summary",
+        "错误",
+        "异常",
+        "日志摘要"
+      ],
+      "dangerLevel": "read",
+      "server": "builtin",
+      "executionPolicy": "executable",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "service": {
+            "type": "string",
+            "description": "服务名"
+          },
+          "env": {
+            "type": "string",
+            "description": "环境"
+          },
+          "relative_range": {
+            "type": "string",
+            "description": "相对时间范围"
+          }
+        },
+        "required": [
+          "service"
+        ]
+      },
+      "examples": [
+        "汇总生产服务错误日志"
+      ],
+      "source": {
+        "catalog": "blueprint",
+        "builtin": true
+      }
+    },
+    {
+      "name": "aliyun-lb-list-instances",
+      "title": "查询负载均衡实例",
+      "category": "aliyun",
+      "description": "查询 SLB/ALB/NLB 实例列表",
+      "tags": [
+        "aliyun",
+        "slb",
+        "alb",
+        "nlb",
+        "load balancer",
+        "负载均衡"
+      ],
+      "dangerLevel": "read",
+      "server": "builtin",
+      "executionPolicy": "executable",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "region_id": {
+            "type": "string",
+            "description": "地域 ID"
+          },
+          "type": {
+            "type": "string",
+            "description": "slb/alb/nlb"
+          },
+          "name": {
+            "type": "string",
+            "description": "名称关键词"
+          },
+          "tag_filters": {
+            "type": "object",
+            "description": "额外标签过滤"
+          }
+        },
+        "required": []
+      },
+      "examples": [
+        "查询负载均衡实例"
+      ],
+      "source": {
+        "catalog": "blueprint",
+        "builtin": true
+      }
+    },
+    {
+      "name": "aliyun-lb-describe-health",
+      "title": "查询负载均衡后端健康",
+      "category": "aliyun",
+      "description": "查询 SLB/ALB/NLB 监听和后端健康状态",
+      "tags": [
+        "aliyun",
+        "slb",
+        "alb",
+        "nlb",
+        "health",
+        "健康检查",
+        "后端"
+      ],
+      "dangerLevel": "read",
+      "server": "builtin",
+      "executionPolicy": "executable",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "load_balancer_id": {
+            "type": "string",
+            "description": "负载均衡实例 ID"
+          },
+          "region_id": {
+            "type": "string",
+            "description": "地域 ID"
+          },
+          "type": {
+            "type": "string",
+            "description": "slb/alb/nlb"
+          }
+        },
+        "required": [
+          "load_balancer_id"
+        ]
+      },
+      "examples": [
+        "查询负载均衡后端健康状态"
+      ],
+      "source": {
+        "catalog": "blueprint",
+        "builtin": true
+      }
+    },
+    {
+      "name": "aliyun-swas-list-instances",
+      "title": "查询轻量应用服务器实例",
+      "category": "aliyun",
+      "description": "按地域、状态、名称和标签查询轻量应用服务器实例列表",
+      "tags": [
+        "aliyun",
+        "swas",
+        "simple application server",
+        "轻量应用服务器",
+        "轻量服务器"
+      ],
+      "dangerLevel": "read",
+      "server": "builtin",
+      "executionPolicy": "executable",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "region_id": {
+            "type": "string",
+            "description": "地域 ID"
+          },
+          "status": {
+            "type": "string",
+            "description": "实例状态"
+          },
+          "name": {
+            "type": "string",
+            "description": "实例名称关键词"
+          },
+          "tag_filters": {
+            "type": "object",
+            "description": "额外标签过滤"
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "最大返回数量"
+          }
+        },
+        "required": []
+      },
+      "examples": [
+        "查询轻量应用服务器实例"
+      ],
+      "source": {
+        "catalog": "blueprint",
         "builtin": true
       }
     }

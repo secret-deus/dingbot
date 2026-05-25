@@ -42,6 +42,7 @@ class ToolPolicyDecision:
             "requiresConfirmation": self.requires_confirmation,
             "argumentKeys": sorted(arguments.keys()),
             "argumentPreview": _safe_argument_preview(arguments),
+            **_aliyun_audit_context(metadata.name if metadata else "", arguments),
         }
 
 
@@ -100,6 +101,8 @@ class ToolCatalogPolicy:
 
         role = Role((user or {}).get("role", Role.VIEWER.value))
         if metadata.danger_level == "read":
+            if metadata.name.startswith("aliyun-") and not self._has_role(role, Role.OPERATOR):
+                return ToolPolicyDecision(False, "operator_role_required", metadata)
             if not self._has_role(role, Role.VIEWER):
                 return ToolPolicyDecision(False, "viewer_role_required", metadata)
             return ToolPolicyDecision(True, "read_allowed", metadata)
@@ -168,6 +171,39 @@ def _safe_argument_preview(arguments: dict[str, Any]) -> dict[str, Any]:
             "depth",
             "all_namespaces",
             "app_name",
+            "region_id",
+            "instance_id",
+            "resource_id",
+            "security_group_id",
+            "load_balancer_id",
+            "service",
+            "env",
+            "relative_range",
+            "project",
+            "logstore",
+            "state",
+            "event_type",
         }:
             preview[key] = value
     return preview
+
+
+def _aliyun_audit_context(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    if not tool_name.startswith("aliyun-"):
+        return {}
+    resource_ids = [
+        str(arguments[key])
+        for key in ["instance_id", "resource_id", "security_group_id", "load_balancer_id"]
+        if arguments.get(key)
+    ]
+    context: dict[str, Any] = {
+        "region_id": arguments.get("region_id"),
+        "resource_ids": resource_ids,
+    }
+    if arguments.get("service"):
+        context["service"] = arguments.get("service")
+    if arguments.get("env"):
+        context["env"] = arguments.get("env")
+    if arguments.get("relative_range"):
+        context["time_range"] = arguments.get("relative_range")
+    return context

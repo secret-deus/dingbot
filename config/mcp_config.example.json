@@ -24,6 +24,20 @@
       "access_key_id": null,
       "access_key_secret": null,
       "region_id": "cn-hangzhou"
+    },
+    "aliyun": {
+      "enabled": false,
+      "access_key_id": null,
+      "access_key_secret": null,
+      "default_region_id": "cn-hangzhou",
+      "allowed_regions": [
+        "cn-hangzhou"
+      ],
+      "required_tags": {},
+      "allowed_instance_ids": [],
+      "sls": {
+        "mappings": []
+      }
     }
   },
   "servers": [

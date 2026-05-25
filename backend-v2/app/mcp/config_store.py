@@ -47,6 +47,12 @@ def public_mcp_config(document: Optional[dict[str, Any]] = None, source: str = "
         and not is_placeholder_secret(settings.alibaba_access_key_secret)
     )
     ecs_enabled = bool(settings.ecs_mcp_enabled or settings.alibaba_access_key_id)
+    aliyun_configured = bool(
+        settings.aliyun_access_key_id
+        and settings.aliyun_access_key_secret
+        and not is_placeholder_secret(settings.aliyun_access_key_secret)
+    )
+    aliyun_enabled = bool(settings.aliyun_mcp_enabled)
 
     return {
         "config_path": str(config_path),
@@ -69,6 +75,21 @@ def public_mcp_config(document: Optional[dict[str, Any]] = None, source: str = "
             "configured": ecs_configured,
             "available": bool(ecs_enabled and ecs_configured),
             "unavailable_reason": "" if ecs_configured else "未配置 ALIBABA_CLOUD_ACCESS_KEY_ID / ALIBABA_CLOUD_ACCESS_KEY_SECRET",
+        },
+        "aliyun": {
+            "enabled": aliyun_enabled,
+            "default_region_id": settings.aliyun_default_region_id,
+            "allowed_regions": list(settings.aliyun_allowed_regions),
+            "required_tags": settings.aliyun_required_tags,
+            "allowed_instance_ids": list(settings.aliyun_allowed_instance_ids),
+            "sls_mapping_count": len(settings.aliyun_sls_mappings),
+            "access_key_id_configured": bool(settings.aliyun_access_key_id),
+            "access_key_secret_configured": bool(settings.aliyun_access_key_secret),
+            "configured": aliyun_configured,
+            "available": bool(aliyun_enabled and aliyun_configured),
+            "unavailable_reason": ""
+            if aliyun_configured
+            else "未配置 ALIYUN_ACCESS_KEY_ID / ALIYUN_ACCESS_KEY_SECRET",
         },
     }
 
@@ -103,6 +124,48 @@ def apply_mcp_updates(document: dict[str, Any], updates: dict[str, Any]) -> dict
             if access_key_secret:
                 ecs["access_key_secret"] = access_key_secret
 
+    if isinstance(updates.get("aliyun"), dict):
+        aliyun = builtin.setdefault("aliyun", {})
+        sls = aliyun.setdefault("sls", {})
+        aliyun_updates = updates["aliyun"]
+        if "enabled" in aliyun_updates:
+            aliyun["enabled"] = bool(aliyun_updates["enabled"])
+        if "access_key_id" in aliyun_updates:
+            access_key_id = str(aliyun_updates["access_key_id"] or "").strip()
+            if access_key_id:
+                aliyun["access_key_id"] = access_key_id
+        if "access_key_secret" in aliyun_updates:
+            access_key_secret = str(aliyun_updates["access_key_secret"] or "").strip()
+            if access_key_secret:
+                aliyun["access_key_secret"] = access_key_secret
+        if "default_region_id" in aliyun_updates:
+            aliyun["default_region_id"] = (
+                str(aliyun_updates["default_region_id"] or "cn-hangzhou").strip()
+                or "cn-hangzhou"
+            )
+        if "allowed_regions" in aliyun_updates:
+            aliyun["allowed_regions"] = _normalize_string_list(
+                aliyun_updates["allowed_regions"],
+                fallback=[aliyun.get("default_region_id") or "cn-hangzhou"],
+            )
+        if "required_tags" in aliyun_updates and isinstance(aliyun_updates["required_tags"], dict):
+            aliyun["required_tags"] = {
+                str(key): _normalize_string_list(value)
+                for key, value in aliyun_updates["required_tags"].items()
+                if str(key).strip()
+            }
+        if "allowed_instance_ids" in aliyun_updates:
+            aliyun["allowed_instance_ids"] = _normalize_string_list(
+                aliyun_updates["allowed_instance_ids"]
+            )
+        if isinstance(aliyun_updates.get("sls"), dict) and isinstance(
+            aliyun_updates["sls"].get("mappings"),
+            list,
+        ):
+            sls["mappings"] = [
+                mapping for mapping in aliyun_updates["sls"]["mappings"] if isinstance(mapping, dict)
+            ]
+
     return normalized
 
 
@@ -124,6 +187,7 @@ def _normalize_document(document: dict[str, Any]) -> dict[str, Any]:
         document["builtin"] = builtin
     _normalize_k8s_config(builtin.setdefault("k8s", {}))
     _normalize_ecs_config(builtin.setdefault("ecs", {}))
+    _normalize_aliyun_config(builtin.setdefault("aliyun", {}))
     if not isinstance(document["servers"], list):
         document["servers"] = []
     return document
@@ -141,6 +205,45 @@ def _normalize_ecs_config(config: dict[str, Any]) -> None:
     config.setdefault("access_key_id", None)
     config.setdefault("access_key_secret", None)
     config.setdefault("region_id", "cn-hangzhou")
+
+
+def _normalize_aliyun_config(config: dict[str, Any]) -> None:
+    config.setdefault("enabled", False)
+    config.setdefault("access_key_id", None)
+    config.setdefault("access_key_secret", None)
+    config.setdefault("default_region_id", "cn-hangzhou")
+    config["allowed_regions"] = _normalize_string_list(
+        config.get("allowed_regions"),
+        fallback=[config.get("default_region_id") or "cn-hangzhou"],
+    )
+    required_tags = config.get("required_tags")
+    if not isinstance(required_tags, dict):
+        required_tags = {}
+    config["required_tags"] = {
+        str(key): _normalize_string_list(value)
+        for key, value in required_tags.items()
+        if str(key).strip()
+    }
+    config["allowed_instance_ids"] = _normalize_string_list(config.get("allowed_instance_ids"))
+    sls = config.setdefault("sls", {})
+    if not isinstance(sls, dict):
+        sls = {}
+        config["sls"] = sls
+    mappings = sls.get("mappings")
+    sls["mappings"] = [mapping for mapping in mappings if isinstance(mapping, dict)] if isinstance(mappings, list) else []
+
+
+def _normalize_string_list(value: Any, fallback: Optional[list[str]] = None) -> list[str]:
+    if value is None:
+        return list(fallback or [])
+    if isinstance(value, str):
+        parts = [item.strip() for item in value.split(",")]
+    elif isinstance(value, list):
+        parts = [str(item).strip() for item in value]
+    else:
+        parts = []
+    result = [item for item in parts if item]
+    return result or list(fallback or [])
 
 
 def _k8s_status(settings: Any) -> dict[str, Any]:

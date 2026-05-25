@@ -6,9 +6,9 @@ import { searchTools } from "./search.js";
 
 const catalogPath = resolve(process.cwd(), "../../config/tool_catalog.json");
 
-test("loads the normalized 55-tool catalog", () => {
+test("loads the normalized 68-tool catalog", () => {
   const catalog = loadCatalogFromFile(catalogPath);
-  assert.equal(catalog.tools.length, 55);
+  assert.equal(catalog.tools.length, 68);
   assert.equal(getTool(catalog, "k8s-get-logs")?.executionPolicy, "executable");
   assert.equal(getTool(catalog, "k8s-get-endpoints")?.executionPolicy, "executable");
   assert.equal(getTool(catalog, "k8s-relation-query")?.executionPolicy, "executable");
@@ -19,6 +19,8 @@ test("loads the normalized 55-tool catalog", () => {
   assert.equal(getTool(catalog, "k8s-scale-deployment")?.dangerLevel, "write");
   assert.equal(getTool(catalog, "k8s-get-deployment-history")?.executionPolicy, "executable");
   assert.equal(getTool(catalog, "ecs-describe-instance-monitor-data")?.executionPolicy, "executable");
+  assert.equal(getTool(catalog, "aliyun-swas-list-instances")?.category, "aliyun");
+  assert.equal(getTool(catalog, "aliyun-swas-list-instances")?.executionPolicy, "executable");
 });
 
 test("ranks pod log queries first", () => {
@@ -61,8 +63,10 @@ test("returns categorized and layered search results", () => {
 test("summarizes categories and execution policies", () => {
   const catalog = loadCatalogFromFile(catalogPath);
   const summary = summarizeCatalog(catalog);
-  assert.equal(summary.total, 55);
+  assert.equal(summary.total, 68);
+  assert.deepEqual(summary.categories.find((item) => item.name === "aliyun"), { name: "aliyun", count: 13 });
   assert.deepEqual(summary.categories.find((item) => item.name === "ecs"), { name: "ecs", count: 3 });
+  assert.deepEqual(summary.categories.find((item) => item.name === "kubernetes"), { name: "kubernetes", count: 52 });
   assert.equal(summary.executionPolicies.find((item) => item.name === "catalog_only"), undefined);
-  assert.deepEqual(summary.executionPolicies.find((item) => item.name === "executable"), { name: "executable", count: 55 });
+  assert.deepEqual(summary.executionPolicies.find((item) => item.name === "executable"), { name: "executable", count: 68 });
 });

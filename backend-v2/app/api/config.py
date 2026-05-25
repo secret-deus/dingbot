@@ -216,9 +216,25 @@ class ECSMCPConfigRequest(BaseModel):
     region_id: Optional[str] = None
 
 
+class AliyunSLSConfigRequest(BaseModel):
+    mappings: Optional[list[dict[str, Any]]] = None
+
+
+class AliyunMCPConfigRequest(BaseModel):
+    enabled: Optional[bool] = None
+    access_key_id: Optional[str] = None
+    access_key_secret: Optional[str] = None
+    default_region_id: Optional[str] = None
+    allowed_regions: Optional[list[str]] = None
+    required_tags: Optional[dict[str, list[str]]] = None
+    allowed_instance_ids: Optional[list[str]] = None
+    sls: Optional[AliyunSLSConfigRequest] = None
+
+
 class UpdateMCPConfigRequest(BaseModel):
     k8s: Optional[K8sMCPConfigRequest] = None
     ecs: Optional[ECSMCPConfigRequest] = None
+    aliyun: Optional[AliyunMCPConfigRequest] = None
 
 
 class K8sKnowledgeGraphSyncRequest(BaseModel):
