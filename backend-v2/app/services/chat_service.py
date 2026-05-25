@@ -274,7 +274,10 @@ class ChatOrchestrator:
                     yield {"type": "token", "content": event["content"]}
 
                 elif event["type"] == "tool_call":
-                    tool_call = event["tool_call"]
+                    tool_call = self._normalize_discovery_tool_call(
+                        event["tool_call"],
+                        content_for_llm,
+                    )
                     tool_call_key = self._tool_call_key(tool_call)
                     if tool_call_key in seen_tool_call_keys:
                         tool_loop_stop_reason = "duplicate_tool_call"
@@ -410,7 +413,7 @@ class ChatOrchestrator:
             {
                 "role": "system",
                 "content": (
-                    "你是 Kubernetes 运维助手。现在是最终总结阶段，不能再调用工具，"
+                    "你是 Kubernetes / ECS / 阿里云运维助手。现在是最终总结阶段，不能再调用工具，"
                     "只能基于用户问题和已提供的工具结果摘要生成中文结论。"
                 ),
             },
@@ -466,6 +469,48 @@ class ChatOrchestrator:
         else:
             normalized_arguments = json.dumps(arguments, ensure_ascii=False, sort_keys=True)
         return f"{name}:{normalized_arguments}"
+
+    @classmethod
+    def _normalize_discovery_tool_call(cls, tool_call: dict, user_content: str) -> dict:
+        function = tool_call.get("function") or {}
+        if function.get("name") != "toolsearch":
+            return tool_call
+
+        raw_arguments = function.get("arguments") or "{}"
+        try:
+            arguments = (
+                json.loads(raw_arguments) if isinstance(raw_arguments, str) else raw_arguments
+            )
+        except json.JSONDecodeError:
+            return tool_call
+        if not isinstance(arguments, dict):
+            return tool_call
+
+        normalized = cls._normalize_toolsearch_arguments(arguments, user_content)
+        if normalized == arguments:
+            return tool_call
+
+        updated_call = dict(tool_call)
+        updated_function = dict(function)
+        updated_function["arguments"] = json.dumps(normalized, ensure_ascii=False)
+        updated_call["function"] = updated_function
+        return updated_call
+
+    @staticmethod
+    def _normalize_toolsearch_arguments(arguments: dict, user_content: str) -> dict:
+        query = str(arguments.get("query") or "")
+        combined = f"{user_content} {query}".lower()
+        aliyun_intent = any(keyword in combined for keyword in ALIYUN_CONTEXT_KEYWORDS)
+        explicit_k8s_intent = any(keyword in combined for keyword in EXPLICIT_K8S_CONTEXT_KEYWORDS)
+        category = str(arguments.get("category") or "").lower()
+
+        cloud_category_mismatch = category in {"", "ecs", "k8s", "kubernetes"}
+        if aliyun_intent and not explicit_k8s_intent and cloud_category_mismatch:
+            normalized = dict(arguments)
+            normalized["category"] = "aliyun"
+            return normalized
+
+        return arguments
 
     @staticmethod
     def _should_finalize_after_tools(user_content: str, tool_results: list[dict]) -> bool:

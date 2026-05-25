@@ -163,6 +163,45 @@ async def test_discovery_only_prompt_stops_after_first_toolsearch_result(tmp_pat
 
 
 @pytest.mark.asyncio
+async def test_aliyun_discovery_rewrites_model_ecs_category_for_swas_query(tmp_path):
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'chat-aliyun-discovery.db'}")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session:
+        chat_session = Session(title="aliyun discovery")
+        session.add(chat_session)
+        await session.flush()
+
+        fake_mcp = _AliyunDiscoveryMCP()
+        orchestrator = ChatOrchestrator(
+            db=session,
+            chat_service=_MisclassifiedAliyunDiscoveryChat(),
+            mcp_manager=fake_mcp,
+            current_user={"username": "operator", "role": "operator"},
+        )
+
+        events = [
+            event
+            async for event in orchestrator.handle_message(
+                chat_session.id,
+                "只搜索工具：有哪些工具可以查询阿里云轻量应用服务器？先不要执行具体资源查询。",
+            )
+        ]
+
+        assert fake_mcp.toolsearch_arguments == [
+            {"query": "阿里云轻量应用服务器", "category": "aliyun", "limit": 5}
+        ]
+        tool_results = [event["result"] for event in events if event["type"] == "tool_result"]
+        payload = json.loads(tool_results[0]["result"])
+        assert payload["results"][0]["name"] == "aliyun-swas-list-instances"
+        assert events[-1]["type"] == "done"
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_build_messages_strips_historical_tool_calls(tmp_path):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'chat-history.db'}")
     async with engine.begin() as conn:
@@ -548,6 +587,31 @@ class _RepeatedToolSearchChat:
 
     async def chat(self, messages, tools=None):
         self.final_tools = tools
+        return {"content": "已找到轻量应用服务器候选工具。"}
+
+
+class _MisclassifiedAliyunDiscoveryChat:
+    async def stream_chat(self, messages, tools=None):
+        yield {
+            "type": "tool_call",
+            "tool_call": {
+                "id": "call-toolsearch-aliyun",
+                "type": "function",
+                "function": {
+                    "name": "toolsearch",
+                    "arguments": json.dumps(
+                        {
+                            "query": "阿里云轻量应用服务器",
+                            "category": "ecs",
+                            "limit": 5,
+                        }
+                    ),
+                },
+            },
+        }
+        yield {"type": "done"}
+
+    async def chat(self, messages, tools=None):
         return {"content": "已找到轻量应用服务器候选工具。"}
 
 
@@ -967,6 +1031,77 @@ class _AliyunAnchorMCP:
 
     async def call_tool(self, name, arguments, user=None):
         return {"error": f"unexpected tool {name}"}
+
+
+class _AliyunDiscoveryMCP:
+    def __init__(self):
+        self.toolsearch_arguments: list[dict] = []
+
+    async def list_tools(self, skill_id=None):
+        return [
+            {
+                "name": "toolsearch",
+                "description": "Search tools",
+                "inputSchema": {"type": "object", "properties": {}, "required": []},
+                "server": "toolsearch",
+            },
+            {
+                "name": "tool_get",
+                "description": "Get tool",
+                "inputSchema": {"type": "object", "properties": {}, "required": []},
+                "server": "toolsearch",
+            },
+            {
+                "name": "tool_categories",
+                "description": "Tool categories",
+                "inputSchema": {"type": "object", "properties": {}, "required": []},
+                "server": "toolsearch",
+            },
+            {
+                "name": "aliyun-swas-list-instances",
+                "description": "查询轻量应用服务器实例列表",
+                "inputSchema": {"type": "object", "properties": {}, "required": []},
+                "server": "builtin",
+                "category": "aliyun",
+                "available": True,
+            },
+            {
+                "name": "ecs-list-instances",
+                "description": "列出 ECS 实例",
+                "inputSchema": {"type": "object", "properties": {}, "required": []},
+                "server": "builtin",
+                "category": "ecs",
+                "available": True,
+            },
+        ]
+
+    def authorize_tool_call(self, name, user, arguments=None):
+        return _AllowDecision()
+
+    async def call_tool(self, name, arguments, user=None):
+        if name != "toolsearch":
+            return {"error": f"unexpected tool {name}"}
+        self.toolsearch_arguments.append(arguments)
+        candidate_name = (
+            "aliyun-swas-list-instances"
+            if arguments.get("category") == "aliyun"
+            else "ecs-list-instances"
+        )
+        return {
+            "result": json.dumps(
+                {
+                    "query": arguments["query"],
+                    "total": 1,
+                    "results": [
+                        {
+                            "name": candidate_name,
+                            "executionPolicy": "executable",
+                            "dangerLevel": "read",
+                        }
+                    ],
+                }
+            )
+        }
 
 
 class _FakeMCP:
