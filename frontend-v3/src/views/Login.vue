@@ -1,12 +1,13 @@
 <template>
   <div class="login-shell">
-    <section class="login-panel" aria-labelledby="login-title">
+    <section class="login-card" aria-labelledby="login-title">
+      <div class="window-dots" aria-hidden="true" />
       <div class="login-brand">
-        <img :src="botCoreIcon" alt="">
+        <div class="brand-mark">D</div>
         <div>
           <span>Ding Robot</span>
           <h1 id="login-title">ChatOps 运维控制台</h1>
-          <p>连接 Kubernetes、MCP 工具链和知识图谱。</p>
+          <p>连接 Kubernetes、MCP 工具链和知识图谱，用低噪声界面组织排障证据。</p>
         </div>
       </div>
 
@@ -14,7 +15,7 @@
         <n-form-item label="用户名" path="username" :label-props="{ for: 'login-username' }">
           <n-input
             v-model:value="form.username"
-            placeholder="请输入用户名"
+            placeholder="admin"
             :input-props="{ id: 'login-username', name: 'username', autocomplete: 'username' }"
           />
         </n-form-item>
@@ -22,7 +23,7 @@
           <n-input
             v-model:value="form.password"
             type="password"
-            placeholder="请输入密码"
+            placeholder="admin"
             show-password-on="click"
             :input-props="{ id: 'login-password', name: 'password', autocomplete: 'current-password' }"
           />
@@ -34,11 +35,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
+import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { NForm, NFormItem, NInput, NButton, useMessage } from 'naive-ui'
+import { NButton, NForm, NFormItem, NInput, useMessage } from 'naive-ui'
 import { useAuthStore } from '@/stores/auth'
-import botCoreIcon from '@/assets/generated/bot-core.svg'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -71,60 +71,51 @@ async function onLogin() {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: #070a0f;
-  color: #f8fafc;
+  background: var(--dr-bg);
+  color: var(--dr-text);
 }
 
-.login-panel {
-  width: min(420px, 100%);
-  padding: 22px;
-  border: 1px solid #2a3648;
-  border-radius: 8px;
-  background: #0d1420;
+.login-card {
+  width: min(460px, 100%);
+  padding: 18px;
+  border: 1px solid var(--dr-border);
+  border-radius: var(--dr-radius-lg);
+  background: var(--dr-surface);
+  box-shadow: var(--dr-shadow-lift);
 }
 
 .login-brand {
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  margin-bottom: 22px;
-}
-
-.login-brand img {
-  width: 48px;
-  height: 48px;
-  flex: 0 0 auto;
-  border: 1px solid #2a3648;
-  border-radius: 8px;
-  background: #111827;
+  margin: 12px 0 24px;
 }
 
 .login-brand span {
   display: block;
-  color: #9aa8bd;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0;
+  color: var(--dr-text-muted);
+  font-size: var(--dr-text-xs);
+  font-weight: 650;
   text-transform: uppercase;
 }
 
 .login-brand h1 {
-  margin: 3px 0 0;
-  color: #f8fafc;
-  font-size: 24px;
-  line-height: 1.2;
-  letter-spacing: 0;
+  margin: 4px 0 0;
+  color: var(--dr-text);
+  font-size: 22px;
+  font-weight: 620;
+  line-height: 1.14;
 }
 
 .login-brand p {
-  margin: 8px 0 0;
-  color: #9aa8bd;
-  line-height: 1.6;
+  margin: 10px 0 0;
+  color: var(--dr-text-muted);
+  line-height: 1.58;
 }
 
 .login-form :deep(.n-form-item-label__text) {
-  color: #d7deea;
-  font-weight: 700;
+  color: var(--dr-text-soft);
+  font-weight: 610;
 }
 
 .login-form :deep(.n-input) {
@@ -133,6 +124,7 @@ async function onLogin() {
 
 .login-submit {
   min-height: 44px;
-  font-weight: 700;
+  margin-top: 4px;
+  font-weight: 650;
 }
 </style>

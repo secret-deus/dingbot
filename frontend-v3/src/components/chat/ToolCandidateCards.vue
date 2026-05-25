@@ -136,13 +136,13 @@ function policyTagType(policy?: ToolExecutionPolicy) {
 .candidate-panel {
   margin-top: 8px;
   padding-top: 8px;
-  border-top: 1px solid #383838;
+  border-top: 1px solid var(--dr-border-soft);
 }
 .candidate-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #c9c9c9;
+  color: var(--dr-text-soft);
   font-size: 12px;
   margin-bottom: 8px;
 }
@@ -164,14 +164,14 @@ function policyTagType(policy?: ToolExecutionPolicy) {
   gap: 8px;
 }
 .layer-title {
-  color: #f0f0f0;
+  color: var(--dr-text);
   font-size: 13px;
   font-weight: 600;
 }
 .layer-count,
 .layer-desc,
 .category-header {
-  color: #999;
+  color: var(--dr-text-muted);
   font-size: 12px;
 }
 .category-section {
@@ -188,10 +188,10 @@ function policyTagType(policy?: ToolExecutionPolicy) {
   gap: 8px;
 }
 .candidate-card {
-  border: 1px solid #3a3a3a;
-  border-radius: 8px;
+  border: 1px solid var(--dr-border-soft);
+  border-radius: var(--dr-radius);
   padding: 8px;
-  background: #222;
+  background: var(--dr-surface-lift);
 }
 .candidate-top {
   display: flex;
@@ -202,7 +202,7 @@ function policyTagType(policy?: ToolExecutionPolicy) {
 .candidate-title {
   font-weight: 600;
   line-height: 1.4;
-  color: #f0f0f0;
+  color: var(--dr-text);
 }
 .candidate-tags {
   display: flex;
@@ -211,19 +211,19 @@ function policyTagType(policy?: ToolExecutionPolicy) {
 }
 .candidate-name {
   margin-top: 2px;
-  color: #a0a0a0;
+  color: var(--dr-text-muted);
   font-size: 12px;
   word-break: break-all;
 }
 .candidate-desc {
   margin-top: 6px;
-  color: #d0d0d0;
+  color: var(--dr-text-soft);
   line-height: 1.5;
   font-size: 13px;
 }
 .candidate-unavailable {
   margin-top: 6px;
-  color: #ffb4ab;
+  color: var(--dr-red);
   line-height: 1.5;
   font-size: 12px;
 }
@@ -232,12 +232,12 @@ function policyTagType(policy?: ToolExecutionPolicy) {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 8px;
-  color: #909090;
+  color: var(--dr-text-muted);
   font-size: 12px;
 }
 .empty-result {
   margin-top: 8px;
-  color: #999;
+  color: var(--dr-text-muted);
   font-size: 12px;
 }
 </style>

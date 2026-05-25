@@ -125,12 +125,27 @@ export interface ECSMCPConfig {
   unavailable_reason?: string
 }
 
+export interface AliyunMCPConfig {
+  enabled: boolean
+  default_region_id: string
+  allowed_regions: string[]
+  required_tags: Record<string, string[]>
+  allowed_instance_ids: string[]
+  sls_mapping_count: number
+  access_key_id_configured: boolean
+  access_key_secret_configured: boolean
+  configured: boolean
+  available: boolean
+  unavailable_reason?: string
+}
+
 export interface MCPConfig {
   config_path: string
   source: string
   restart_required: boolean
   k8s: K8sMCPConfig
   ecs: ECSMCPConfig
+  aliyun: AliyunMCPConfig
 }
 
 export interface KnowledgeGraphNode {

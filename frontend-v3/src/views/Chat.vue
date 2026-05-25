@@ -1,12 +1,39 @@
 <template>
-  <div class="chat-workbench">
-    <aside class="session-rail">
+  <div :class="['chat-workbench', { 'sessions-collapsed': sessionsCollapsed }]">
+    <aside class="session-rail" :aria-expanded="!sessionsCollapsed">
       <div class="rail-head">
-        <div>
+        <div class="rail-copy">
           <div class="rail-title">对话</div>
           <div class="rail-subtitle">{{ sessionStore.sessions.length }} 个会话</div>
         </div>
-        <n-button size="small" tertiary round @click="newSession">新建</n-button>
+        <div class="rail-actions">
+          <n-button
+            class="rail-new-button"
+            size="small"
+            tertiary
+            :round="!sessionsCollapsed"
+            :circle="sessionsCollapsed"
+            :aria-label="sessionsCollapsed ? '新建对话' : undefined"
+            @click="newSession"
+          >
+            <template #icon>
+              <n-icon><AddOutline /></n-icon>
+            </template>
+            <span v-if="!sessionsCollapsed" class="rail-new-text">新建</span>
+          </n-button>
+          <n-button
+            class="rail-toggle-button"
+            quaternary
+            circle
+            :aria-label="sessionsCollapsed ? '展开对话列表' : '折叠对话列表'"
+            :title="sessionsCollapsed ? '展开对话列表' : '折叠对话列表'"
+            @click="sessionsCollapsed = !sessionsCollapsed"
+          >
+            <template #icon>
+              <n-icon><component :is="sessionsCollapsed ? ChevronForwardOutline : ChevronBackOutline" /></n-icon>
+            </template>
+          </n-button>
+        </div>
       </div>
       <n-spin v-if="sessionStore.loading" />
       <div v-else class="session-list">
@@ -15,9 +42,12 @@
           :key="s.id"
           :class="['session-row', { active: s.id === chatStore.activeSessionId }]"
         >
-          <button class="session-item" type="button" @click="selectSession(s.id)">
-            <span class="session-title">{{ s.title }}</span>
-            <span class="session-time">{{ s.updated_at?.slice(0, 16) }}</span>
+          <button class="session-item" type="button" :title="s.title" @click="selectSession(s.id)">
+            <span class="session-initial" aria-hidden="true">{{ sessionInitial(s.title) }}</span>
+            <span class="session-meta">
+              <span class="session-title">{{ s.title }}</span>
+              <span class="session-time">{{ s.updated_at?.slice(0, 16) }}</span>
+            </span>
           </button>
           <n-popconfirm
             :positive-button-props="{ type: 'error', size: 'tiny' }"
@@ -80,22 +110,27 @@
           <div class="message-column">
             <MessageBubble v-for="msg in chatStore.messages" :key="msg.id" :message="msg" />
             <div v-if="chatStore.streaming" class="streaming-msg">
-              <MessageBubble :message="{ id: 'streaming', role: 'assistant', content: chatStore.streamingContent, tool_calls: chatStore.streamingToolCalls, tool_results: chatStore.streamingToolResults, created_at: '' }" />
+              <MessageBubble :message="{ id: 'streaming', role: 'assistant', content: chatStore.streamingContent, tool_calls: chatStore.streamingToolCalls, tool_results: chatStore.streamingToolResults, created_at: '' }" streaming />
               <n-spin size="small" />
             </div>
           </div>
         </template>
       </main>
 
-      <footer v-if="chatStore.activeSessionId" class="composer-shell">
-        <ChatInput :disabled="chatStore.streaming" @send="onSend" />
+      <footer class="composer-shell">
+        <ChatInput
+          :disabled="chatStore.streaming"
+          :streaming="chatStore.streaming"
+          @send="onSend"
+          @stop="stopStream"
+        />
       </footer>
     </section>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted, watch } from 'vue'
+import { ref, shallowRef, computed, nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
 import { NButton, NIcon, NPopconfirm, NSelect, NSpin, NSwitch } from 'naive-ui'
 import { useSessionStore } from '@/stores/session'
 import { useChatStore } from '@/stores/chat'
@@ -104,12 +139,14 @@ import MessageBubble from '@/components/chat/MessageBubble.vue'
 import ChatInput from '@/components/chat/ChatInput.vue'
 import { SSE } from 'sse.js'
 import type { LLMConfig } from '@/types'
-import { TrashOutline } from '@vicons/ionicons5'
+import { AddOutline, ChevronBackOutline, ChevronForwardOutline, TrashOutline } from '@vicons/ionicons5'
 
 const sessionStore = useSessionStore()
 const chatStore = useChatStore()
 const messageListRef = ref<HTMLElement>()
 const llmConfig = ref<LLMConfig | null>(null)
+const activeSse = shallowRef<{ close: () => void } | null>(null)
+const sessionsCollapsed = ref(false)
 
 const currentTitle = computed(() => {
   const s = sessionStore.sessions.find((s) => s.id === chatStore.activeSessionId)
@@ -126,6 +163,16 @@ const llmOptions = computed(() =>
 
 onMounted(async () => {
   await Promise.all([sessionStore.fetchSessions(), loadLlmConfig()])
+})
+
+onBeforeUnmount(() => {
+  if (activeSse.value) {
+    activeSse.value.close()
+    activeSse.value = null
+  }
+  if (chatStore.streaming) {
+    chatStore.finalizeStream()
+  }
 })
 
 async function loadLlmConfig() {
@@ -146,6 +193,7 @@ async function loadLlmConfig() {
 async function newSession() {
   const id = await sessionStore.createSession()
   chatStore.setSession(id)
+  return id
 }
 
 async function selectSession(id: string) {
@@ -175,9 +223,19 @@ function scrollToBottom() {
   }
 }
 
-watch(() => chatStore.messages.length, () => nextTick(scrollToBottom))
+function sessionInitial(title?: string) {
+  return (title?.trim().slice(0, 1) || '新').toUpperCase()
+}
 
-function onSend(content: string) {
+watch(() => chatStore.messages.length, () => nextTick(scrollToBottom))
+watch(() => chatStore.streamingContent, () => nextTick(scrollToBottom))
+
+async function onSend(content: string) {
+  if (chatStore.streaming) return
+  if (!chatStore.activeSessionId) {
+    await newSession()
+  }
+
   chatStore.addMessage({
     id: Date.now().toString(),
     role: 'user',
@@ -195,14 +253,18 @@ function onSend(content: string) {
     }),
     method: 'POST',
   })
+  const currentSse = sse as { close: () => void }
+  activeSse.value = currentSse
 
   sse.addEventListener('token', (e: any) => {
+    if (activeSse.value !== currentSse) return
     const data = JSON.parse(e.data)
     chatStore.appendStream(data.content)
     nextTick(scrollToBottom)
   })
 
   sse.addEventListener('tool_call', (e: any) => {
+    if (activeSse.value !== currentSse) return
     const data = JSON.parse(e.data)
     if (data.tool_call) {
       chatStore.addStreamingToolCall(data.tool_call)
@@ -211,6 +273,7 @@ function onSend(content: string) {
   })
 
   sse.addEventListener('tool_result', (e: any) => {
+    if (activeSse.value !== currentSse) return
     const data = JSON.parse(e.data)
     if (data.tool_call_id) {
       chatStore.addStreamingToolResult(data.tool_call_id, data.result)
@@ -218,34 +281,62 @@ function onSend(content: string) {
     }
   })
 
-  sse.addEventListener('done', () => {
+  sse.addEventListener('done', async () => {
+    if (activeSse.value !== currentSse) return
+    activeSse.value = null
+    const sessionId = chatStore.activeSessionId
     chatStore.finalizeStream()
-    sessionStore.fetchSessions()
+    if (sessionId) {
+      await chatStore.loadMessages(sessionId)
+    }
+    await sessionStore.fetchSessions()
+    nextTick(scrollToBottom)
   })
 
   sse.addEventListener('error', () => {
-    chatStore.appendStream('\n❌ 发生错误\n')
+    if (activeSse.value !== currentSse) return
+    activeSse.value = null
+    chatStore.appendStream('\n发生错误\n')
     chatStore.finalizeStream()
   })
+}
+
+function stopStream() {
+  if (!chatStore.streaming) return
+  const currentSse = activeSse.value
+  activeSse.value = null
+  currentSse?.close()
+  chatStore.finalizeStream()
+  sessionStore.fetchSessions()
 }
 </script>
 
 <style scoped>
 .chat-workbench {
   height: 100%;
+  max-height: 100%;
+  min-height: 0;
   display: grid;
   grid-template-columns: 276px minmax(0, 1fr);
-  background: #111113;
+  background: var(--dr-bg);
+  color: var(--dr-text);
+  overflow: hidden;
+  transition: grid-template-columns 180ms ease;
+}
+.chat-workbench.sessions-collapsed {
+  grid-template-columns: 72px minmax(0, 1fr);
 }
 .session-rail {
   min-width: 0;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
-  background: #18181b;
+  min-height: 0;
+  border-right: 1px solid var(--dr-border);
+  background: var(--dr-sidebar);
   padding: 14px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  transition: padding 180ms ease;
 }
 .rail-head,
 .chat-topbar {
@@ -254,17 +345,32 @@ function onSend(content: string) {
   justify-content: space-between;
   gap: 12px;
 }
+.rail-copy {
+  min-width: 0;
+}
+.rail-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+.rail-new-button,
+.rail-toggle-button {
+  min-width: 36px;
+}
 .rail-title {
   font-size: 15px;
   font-weight: 650;
+  color: var(--dr-text);
 }
 .rail-subtitle,
 .chat-subtitle,
 .session-time {
-  color: #8f9299;
+  color: var(--dr-text-muted);
   font-size: 12px;
 }
 .session-list {
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -274,7 +380,7 @@ function onSend(content: string) {
   width: 100%;
   min-height: 58px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--dr-radius);
   background: transparent;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 32px;
@@ -282,11 +388,11 @@ function onSend(content: string) {
   overflow: hidden;
 }
 .session-row:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--dr-surface-hover);
 }
 .session-row.active {
-  background: rgba(70, 88, 116, 0.34);
-  border-color: rgba(112, 132, 166, 0.45);
+  background: #faf1ea;
+  border-color: rgba(25, 24, 20, 0.06);
 }
 .session-item {
   min-width: 0;
@@ -294,13 +400,20 @@ function onSend(content: string) {
   padding: 10px 4px 10px 12px;
   border: 0;
   background: transparent;
-  color: #e7e7e9;
+  color: var(--dr-text-soft);
   text-align: left;
   cursor: pointer;
 }
+.session-initial {
+  display: none;
+}
+.session-meta {
+  min-width: 0;
+  display: block;
+}
 .session-delete {
   opacity: 0;
-  color: #aeb3bd;
+  color: var(--dr-text-muted);
 }
 .session-row:hover .session-delete,
 .session-row.active .session-delete {
@@ -314,20 +427,76 @@ function onSend(content: string) {
   font-size: 13px;
   margin-bottom: 5px;
 }
-.chat-main {
-  min-width: 0;
-  height: 100%;
+.sessions-collapsed .session-rail {
+  padding: 12px 8px;
+}
+.sessions-collapsed .rail-head {
+  justify-content: center;
+}
+.sessions-collapsed .rail-copy,
+.sessions-collapsed .rail-new-text,
+.sessions-collapsed .session-meta,
+.sessions-collapsed .session-delete {
+  display: none;
+}
+.sessions-collapsed .rail-actions {
+  flex-direction: column;
+  gap: 8px;
+}
+.sessions-collapsed .session-list {
+  align-items: center;
+  overflow-x: hidden;
+}
+.sessions-collapsed .session-row {
+  width: 44px;
+  min-height: 44px;
+  grid-template-columns: 1fr;
+  justify-items: center;
+}
+.sessions-collapsed .session-item {
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
   display: grid;
-  grid-template-rows: 64px minmax(0, 1fr) auto;
-  background: #111113;
+  place-items: center;
+  text-align: center;
+}
+.sessions-collapsed .session-initial {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #d8d0c3;
+  border-radius: var(--dr-radius);
+  background: #fffdf8;
+  color: var(--dr-accent-deep);
+  font-size: 12px;
+  font-weight: 650;
+}
+.chat-main {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
+  display: grid;
+  grid-template-rows: 64px minmax(0, 1fr);
+  background: var(--dr-bg);
+  overflow: hidden;
 }
 .chat-topbar {
+  position: relative;
+  z-index: 2;
+  min-height: 64px;
   padding: 0 24px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  border-bottom: 1px solid var(--dr-border-soft);
+  background: rgba(250, 247, 241, 0.86);
+  backdrop-filter: blur(12px);
 }
 .chat-title {
   font-size: 15px;
   font-weight: 650;
+  color: var(--dr-text);
 }
 .chat-controls,
 .tool-context-control {
@@ -342,14 +511,37 @@ function onSend(content: string) {
 }
 .tool-context-control {
   gap: 8px;
-  color: #b8bbc2;
+  color: var(--dr-text-soft);
   font-size: 12px;
   font-weight: 400;
 }
 .message-scroll {
   min-height: 0;
-  overflow-y: auto;
-  padding: 28px 24px 20px;
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: scroll;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-color: #b9ad9c transparent;
+  scrollbar-width: thin;
+  scrollbar-gutter: stable;
+  padding: 28px 24px 154px;
+  box-shadow: inset -1px 0 0 #e3dacc;
+}
+.message-scroll::-webkit-scrollbar,
+.session-list::-webkit-scrollbar {
+  width: 10px;
+}
+.message-scroll::-webkit-scrollbar-track,
+.session-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.message-scroll::-webkit-scrollbar-thumb,
+.session-list::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: #cfc5b7;
+  background-clip: content-box;
 }
 .message-column {
   width: min(100%, 880px);
@@ -361,8 +553,19 @@ function onSend(content: string) {
   gap: 8px;
 }
 .composer-shell {
-  padding: 12px 24px 20px;
-  background: linear-gradient(180deg, rgba(17, 17, 19, 0), #111113 26%);
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 22px;
+  z-index: 3;
+  padding: 0 24px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  pointer-events: none;
+}
+.composer-shell :deep(.composer) {
+  pointer-events: auto;
 }
 .empty-state {
   min-height: 100%;
@@ -371,7 +574,7 @@ function onSend(content: string) {
   justify-content: center;
   align-items: center;
   text-align: center;
-  color: #d9dadd;
+  color: var(--dr-text);
   gap: 12px;
 }
 .empty-mark {
@@ -379,19 +582,20 @@ function onSend(content: string) {
   height: 48px;
   display: grid;
   place-items: center;
-  border-radius: 50%;
-  background: #263244;
-  color: #eef2ff;
+  border: 1px solid #d4cbbd;
+  border-radius: var(--dr-radius);
+  background: #fffdf8;
+  color: var(--dr-accent-deep);
   font-weight: 700;
 }
 .empty-state h2 {
   margin: 0;
-  font-size: 26px;
+  font-size: 22px;
   font-weight: 650;
 }
 .empty-state p {
   margin: 0 0 8px;
-  color: #9ca3af;
+  color: var(--dr-text-muted);
 }
 @media (max-width: 820px) {
   .chat-workbench {
@@ -405,6 +609,20 @@ function onSend(content: string) {
   }
   .model-select {
     width: 168px;
+  }
+  .message-scroll {
+    padding: 22px 14px 144px;
+  }
+  .composer-shell {
+    bottom: 18px;
+    padding: 0 14px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-workbench,
+  .session-rail {
+    transition: none;
   }
 }
 </style>

@@ -2,7 +2,7 @@
   <div class="ops-page" :style="themeStyle">
     <header class="ops-topbar">
       <div class="title-block">
-        <img class="title-icon" :src="iconSrc(iconPack.bot)" alt="">
+        <span class="title-icon mark-icon" aria-hidden="true">D</span>
         <div>
           <div class="eyebrow">Ding Robot</div>
           <h1>ChatOps 运维控制台</h1>
@@ -15,7 +15,7 @@
           <span>{{ cluster.name }}</span>
         </div>
         <button class="icon-button" :disabled="refreshing" title="刷新状态" aria-label="刷新 Dashboard 状态" @click="refresh">
-          <img :src="iconSrc(iconPack.timeline)" alt="">
+          刷新
         </button>
       </div>
     </header>
@@ -62,7 +62,7 @@
           <div class="insight-list">
             <article v-for="item in insightCards" :key="item.id" :class="['insight-card', item.tone]">
               <div class="generated-icon">
-                <img :src="iconSrc(item.icon)" :alt="item.label">
+                {{ iconLabel(item.icon) }}
               </div>
               <div>
                 <span>{{ item.label }}</span>
@@ -112,7 +112,7 @@
           </div>
 
           <div class="prompt-box">
-            <img class="prompt-icon" :src="iconSrc(iconPack.bot)" alt="">
+            <span class="prompt-icon mark-icon" aria-hidden="true">D</span>
             <input
               v-model="promptDraft"
               type="text"
@@ -121,7 +121,6 @@
               @keydown.enter="goToRoute('Chat')"
             >
             <button @click="goToRoute('Chat')">
-              <img :src="iconSrc(iconPack.timeline)" alt="">
               执行
             </button>
           </div>
@@ -146,9 +145,7 @@
           </div>
 
           <div class="message bot-message">
-            <div class="avatar bot">
-              <img :src="iconSrc(iconPack.bot)" alt="">
-            </div>
+            <div class="avatar bot">D</div>
             <div class="bot-card">
               <div class="bot-summary">
                 <div>
@@ -203,7 +200,7 @@
           <div class="resource-map">
             <div v-for="(node, index) in resourceNodes" :key="node.kind" class="resource-step">
               <div :class="['resource-node', node.tone]">
-                <img :src="iconSrc(node.icon)" :alt="node.kind">
+                <span class="generated-icon" aria-hidden="true">{{ iconLabel(node.icon) }}</span>
                 <div>
                   <span>{{ node.kind }}</span>
                   <strong>{{ node.count }}</strong>
@@ -225,7 +222,7 @@
           <div class="timeline">
             <div v-for="item in timelineItems" :key="item.id" class="timeline-item">
               <span :class="['timeline-dot', item.tone]" />
-              <img :src="iconSrc(item.icon)" :alt="item.title">
+              <span class="timeline-symbol" aria-hidden="true">{{ iconLabel(item.icon) }}</span>
               <div>
                 <strong>{{ item.title }}</strong>
                 <span>{{ item.detail }}</span>
@@ -243,7 +240,7 @@
           </div>
           <div class="next-actions">
             <button v-for="action in nextActions" :key="action.id" @click="goToRoute(action.route)">
-              <img :src="iconSrc(action.icon)" :alt="action.title">
+              <span class="timeline-symbol" aria-hidden="true">{{ iconLabel(action.icon) }}</span>
               {{ action.title }}
             </button>
           </div>
@@ -257,16 +254,10 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { NSpin, useMessage } from 'naive-ui'
-import botCoreIcon from '@/assets/generated/bot-core.svg'
-import executionFlowIcon from '@/assets/generated/execution-flow.svg'
-import knowledgeMapIcon from '@/assets/generated/knowledge-map.svg'
-import kubernetesClusterIcon from '@/assets/generated/kubernetes-cluster.svg'
-import mcpToolchainIcon from '@/assets/generated/mcp-toolchain.svg'
 import { systemApi } from '@/api/client'
 import type {
   DashboardAction,
   DashboardCluster,
-  DashboardIconPack,
   DashboardInsight,
   DashboardResourceNode,
   DashboardSummary,
@@ -278,35 +269,19 @@ import type {
 const router = useRouter()
 const message = useMessage()
 
-const generatedIcons: Record<string, string> = {
-  'bot-core': botCoreIcon,
-  'execution-flow': executionFlowIcon,
-  'knowledge-map': knowledgeMapIcon,
-  'kubernetes-cluster': kubernetesClusterIcon,
-  'mcp-toolchain': mcpToolchainIcon,
-}
-
 const defaultTheme: DashboardTheme = {
-  background: '#070a0f',
-  shell: '#0d1420',
-  surface: '#111827',
-  surface_alt: '#172235',
-  surface_light: '#f8fafc',
-  border: '#2a3648',
-  text: '#f8fafc',
-  muted: '#9aa8bd',
-  primary: '#22c55e',
-  accent: '#38bdf8',
-  warning: '#f59e0b',
-  danger: '#ef4444',
-}
-
-const fallbackIconPack: DashboardIconPack = {
-  bot: 'bot-core',
-  kubernetes: 'kubernetes-cluster',
-  mcp: 'mcp-toolchain',
-  graph: 'knowledge-map',
-  timeline: 'execution-flow',
+  background: '#f7f5ef',
+  shell: '#fffdf7',
+  surface: '#fffefa',
+  surface_alt: '#f1eee6',
+  surface_light: '#fffefa',
+  border: '#ded8cd',
+  text: '#191814',
+  muted: '#7b756a',
+  primary: '#39745d',
+  accent: '#c96442',
+  warning: '#9a6a1b',
+  danger: '#b84535',
 }
 
 const fallbackCluster: DashboardCluster = {
@@ -332,8 +307,7 @@ const refreshing = ref(false)
 const lastUpdated = ref<Date | null>(null)
 const promptDraft = ref('查看 default namespace 当前状态')
 
-const theme = computed(() => dashboard.value?.theme || defaultTheme)
-const iconPack = computed(() => dashboard.value?.icon_pack || fallbackIconPack)
+const theme = computed(() => defaultTheme)
 const cluster = computed(() => dashboard.value?.cluster || fallbackCluster)
 const tools = computed(() => dashboard.value?.tools || fallbackTools)
 const insightCards = computed<DashboardInsight[]>(() => dashboard.value?.insights || [])
@@ -374,8 +348,12 @@ const themeStyle = computed(() => ({
   '--ops-danger': theme.value.danger,
 }))
 
-function iconSrc(name: string) {
-  return generatedIcons[name] || botCoreIcon
+function iconLabel(name: string) {
+  if (name.includes('kubernetes')) return 'K8s'
+  if (name.includes('mcp')) return 'MCP'
+  if (name.includes('graph') || name.includes('knowledge')) return 'Graph'
+  if (name.includes('timeline') || name.includes('execution')) return 'Run'
+  return 'DR'
 }
 
 async function refresh() {
@@ -405,19 +383,19 @@ onMounted(refresh)
   box-sizing: border-box;
   background: var(--ops-bg);
   color: var(--ops-text);
-  font-size: 14px;
+  font-size: var(--dr-text-sm);
   line-height: 1.5;
-  --ops-row: #0a111d;
-  --ops-row-hover: #101a2a;
-  --ops-text-secondary: color-mix(in srgb, var(--ops-muted) 86%, white 14%);
+  --ops-row: #fbf8f1;
+  --ops-row-hover: #f2ece1;
+  --ops-text-secondary: var(--ops-muted);
   --tone-green: var(--ops-primary);
-  --tone-green-bg: rgba(34, 197, 94, 0.12);
+  --tone-green-bg: #dcebe2;
   --tone-blue: var(--ops-accent);
-  --tone-blue-bg: rgba(56, 189, 248, 0.12);
+  --tone-blue-bg: #fff1e8;
   --tone-amber: var(--ops-warning);
-  --tone-amber-bg: rgba(245, 158, 11, 0.13);
-  --tone-slate: #94a3b8;
-  --tone-slate-bg: rgba(148, 163, 184, 0.12);
+  --tone-amber-bg: #f2e5c8;
+  --tone-slate: #7b756a;
+  --tone-slate-bg: #f1eee6;
 }
 
 .ops-page *,
@@ -458,7 +436,12 @@ onMounted(refresh)
   flex: 0 0 auto;
   border: 1px solid var(--ops-border);
   border-radius: 8px;
-  background: var(--ops-shell);
+  background: #fffdf8;
+  color: var(--ops-accent);
+  display: grid;
+  place-items: center;
+  font-size: 16px;
+  font-weight: 680;
 }
 
 .eyebrow,
@@ -483,7 +466,7 @@ onMounted(refresh)
 
 .ops-topbar h1 {
   margin-top: 2px;
-  font-size: 24px;
+  font-size: 21px;
   line-height: 1.2;
 }
 
@@ -546,21 +529,19 @@ onMounted(refresh)
 }
 
 .icon-button {
-  width: 40px;
-  display: inline-grid;
-  place-items: center;
+  min-width: 52px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
+  font-weight: 610;
   transition: border-color 160ms ease, background-color 160ms ease;
 }
 
 .icon-button:hover:not(:disabled) {
   border-color: var(--ops-accent);
   background: var(--ops-surface-alt);
-}
-
-.icon-button img {
-  width: 22px;
-  height: 22px;
 }
 
 .icon-button:disabled {
@@ -617,7 +598,7 @@ onMounted(refresh)
   overflow: hidden;
   margin-top: 4px;
   color: var(--ops-text);
-  font-size: 20px;
+  font-size: 18px;
   line-height: 1.15;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -726,18 +707,10 @@ onMounted(refresh)
   place-items: center;
   border: 1px solid color-mix(in srgb, var(--ops-border) 70%, white 30%);
   border-radius: 8px;
-  background: var(--ops-row);
-}
-
-.generated-icon img,
-.resource-node img,
-.timeline-item img,
-.next-actions img,
-.prompt-box button img,
-.avatar.bot img {
-  width: 28px;
-  height: 28px;
-  object-fit: contain;
+  background: #fffdf8;
+  color: var(--ops-accent);
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .insight-card.green,
@@ -757,7 +730,7 @@ onMounted(refresh)
 
 .insight-card.slate,
 .resource-node.slate {
-  border-left-color: #7890ad;
+  border-left-color: var(--ops-muted);
 }
 
 .matrix-grid {
@@ -779,7 +752,7 @@ onMounted(refresh)
   display: block;
   margin-top: 6px;
   color: var(--ops-text);
-  font-size: 24px;
+  font-size: 20px;
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
@@ -800,12 +773,12 @@ onMounted(refresh)
 
 .agent-state.green {
   background: var(--tone-green-bg);
-  color: #86efac;
+  color: var(--ops-primary);
 }
 
 .agent-state.amber {
   background: var(--tone-amber-bg);
-  color: #fde68a;
+  color: var(--ops-warning);
 }
 
 .prompt-box {
@@ -818,12 +791,14 @@ onMounted(refresh)
   padding: 8px 8px 8px 12px;
   border: 1px solid color-mix(in srgb, var(--ops-accent) 54%, var(--ops-border) 46%);
   border-radius: 8px;
-  background: var(--ops-row);
+  background: #fffdf8;
 }
 
 .prompt-icon {
   width: 32px;
   height: 32px;
+  display: grid;
+  place-items: center;
 }
 
 .prompt-box input {
@@ -859,18 +834,13 @@ onMounted(refresh)
   justify-content: center;
   gap: 7px;
   padding: 0 14px;
-  background: var(--ops-primary);
-  color: #03110a;
+  background: var(--ops-accent);
+  color: #fffaf6;
 }
 
 .prompt-box button:hover,
 .action-row button:first-child:hover {
-  background: #4ade80;
-}
-
-.prompt-box button img {
-  width: 22px;
-  height: 22px;
+  background: #d46d49;
 }
 
 .suggestions {
@@ -930,15 +900,8 @@ onMounted(refresh)
 }
 
 .avatar.bot {
-  background: transparent;
-  border: 0;
-}
-
-.avatar.bot img {
-  width: 36px;
-  height: 36px;
-  border: 1px solid var(--ops-border);
-  border-radius: 8px;
+  background: #fffdf8;
+  color: var(--ops-accent);
 }
 
 .bubble {
@@ -955,7 +918,7 @@ onMounted(refresh)
   padding: 14px;
   border: 1px solid color-mix(in srgb, var(--ops-border) 80%, white 20%);
   border-radius: 8px;
-  background: var(--ops-row);
+  background: #fffdf8;
 }
 
 .bot-summary h3 {
@@ -969,7 +932,7 @@ onMounted(refresh)
   padding: 5px 9px;
   border-radius: 999px;
   background: var(--tone-green-bg);
-  color: #86efac;
+  color: var(--ops-primary);
   font-size: 12px;
   font-weight: 800;
   white-space: nowrap;
@@ -993,7 +956,7 @@ onMounted(refresh)
   border: 1px solid color-mix(in srgb, var(--ops-accent) 42%, var(--ops-border) 58%);
   border-radius: 8px;
   background: var(--tone-blue-bg);
-  color: #bfdbfe;
+  color: var(--ops-accent);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
 }
@@ -1036,9 +999,9 @@ onMounted(refresh)
 }
 
 .action-row button:first-child {
-  border-color: var(--ops-primary);
-  background: var(--ops-primary);
-  color: #03110a;
+  border-color: var(--ops-accent);
+  background: var(--ops-accent);
+  color: #fffaf6;
 }
 
 .resource-map {
@@ -1096,7 +1059,7 @@ onMounted(refresh)
   height: 10px;
   margin-top: 10px;
   border-radius: 999px;
-  background: #94a3b8;
+  background: var(--ops-muted);
 }
 
 .timeline-dot.green {
@@ -1112,13 +1075,20 @@ onMounted(refresh)
 }
 
 .timeline-dot.slate {
-  background: #7890ad;
+  background: var(--ops-muted);
 }
 
-.timeline-item img {
+.timeline-symbol {
   width: 26px;
   height: 26px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--ops-border);
   border-radius: 8px;
+  background: #fffdf8;
+  color: var(--ops-accent);
+  font-size: 10px;
+  font-weight: 700;
 }
 
 .timeline-item strong {
@@ -1150,12 +1120,6 @@ onMounted(refresh)
   border-color: var(--ops-border);
   background: var(--ops-surface);
   color: var(--ops-text);
-}
-
-.next-actions img {
-  width: 26px;
-  height: 26px;
-  border-radius: 8px;
 }
 
 @media (max-width: 1280px) {

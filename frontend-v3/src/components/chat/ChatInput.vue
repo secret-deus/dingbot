@@ -10,7 +10,20 @@
       :disabled="disabled"
       @keydown="onKeydown"
     />
-    <n-button class="send-button" type="primary" circle :disabled="disabled || !text.trim()" @click="send">
+    <n-button
+      v-if="streaming"
+      class="send-button stop-button"
+      type="primary"
+      circle
+      aria-label="停止输出"
+      title="停止输出"
+      @click="emit('stop')"
+    >
+      <template #icon>
+        <n-icon><StopCircleOutline /></n-icon>
+      </template>
+    </n-button>
+    <n-button v-else class="send-button" type="primary" circle :disabled="disabled || !text.trim()" @click="send">
       <template #icon>
         <n-icon><SendOutline /></n-icon>
       </template>
@@ -21,10 +34,10 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { NInput, NButton, NIcon } from 'naive-ui'
-import { SendOutline } from '@vicons/ionicons5'
+import { SendOutline, StopCircleOutline } from '@vicons/ionicons5'
 
-defineProps<{ disabled?: boolean }>()
-const emit = defineEmits<{ send: [content: string] }>()
+defineProps<{ disabled?: boolean; streaming?: boolean }>()
+const emit = defineEmits<{ send: [content: string]; stop: [] }>()
 
 const text = ref('')
 
@@ -49,14 +62,14 @@ function onKeydown(e: KeyboardEvent) {
   min-height: 58px;
   margin: 0 auto;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 42px;
+  grid-template-columns: minmax(0, 1fr) 44px;
   align-items: end;
   gap: 10px;
   padding: 10px 10px 10px 16px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
-  background: #1b1b1f;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--dr-border);
+  border-radius: var(--dr-radius);
+  background: var(--dr-surface-lift);
+  box-shadow: var(--dr-shadow-lift);
 }
 .composer-input :deep(.n-input-wrapper) {
   padding-left: 0;
@@ -68,10 +81,17 @@ function onKeydown(e: KeyboardEvent) {
 }
 .composer-input :deep(textarea) {
   line-height: 1.55;
+  color: var(--dr-text);
 }
 .send-button {
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   align-self: end;
+}
+.stop-button {
+  --n-color: #a33d2f;
+  --n-color-hover: #8f3328;
+  --n-color-pressed: #7d2b22;
+  --n-color-focus: #a33d2f;
 }
 </style>

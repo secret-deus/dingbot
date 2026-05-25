@@ -84,6 +84,11 @@ export const systemApi = {
   updateMcpConfig: (data: {
     k8s?: Partial<Pick<K8sMCPConfig, 'enabled' | 'kubeconfig_path' | 'namespace' | 'in_cluster'>>
     ecs?: Partial<Pick<ECSMCPConfig, 'enabled' | 'region_id'>> & { access_key_id?: string; access_key_secret?: string }
+    aliyun?: Partial<Pick<AliyunMCPConfig, 'enabled' | 'default_region_id' | 'allowed_regions' | 'required_tags' | 'allowed_instance_ids'>> & {
+      access_key_id?: string
+      access_key_secret?: string
+      sls?: { mappings?: Array<Record<string, unknown>> }
+    }
   }) => request<MCPConfig>({ method: 'patch', url: '/config/mcp', data }),
   k8sKnowledgeGraph: (params?: { namespace?: string; all_namespaces?: boolean; auto_sync?: boolean }) =>
     request<K8sKnowledgeGraph>({ method: 'get', url: '/config/k8s/knowledge-graph', params }),
@@ -101,7 +106,7 @@ export const systemApi = {
 import type {
   Session, Message, MCPTool, ScheduledTask, TaskExecution,
   AuditLog, LLMConfig, LLMProviderConfig, HealthStatus,
-  MCPConfig, K8sMCPConfig, ECSMCPConfig,
+  MCPConfig, K8sMCPConfig, ECSMCPConfig, AliyunMCPConfig,
   K8sKnowledgeGraph, K8sKnowledgeGraphSyncResult,
   DashboardSummary,
 } from '@/types'

@@ -64,7 +64,7 @@
           >
             <defs>
               <marker id="kg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b" />
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#7b756a" />
               </marker>
             </defs>
             <path
@@ -159,12 +159,12 @@ const kindNames: Record<string, string> = {
   node: 'Node',
 }
 const kindColors: Record<string, string> = {
-  ingress: '#7c3aed',
-  service: '#0891b2',
-  deployment: '#2563eb',
-  replicaset: '#4f46e5',
-  pod: '#059669',
-  node: '#d97706',
+  ingress: '#9f432d',
+  service: '#3f667c',
+  deployment: '#39745d',
+  replicaset: '#7a6a45',
+  pod: '#5f7d5a',
+  node: '#9a6a1b',
 }
 
 const selectedNode = computed(() => graph.value?.nodes.find((node) => node.id === selectedNodeId.value) || null)
@@ -318,7 +318,7 @@ function kindLabel(kind: string) {
 }
 
 function kindColor(kind: string) {
-  return kindColors[kind] || '#64748b'
+  return kindColors[kind] || '#7b756a'
 }
 
 function trimName(value: string) {
@@ -352,7 +352,8 @@ onMounted(async () => {
 .kg-page {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
+  color: var(--dr-text);
 }
 .kg-header,
 .panel-head {
@@ -362,15 +363,16 @@ onMounted(async () => {
   gap: 16px;
 }
 .page-title {
-  font-size: 18px;
-  font-weight: 650;
-  line-height: 1.4;
+  color: var(--dr-text);
+  font-size: var(--dr-text-2xl);
+  font-weight: 620;
+  line-height: 1.12;
 }
 .page-subtitle,
 .panel-subtitle {
-  margin-top: 2px;
-  color: #8f9299;
-  font-size: 13px;
+  margin-top: 7px;
+  color: var(--dr-text-muted);
+  font-size: var(--dr-text-md);
 }
 .kg-actions {
   display: flex;
@@ -378,11 +380,11 @@ onMounted(async () => {
   gap: 10px;
 }
 .all-ns-toggle {
-  min-height: 34px;
+  min-height: 44px;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  color: #d3d8e3;
+  color: var(--dr-text-soft);
   font-size: 13px;
   white-space: nowrap;
 }
@@ -395,23 +397,26 @@ onMounted(async () => {
   gap: 10px;
 }
 .stat-block {
-  min-height: 68px;
-  border: 1px solid #343434;
-  border-radius: 8px;
-  background: #202020;
-  padding: 10px 12px;
+  min-height: 92px;
+  border: 1px solid var(--dr-border-soft);
+  border-radius: var(--dr-radius);
+  background: var(--dr-surface);
+  padding: 15px;
   display: flex;
   flex-direction: column;
   justify-content: center;
   gap: 4px;
+  box-shadow: 0 1px 0 rgba(25, 24, 20, 0.03);
 }
 .stat-label {
-  color: #9ca3af;
-  font-size: 12px;
+  color: var(--dr-text-muted);
+  font-size: var(--dr-text-sm);
+  font-weight: 570;
 }
 .stat-block strong {
-  color: #f8fafc;
+  color: var(--dr-text);
   font-size: 22px;
+  font-weight: 610;
   line-height: 1.2;
   overflow-wrap: anywhere;
 }
@@ -424,9 +429,10 @@ onMounted(async () => {
 .detail-panel,
 .table-panel {
   min-width: 0;
-  border: 1px solid #303036;
-  border-radius: 8px;
-  background: #17171a;
+  border: 1px solid var(--dr-border-soft);
+  border-radius: var(--dr-radius);
+  background: var(--dr-surface-lift);
+  box-shadow: var(--dr-shadow);
 }
 .graph-panel,
 .table-panel {
@@ -436,9 +442,9 @@ onMounted(async () => {
   padding: 14px;
 }
 .panel-title {
-  color: #f3f4f6;
-  font-size: 15px;
-  font-weight: 650;
+  color: var(--dr-text);
+  font-size: var(--dr-text-lg);
+  font-weight: 610;
 }
 .legend {
   display: flex;
@@ -446,7 +452,7 @@ onMounted(async () => {
   justify-content: flex-end;
   gap: 8px 12px;
   max-width: 460px;
-  color: #b7bbc4;
+  color: var(--dr-text-soft);
   font-size: 12px;
 }
 .legend span {
@@ -466,13 +472,9 @@ onMounted(async () => {
   display: grid;
   place-items: center;
   overflow: auto;
-  border: 1px solid #24262d;
-  border-radius: 8px;
-  background:
-    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-    #101114;
-  background-size: 28px 28px;
+  border: 1px solid var(--dr-border-soft);
+  border-radius: var(--dr-radius);
+  background: #fbf8f1;
 }
 .graph-svg {
   width: 100%;
@@ -481,7 +483,7 @@ onMounted(async () => {
 }
 .graph-edge {
   fill: none;
-  stroke: #64748b;
+  stroke: #7b756a;
   stroke-width: 1.5;
   opacity: 0.72;
 }
@@ -490,12 +492,12 @@ onMounted(async () => {
   outline: none;
 }
 .graph-node rect {
-  stroke: rgba(255, 255, 255, 0.18);
+  stroke: rgba(255, 250, 243, 0.65);
   stroke-width: 1;
 }
 .graph-node:hover rect,
 .graph-node.selected rect {
-  stroke: #e2e8f0;
+  stroke: #fffaf3;
   stroke-width: 2;
 }
 .node-kind {
@@ -512,7 +514,7 @@ onMounted(async () => {
 }
 .detail-title {
   margin-top: 12px;
-  color: #f8fafc;
+  color: var(--dr-text);
   font-size: 18px;
   font-weight: 700;
   overflow-wrap: anywhere;
@@ -528,17 +530,17 @@ onMounted(async () => {
   margin-top: 14px;
 }
 .detail-section span {
-  color: #a6adbb;
+  color: var(--dr-text-muted);
   font-size: 12px;
 }
 .detail-section pre {
   max-height: 180px;
   margin: 0;
   overflow: auto;
-  border: 1px solid #303036;
-  border-radius: 8px;
-  background: #101114;
-  color: #dbe2ee;
+  border: 1px solid var(--dr-border-soft);
+  border-radius: var(--dr-radius);
+  background: #fbf8f1;
+  color: var(--dr-text-soft);
   font-family: "SFMono-Regular", Consolas, monospace;
   font-size: 12px;
   line-height: 1.5;
@@ -549,7 +551,7 @@ onMounted(async () => {
   gap: 12px;
 }
 :deep(.selected-row td) {
-  background: rgba(50, 91, 141, 0.22) !important;
+  background: var(--dr-accent-wash) !important;
 }
 @media (max-width: 1100px) {
   .kg-header,

@@ -6,8 +6,7 @@
         <div v-if="message.content" class="content" v-html="renderedContent" />
       </template>
       <template v-else>
-        <ToolCallDisplay v-if="message.tool_calls?.length" :calls="message.tool_calls" :results="message.tool_results || []" />
-        <div v-if="message.content" class="content assistant-content" v-html="renderedContent" />
+        <AssistantRunCard :message="message" :streaming="streaming" />
       </template>
     </div>
   </div>
@@ -16,11 +15,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { marked } from 'marked'
-import 'highlight.js/styles/github-dark.css'
-import ToolCallDisplay from './ToolCallDisplay.vue'
+import 'highlight.js/styles/github.css'
+import AssistantRunCard from './AssistantRunCard.vue'
 import type { Message } from '@/types'
 
-const props = defineProps<{ message: Message }>()
+const props = defineProps<{ message: Message; streaming?: boolean }>()
 
 const roleAvatars: Record<string, string> = {
   assistant: 'AI',
@@ -51,9 +50,10 @@ const renderedContent = computed(() => {
   flex: 0 0 30px;
   display: grid;
   place-items: center;
-  border-radius: 50%;
-  background: #263244;
-  color: #eef2ff;
+  border: 1px solid #d4cbbd;
+  border-radius: var(--dr-radius);
+  background: #fffdf8;
+  color: var(--dr-accent-deep);
   font-size: 11px;
   font-weight: 700;
 }
@@ -61,25 +61,32 @@ const renderedContent = computed(() => {
   min-width: 0;
   max-width: 76%;
 }
+.message-row.assistant .message-body,
+.message-row.system .message-body,
+.message-row.tool .message-body {
+  flex: 1;
+  width: 100%;
+  max-width: 100%;
+}
 .message-row.user .message-body {
   max-width: 70%;
   padding: 10px 14px;
-  border-radius: 8px;
-  background: #263244;
+  border: 1px solid #e5cfc5;
+  border-radius: var(--dr-radius);
+  background: var(--dr-accent-wash);
 }
 .message-row.assistant .message-body,
 .message-row.system .message-body,
 .message-row.tool .message-body {
   padding-top: 2px;
 }
-.message-row.tool .message-body {
-  width: 100%;
-  max-width: 100%;
-}
 .content {
   line-height: 1.6;
   word-break: break-word;
-  color: #ececef;
+  color: var(--dr-text-soft);
+}
+.message-row.user .content {
+  color: var(--dr-text);
 }
 .assistant-content {
   margin-top: 10px;
@@ -91,10 +98,10 @@ const renderedContent = computed(() => {
   margin-bottom: 0;
 }
 .content :deep(pre) {
-  background: #18181b;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #fbf8f1;
+  border: 1px solid var(--dr-border-soft);
   padding: 12px;
-  border-radius: 8px;
+  border-radius: var(--dr-radius);
   overflow-x: auto;
 }
 .content :deep(code) {

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import type { ECSMCPConfig, HealthStatus, K8sMCPConfig, MCPConfig, MCPServerHealth, MCPTool } from '@/types'
+import type { AliyunMCPConfig, ECSMCPConfig, HealthStatus, K8sMCPConfig, MCPConfig, MCPServerHealth, MCPTool } from '@/types'
 import { systemApi, toolApi } from '@/api/client'
 
 export const useMcpStore = defineStore('mcp', () => {
@@ -45,6 +45,11 @@ export const useMcpStore = defineStore('mcp', () => {
   async function saveConfig(data: {
     k8s?: Partial<Pick<K8sMCPConfig, 'enabled' | 'kubeconfig_path' | 'namespace' | 'in_cluster'>>
     ecs?: Partial<Pick<ECSMCPConfig, 'enabled' | 'region_id'>> & { access_key_id?: string; access_key_secret?: string }
+    aliyun?: Partial<Pick<AliyunMCPConfig, 'enabled' | 'default_region_id' | 'allowed_regions' | 'required_tags' | 'allowed_instance_ids'>> & {
+      access_key_id?: string
+      access_key_secret?: string
+      sls?: { mappings?: Array<Record<string, unknown>> }
+    }
   }) {
     configSaving.value = true
     try {

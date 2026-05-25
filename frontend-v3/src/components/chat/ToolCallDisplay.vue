@@ -3,7 +3,7 @@
     <div v-for="call in calls" :key="call.id" class="tool-call">
       <n-tag size="small" type="info">{{ call.function.name }}</n-tag>
       <details>
-        <summary style="cursor: pointer; font-size: 12px; color: #888; margin-top: 4px">参数</summary>
+        <summary class="args-summary">参数</summary>
         <pre class="args">{{ formatArgs(call.function.arguments) }}</pre>
       </details>
       <ToolCandidateCards v-if="toolSearchPayload(call.id)" :payload="toolSearchPayload(call.id)!" />
@@ -64,7 +64,29 @@ function unwrapToolPayload(value: unknown): unknown {
 </script>
 
 <style scoped>
-.tool-calls { margin-top: 8px; }
-.tool-call { margin-bottom: 8px; }
-.args { background: #1a1a1a; padding: 6px; border-radius: 4px; font-size: 12px; overflow-x: auto; margin-top: 2px; }
+.tool-calls {
+  margin-top: 8px;
+}
+
+.tool-call {
+  margin-bottom: 8px;
+}
+
+.args-summary {
+  margin-top: 6px;
+  color: var(--dr-text-muted);
+  cursor: pointer;
+  font-size: var(--dr-text-xs);
+}
+
+.args {
+  margin-top: 4px;
+  padding: 8px;
+  overflow-x: auto;
+  border: 1px solid var(--dr-border-soft);
+  border-radius: var(--dr-radius);
+  background: #fbf8f1;
+  color: var(--dr-text-soft);
+  font-size: var(--dr-text-xs);
+}
 </style>

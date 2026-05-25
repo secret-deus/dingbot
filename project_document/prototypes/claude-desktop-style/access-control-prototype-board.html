@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ding Robot UI Prototype Board</title>
+  <style>
+    :root {
+      --font-sans: "Anthropic Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", ui-sans-serif, sans-serif;
+      --bg: #e9e2d7;
+      --text: #191814;
+      --muted: #746d62;
+      --border: #d8cfc2;
+      --scale: 1;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      letter-spacing: 0;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+
+    .board {
+      display: flex;
+      height: 100vh;
+      flex-direction: column;
+      padding: 18px 24px 24px;
+    }
+
+    .board-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 40px;
+      margin-bottom: 14px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .board-header strong {
+      color: var(--text);
+      font-size: 15px;
+      font-weight: 620;
+    }
+
+    .frame-wrap {
+      position: relative;
+      flex: 1;
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #f7f5ef;
+      box-shadow: 0 18px 60px rgba(25, 24, 20, 0.16);
+    }
+
+    iframe {
+      width: 1440px;
+      height: 900px;
+      border: 0;
+      transform: scale(var(--scale));
+      transform-origin: top left;
+    }
+  </style>
+</head>
+<body>
+  <main class="board">
+    <header class="board-header">
+      <strong>Ding Robot / Claude Desktop Style Prototype</strong>
+      <span>Artboard 1440 × 900 · warm neutral · Anthropic Sans fallback stack</span>
+    </header>
+    <section class="frame-wrap" aria-label="1440 by 900 prototype artboard">
+      <iframe src="./access-control-prototype.html" title="Access control prototype"></iframe>
+    </section>
+  </main>
+  <script>
+    function syncScale() {
+      const widthScale = (window.innerWidth - 48) / 1440;
+      const heightScale = (window.innerHeight - 96) / 900;
+      document.documentElement.style.setProperty('--scale', String(Math.min(Math.max(widthScale, 0.52), heightScale, 1)));
+    }
+
+    syncScale();
+    window.addEventListener('resize', syncScale);
+  </script>
+</body>
+</html>

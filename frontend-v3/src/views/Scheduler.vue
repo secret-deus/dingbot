@@ -121,7 +121,8 @@ onMounted(fetchTasks)
 .scheduler-page {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
+  color: var(--dr-text);
 }
 .page-header {
   display: flex;
@@ -130,13 +131,22 @@ onMounted(fetchTasks)
   gap: 16px;
 }
 .page-title {
-  font-size: 18px;
-  font-weight: 600;
-  line-height: 1.4;
+  color: var(--dr-text);
+  font-size: var(--dr-text-2xl);
+  font-weight: 620;
+  line-height: 1.12;
 }
 .page-subtitle {
-  color: #8f8f8f;
-  font-size: 13px;
-  margin-top: 2px;
+  color: var(--dr-text-muted);
+  font-size: var(--dr-text-md);
+  margin-top: 7px;
+}
+
+.scheduler-page :deep(.n-data-table) {
+  overflow: hidden;
+  border: 1px solid var(--dr-border-soft);
+  border-radius: var(--dr-radius);
+  background: var(--dr-surface-lift);
+  box-shadow: var(--dr-shadow);
 }
 </style>
