@@ -101,6 +101,85 @@ ECS_ANCHOR_TOOLS = (
     "ecs-list-instances",
     "ecs-inspect",
 )
+ALIYUN_CONTEXT_KEYWORDS = (
+    "阿里云",
+    "aliyun",
+    "alibaba cloud",
+    "cloudmonitor",
+    "cms",
+    "sls",
+    "slb",
+    "alb",
+    "nlb",
+    "负载均衡",
+    "轻量应用服务器",
+    "轻量服务器",
+)
+ALIYUN_SWAS_CONTEXT_KEYWORDS = (
+    "轻量应用服务器",
+    "轻量服务器",
+    "swas",
+    "simple application server",
+)
+ALIYUN_ECS_CONTEXT_KEYWORDS = (
+    "ecs",
+    "云服务器",
+)
+ALIYUN_OBSERVABILITY_CONTEXT_KEYWORDS = (
+    "监控",
+    "指标",
+    "告警",
+    "报警",
+    "事件",
+    "日志",
+    "error",
+    "exception",
+)
+ALIYUN_LB_CONTEXT_KEYWORDS = (
+    "负载均衡",
+    "slb",
+    "alb",
+    "nlb",
+    "load balancer",
+)
+ALIYUN_DEFAULT_ANCHOR_TOOLS = (
+    "aliyun-swas-list-instances",
+    "aliyun-ecs-list-instances",
+    "aliyun-cms-get-alerts",
+)
+ALIYUN_SWAS_ANCHOR_TOOLS = ("aliyun-swas-list-instances",)
+ALIYUN_ECS_ANCHOR_TOOLS = (
+    "aliyun-ecs-list-instances",
+    "aliyun-ecs-describe-instance",
+    "aliyun-cms-get-ecs-metrics",
+)
+ALIYUN_OBSERVABILITY_ANCHOR_TOOLS = (
+    "aliyun-cms-get-alerts",
+    "aliyun-cms-get-event-history",
+    "aliyun-sls-query-logs",
+    "aliyun-sls-query-error-summary",
+)
+ALIYUN_LB_ANCHOR_TOOLS = (
+    "aliyun-lb-list-instances",
+    "aliyun-lb-describe-health",
+)
+EXPLICIT_K8S_CONTEXT_KEYWORDS = (
+    "k8s",
+    "kubernetes",
+    "集群",
+    "cluster",
+    "pod",
+    "pods",
+    "namespace",
+    "deployment",
+    "deploy",
+    "workload",
+    "工作负载",
+    "service",
+    "svc",
+    "endpoint",
+    "endpoints",
+)
 DISCOVERY_ONLY_KEYWORDS = (
     "只搜索",
     "搜索工具",
@@ -508,15 +587,30 @@ class ChatOrchestrator:
         if ChatOrchestrator._discovery_only_intent(content):
             return []
         anchor_names: list[str] = []
+        aliyun_intent = any(keyword in content for keyword in ALIYUN_CONTEXT_KEYWORDS)
+        explicit_k8s_intent = any(keyword in content for keyword in EXPLICIT_K8S_CONTEXT_KEYWORDS)
+        if aliyun_intent:
+            anchor_names.extend(ALIYUN_DEFAULT_ANCHOR_TOOLS)
+            if any(keyword in content for keyword in ALIYUN_SWAS_CONTEXT_KEYWORDS):
+                anchor_names.extend(ALIYUN_SWAS_ANCHOR_TOOLS)
+            if any(keyword in content for keyword in ALIYUN_ECS_CONTEXT_KEYWORDS):
+                anchor_names.extend(ALIYUN_ECS_ANCHOR_TOOLS)
+            if any(keyword in content for keyword in ALIYUN_OBSERVABILITY_CONTEXT_KEYWORDS):
+                anchor_names.extend(ALIYUN_OBSERVABILITY_ANCHOR_TOOLS)
+            if any(keyword in content for keyword in ALIYUN_LB_CONTEXT_KEYWORDS):
+                anchor_names.extend(ALIYUN_LB_ANCHOR_TOOLS)
+
         if any(keyword in content for keyword in K8S_CLUSTER_CONTEXT_KEYWORDS):
             anchor_names.extend(K8S_CLUSTER_ANCHOR_TOOLS)
         if any(keyword in content for keyword in K8S_POD_CONTEXT_KEYWORDS):
             anchor_names.extend(K8S_POD_ANCHOR_TOOLS)
-        if any(keyword in content for keyword in K8S_SERVICE_CONTEXT_KEYWORDS):
+        if (not aliyun_intent or explicit_k8s_intent) and any(
+            keyword in content for keyword in K8S_SERVICE_CONTEXT_KEYWORDS
+        ):
             anchor_names.extend(K8S_SERVICE_ANCHOR_TOOLS)
         if any(keyword in content for keyword in K8S_WORKLOAD_CONTEXT_KEYWORDS):
             anchor_names.extend(K8S_WORKLOAD_ANCHOR_TOOLS)
-        if any(keyword in content for keyword in ECS_CONTEXT_KEYWORDS):
+        if not aliyun_intent and any(keyword in content for keyword in ECS_CONTEXT_KEYWORDS):
             anchor_names.extend(ECS_ANCHOR_TOOLS)
         return [scoped_by_name[name] for name in anchor_names if name in scoped_by_name]
 
@@ -801,7 +895,8 @@ class ChatOrchestrator:
                 if isinstance(item, dict)
             )
             suffix = f"；候选：{preview}" if preview else ""
-            return f"- `toolsearch`: query={payload.get('query')}, total={payload.get('total', len(results))}{suffix}"
+            total = payload.get("total", len(results))
+            return f"- `toolsearch`: query={payload.get('query')}, total={total}{suffix}"
         if tool_name == "tool_get":
             return (
                 f"- `tool_get`: name={payload.get('name')}, "

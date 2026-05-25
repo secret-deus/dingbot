@@ -242,6 +242,44 @@ async def test_cluster_status_intent_seeds_k8s_anchor_tools(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_aliyun_swas_intent_seeds_aliyun_anchor_without_k8s_service_tools(tmp_path):
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'chat-aliyun-anchor.db'}")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session:
+        chat_session = Session(title="aliyun anchor tools")
+        session.add(chat_session)
+        await session.flush()
+
+        fake_chat = _NoToolChat()
+        orchestrator = ChatOrchestrator(
+            db=session,
+            chat_service=fake_chat,
+            mcp_manager=_AliyunAnchorMCP(),
+            current_user={"username": "operator", "role": "operator"},
+        )
+
+        events = [
+            event
+            async for event in orchestrator.handle_message(
+                chat_session.id,
+                "查询一下我阿里云轻量应用服务器实例",
+            )
+        ]
+
+        first_tool_names = fake_chat.tool_names_by_call[0]
+        assert "toolsearch" in first_tool_names
+        assert "aliyun-swas-list-instances" in first_tool_names
+        assert "k8s-get-services" not in first_tool_names
+        assert "k8s-describe-service" not in first_tool_names
+        assert events[-1]["type"] == "done"
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_chat_returns_fallback_when_tool_fails_without_model_text(tmp_path):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'chat-tool-error.db'}")
     async with engine.begin() as conn:
@@ -866,6 +904,60 @@ class _K8SAnchorMCP:
                 "description": "获取集群指标",
                 "inputSchema": {"type": "object", "properties": {}, "required": []},
                 "server": "builtin",
+                "available": True,
+            },
+        ]
+
+    def authorize_tool_call(self, name, user, arguments=None):
+        return _AllowDecision()
+
+    async def call_tool(self, name, arguments, user=None):
+        return {"error": f"unexpected tool {name}"}
+
+
+class _AliyunAnchorMCP:
+    async def list_tools(self, skill_id=None):
+        return [
+            {
+                "name": "toolsearch",
+                "description": "Search tools",
+                "inputSchema": {"type": "object", "properties": {}, "required": []},
+                "server": "toolsearch",
+            },
+            {
+                "name": "tool_get",
+                "description": "Get tool",
+                "inputSchema": {"type": "object", "properties": {}, "required": []},
+                "server": "toolsearch",
+            },
+            {
+                "name": "tool_categories",
+                "description": "Tool categories",
+                "inputSchema": {"type": "object", "properties": {}, "required": []},
+                "server": "toolsearch",
+            },
+            {
+                "name": "aliyun-swas-list-instances",
+                "description": "查询轻量应用服务器实例列表",
+                "inputSchema": {"type": "object", "properties": {}, "required": []},
+                "server": "builtin",
+                "category": "aliyun",
+                "available": True,
+            },
+            {
+                "name": "k8s-get-services",
+                "description": "获取 Service 列表",
+                "inputSchema": {"type": "object", "properties": {}, "required": []},
+                "server": "builtin",
+                "category": "kubernetes",
+                "available": True,
+            },
+            {
+                "name": "k8s-describe-service",
+                "description": "获取 Service 详情",
+                "inputSchema": {"type": "object", "properties": {}, "required": []},
+                "server": "builtin",
+                "category": "kubernetes",
                 "available": True,
             },
         ]
