@@ -21,7 +21,9 @@ def read_mcp_document(config_path: Optional[Path] = None) -> tuple[dict[str, Any
     example_path = resolve_repo_path("config/mcp_config.example.json")
     if example_path.exists():
         try:
-            return _normalize_document(json.loads(example_path.read_text(encoding="utf-8"))), "example"
+            return _normalize_document(
+                json.loads(example_path.read_text(encoding="utf-8"))
+            ), "example"
         except (OSError, json.JSONDecodeError):
             pass
 
@@ -31,10 +33,15 @@ def read_mcp_document(config_path: Optional[Path] = None) -> tuple[dict[str, Any
 def write_mcp_document(document: dict[str, Any], config_path: Optional[Path] = None) -> None:
     path = config_path or resolve_repo_path(get_settings().mcp_config_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(_normalize_document(document), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(_normalize_document(document), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
 
-def public_mcp_config(document: Optional[dict[str, Any]] = None, source: str = "") -> dict[str, Any]:
+def public_mcp_config(
+    document: Optional[dict[str, Any]] = None, source: str = ""
+) -> dict[str, Any]:
     settings = get_settings()
     config_path = resolve_repo_path(settings.mcp_config_path)
     if document is None:
@@ -74,7 +81,9 @@ def public_mcp_config(document: Optional[dict[str, Any]] = None, source: str = "
             "access_key_secret_configured": bool(settings.alibaba_access_key_secret),
             "configured": ecs_configured,
             "available": bool(ecs_enabled and ecs_configured),
-            "unavailable_reason": "" if ecs_configured else "未配置 ALIBABA_CLOUD_ACCESS_KEY_ID / ALIBABA_CLOUD_ACCESS_KEY_SECRET",
+            "unavailable_reason": ""
+            if ecs_configured
+            else "未配置 ALIBABA_CLOUD_ACCESS_KEY_ID / ALIBABA_CLOUD_ACCESS_KEY_SECRET",
         },
         "aliyun": {
             "enabled": aliyun_enabled,
@@ -114,7 +123,9 @@ def apply_mcp_updates(document: dict[str, Any], updates: dict[str, Any]) -> dict
         if "enabled" in updates["ecs"]:
             ecs["enabled"] = bool(updates["ecs"]["enabled"])
         if "region_id" in updates["ecs"]:
-            ecs["region_id"] = str(updates["ecs"]["region_id"] or "cn-hangzhou").strip() or "cn-hangzhou"
+            ecs["region_id"] = (
+                str(updates["ecs"]["region_id"] or "cn-hangzhou").strip() or "cn-hangzhou"
+            )
         if "access_key_id" in updates["ecs"]:
             access_key_id = str(updates["ecs"]["access_key_id"] or "").strip()
             if access_key_id:
@@ -140,8 +151,7 @@ def apply_mcp_updates(document: dict[str, Any], updates: dict[str, Any]) -> dict
                 aliyun["access_key_secret"] = access_key_secret
         if "default_region_id" in aliyun_updates:
             aliyun["default_region_id"] = (
-                str(aliyun_updates["default_region_id"] or "cn-hangzhou").strip()
-                or "cn-hangzhou"
+                str(aliyun_updates["default_region_id"] or "cn-hangzhou").strip() or "cn-hangzhou"
             )
         if "allowed_regions" in aliyun_updates:
             aliyun["allowed_regions"] = _normalize_string_list(
@@ -163,7 +173,9 @@ def apply_mcp_updates(document: dict[str, Any], updates: dict[str, Any]) -> dict
             list,
         ):
             sls["mappings"] = [
-                mapping for mapping in aliyun_updates["sls"]["mappings"] if isinstance(mapping, dict)
+                mapping
+                for mapping in aliyun_updates["sls"]["mappings"]
+                if isinstance(mapping, dict)
             ]
 
     return normalized
@@ -230,7 +242,11 @@ def _normalize_aliyun_config(config: dict[str, Any]) -> None:
         sls = {}
         config["sls"] = sls
     mappings = sls.get("mappings")
-    sls["mappings"] = [mapping for mapping in mappings if isinstance(mapping, dict)] if isinstance(mappings, list) else []
+    sls["mappings"] = (
+        [mapping for mapping in mappings if isinstance(mapping, dict)]
+        if isinstance(mappings, list)
+        else []
+    )
 
 
 def _normalize_string_list(value: Any, fallback: Optional[list[str]] = None) -> list[str]:

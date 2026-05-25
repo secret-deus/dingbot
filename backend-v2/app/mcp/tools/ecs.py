@@ -283,7 +283,7 @@ def _normalize_monitor_metrics(value: Any) -> list[str]:
 
 
 def _summarize_monitor_metrics(
-    values_by_metric: dict[str, list[float]]
+    values_by_metric: dict[str, list[float]],
 ) -> dict[str, dict[str, Any]]:
     summary = {}
     for metric, values in values_by_metric.items():

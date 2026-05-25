@@ -9,7 +9,6 @@ from typing import Any, Optional
 
 from app.db.models import Role
 
-
 DISCOVERY_TOOLS = {"toolsearch", "tool_get", "tool_categories", "tool_reload_catalog"}
 
 
@@ -121,7 +120,9 @@ class ToolCatalogPolicy:
                 return ToolPolicyDecision(False, "confirmation_required", metadata, True)
             return ToolPolicyDecision(True, "dangerous_allowed", metadata)
 
-        return ToolPolicyDecision(False, f"unsupported_danger_level:{metadata.danger_level}", metadata)
+        return ToolPolicyDecision(
+            False, f"unsupported_danger_level:{metadata.danger_level}", metadata
+        )
 
     def describe(self, name: str) -> Optional[ToolMetadata]:
         if name in DISCOVERY_TOOLS:
@@ -149,7 +150,10 @@ def _safe_argument_preview(arguments: dict[str, Any]) -> dict[str, Any]:
     preview = {}
     for key, value in arguments.items():
         normalized = key.lower().replace("-", "_")
-        if any(secret_word in normalized for secret_word in ["secret", "token", "password", "api_key", "access_key"]):
+        if any(
+            secret_word in normalized
+            for secret_word in ["secret", "token", "password", "api_key", "access_key"]
+        ):
             preview[key] = "<redacted>"
         elif key in {
             "query",

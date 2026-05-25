@@ -5,9 +5,9 @@ import os
 from pathlib import Path
 from typing import Any, Optional
 
+from dotenv import dotenv_values
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from dotenv import dotenv_values
 
 
 class AppSettings(BaseSettings):
@@ -68,7 +68,9 @@ class AppSettings(BaseSettings):
     # --- 阿里云 ECS ---
     ecs_mcp_enabled: bool = Field(default=False, alias="ECS_MCP_ENABLED")
     alibaba_access_key_id: Optional[str] = Field(default=None, alias="ALIBABA_CLOUD_ACCESS_KEY_ID")
-    alibaba_access_key_secret: Optional[str] = Field(default=None, alias="ALIBABA_CLOUD_ACCESS_KEY_SECRET")
+    alibaba_access_key_secret: Optional[str] = Field(
+        default=None, alias="ALIBABA_CLOUD_ACCESS_KEY_SECRET"
+    )
     alibaba_region_id: str = Field(default="cn-hangzhou", alias="ALIBABA_CLOUD_REGION_ID")
 
     # --- 阿里云只读 Adapter ---
@@ -77,9 +79,15 @@ class AppSettings(BaseSettings):
     aliyun_access_key_secret: Optional[str] = Field(default=None, alias="ALIYUN_ACCESS_KEY_SECRET")
     aliyun_default_region_id: str = Field(default="cn-hangzhou", alias="ALIYUN_DEFAULT_REGION_ID")
     aliyun_allowed_regions: list[str] = Field(default_factory=list, alias="ALIYUN_ALLOWED_REGIONS")
-    aliyun_required_tags: dict[str, list[str]] = Field(default_factory=dict, alias="ALIYUN_REQUIRED_TAGS")
-    aliyun_allowed_instance_ids: list[str] = Field(default_factory=list, alias="ALIYUN_ALLOWED_INSTANCE_IDS")
-    aliyun_sls_mappings: list[dict[str, Any]] = Field(default_factory=list, alias="ALIYUN_SLS_MAPPINGS")
+    aliyun_required_tags: dict[str, list[str]] = Field(
+        default_factory=dict, alias="ALIYUN_REQUIRED_TAGS"
+    )
+    aliyun_allowed_instance_ids: list[str] = Field(
+        default_factory=list, alias="ALIYUN_ALLOWED_INSTANCE_IDS"
+    )
+    aliyun_sls_mappings: list[dict[str, Any]] = Field(
+        default_factory=list, alias="ALIYUN_SLS_MAPPINGS"
+    )
 
     # --- 钉钉 ---
     dingtalk_webhook_url: Optional[str] = Field(default=None, alias="DINGTALK_WEBHOOK_URL")
@@ -184,7 +192,10 @@ def _apply_mcp_json_config(settings: AppSettings) -> None:
         "prometheus_base_url": ("PROMETHEUS_BASE_URL", k8s.get("prometheus_base_url")),
         "ecs_mcp_enabled": ("ECS_MCP_ENABLED", ecs.get("enabled")),
         "alibaba_access_key_id": ("ALIBABA_CLOUD_ACCESS_KEY_ID", ecs.get("access_key_id")),
-        "alibaba_access_key_secret": ("ALIBABA_CLOUD_ACCESS_KEY_SECRET", ecs.get("access_key_secret")),
+        "alibaba_access_key_secret": (
+            "ALIBABA_CLOUD_ACCESS_KEY_SECRET",
+            ecs.get("access_key_secret"),
+        ),
         "alibaba_region_id": ("ALIBABA_CLOUD_REGION_ID", ecs.get("region_id")),
         "aliyun_mcp_enabled": ("ALIYUN_MCP_ENABLED", aliyun.get("enabled")),
         "aliyun_access_key_id": ("ALIYUN_ACCESS_KEY_ID", aliyun.get("access_key_id")),
@@ -192,7 +203,10 @@ def _apply_mcp_json_config(settings: AppSettings) -> None:
         "aliyun_default_region_id": ("ALIYUN_DEFAULT_REGION_ID", aliyun.get("default_region_id")),
         "aliyun_allowed_regions": ("ALIYUN_ALLOWED_REGIONS", aliyun.get("allowed_regions")),
         "aliyun_required_tags": ("ALIYUN_REQUIRED_TAGS", aliyun.get("required_tags")),
-        "aliyun_allowed_instance_ids": ("ALIYUN_ALLOWED_INSTANCE_IDS", aliyun.get("allowed_instance_ids")),
+        "aliyun_allowed_instance_ids": (
+            "ALIYUN_ALLOWED_INSTANCE_IDS",
+            aliyun.get("allowed_instance_ids"),
+        ),
         "aliyun_sls_mappings": ("ALIYUN_SLS_MAPPINGS", aliyun_sls.get("mappings")),
     }
     for field_name, (env_name, value) in mapping.items():

@@ -59,7 +59,9 @@ class AliyunSDKClientFacade:
         target_region = region_id or self.default_region_id
         if target_region not in self._cms_clients:
             self._cms_clients[target_region] = cms_client.Client(
-                self._openapi_config(target_region, endpoint=f"metrics.{target_region}.aliyuncs.com")
+                self._openapi_config(
+                    target_region, endpoint=f"metrics.{target_region}.aliyuncs.com"
+                )
             )
         return self._cms_clients[target_region]
 

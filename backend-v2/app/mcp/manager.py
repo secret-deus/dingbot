@@ -40,8 +40,8 @@ class MCPServerConnection:
 
     async def _connect_sse(self) -> bool:
         try:
-            from mcp.client.sse import sse_client
             from mcp import ClientSession
+            from mcp.client.sse import sse_client
 
             host = self.config.get("host", "localhost")
             port = self.config.get("port", 8766)
@@ -64,8 +64,8 @@ class MCPServerConnection:
 
     async def _connect_stdio(self) -> bool:
         try:
-            from mcp.client.stdio import StdioServerParameters, stdio_client
             from mcp import ClientSession
+            from mcp.client.stdio import StdioServerParameters, stdio_client
 
             command = self.config.get("command", "")
             args = self.config.get("args", [])

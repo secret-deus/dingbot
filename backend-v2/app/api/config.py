@@ -39,6 +39,7 @@ async def get_status():
 @router.get("/health")
 async def health_check():
     from app.core.deps import _get_app_state
+
     state = _get_app_state()
     llm_runtime = load_llm_runtime()
     mcp_manager = state.get("mcp_manager")
@@ -49,7 +50,9 @@ async def health_check():
         "llm_enabled": llm_runtime.active,
         "llm_configured": llm_runtime.configured,
         "mcp_servers": mcp_health,
-        "scheduler": scheduler_runner.status() if scheduler_runner else {"enabled": False, "running": False, "jobs": 0},
+        "scheduler": scheduler_runner.status()
+        if scheduler_runner
+        else {"enabled": False, "running": False, "jobs": 0},
     }
 
 
@@ -64,7 +67,11 @@ async def dashboard_summary(_user: dict = Depends(get_current_user)):
     mcp_health = await mcp_manager.health_check() if mcp_manager else {}
     tools = await mcp_manager.list_tools() if mcp_manager else []
     scheduler_runner = state.get("scheduler_runner")
-    scheduler = scheduler_runner.status() if scheduler_runner else {"enabled": False, "running": False, "jobs": 0}
+    scheduler = (
+        scheduler_runner.status()
+        if scheduler_runner
+        else {"enabled": False, "running": False, "jobs": 0}
+    )
 
     config_path = resolve_repo_path(settings.mcp_config_path)
     mcp_config = public_mcp_config(*read_mcp_document(config_path))
@@ -76,10 +83,9 @@ async def dashboard_summary(_user: dict = Depends(get_current_user)):
     coverage = _metrics_coverage(graph)
 
     total_tools = sum(server.get("tools", 0) for server in mcp_health.values()) or len(tools)
-    available_tools = (
-        sum(server.get("available_tools", 0) for server in mcp_health.values())
-        or len([tool for tool in tools if tool.get("available", True)])
-    )
+    available_tools = sum(
+        server.get("available_tools", 0) for server in mcp_health.values()
+    ) or len([tool for tool in tools if tool.get("available", True)])
     unavailable_tools = max(total_tools - available_tools, 0)
     k8s_tools = len([tool for tool in tools if tool.get("name", "").startswith("k8s-")])
 
@@ -133,9 +139,27 @@ async def dashboard_summary(_user: dict = Depends(get_current_user)):
             llm_enabled=llm_runtime.active,
         ),
         "next_actions": [
-            {"id": "inspect", "title": "查看相关资源", "route": "Chat", "tone": "blue", "icon": "bot-core"},
-            {"id": "repair", "title": "生成修复建议", "route": "Chat", "tone": "green", "icon": "execution-flow"},
-            {"id": "audit", "title": "导出审计记录", "route": "MCPConfig", "tone": "slate", "icon": "mcp-toolchain"},
+            {
+                "id": "inspect",
+                "title": "查看相关资源",
+                "route": "Chat",
+                "tone": "blue",
+                "icon": "bot-core",
+            },
+            {
+                "id": "repair",
+                "title": "生成修复建议",
+                "route": "Chat",
+                "tone": "green",
+                "icon": "execution-flow",
+            },
+            {
+                "id": "audit",
+                "title": "导出审计记录",
+                "route": "MCPConfig",
+                "tone": "slate",
+                "icon": "mcp-toolchain",
+            },
         ],
     }
 
@@ -143,6 +167,7 @@ async def dashboard_summary(_user: dict = Depends(get_current_user)):
 @router.get("/tools")
 async def list_tools(_user: dict = Depends(get_current_user)):
     from app.core.deps import _get_app_state
+
     state = _get_app_state()
     mcp_manager = state.get("mcp_manager")
     if not mcp_manager:
@@ -332,7 +357,9 @@ async def get_k8s_knowledge_graph(
     graph = store.load()
 
     if auto_sync and _knowledge_graph_needs_sync(graph, namespace, all_namespaces):
-        result = await _sync_k8s_knowledge_graph(namespace=namespace, all_namespaces=all_namespaces, user=user)
+        result = await _sync_k8s_knowledge_graph(
+            namespace=namespace, all_namespaces=all_namespaces, user=user
+        )
         if "error" in result:
             raise HTTPException(status_code=400, detail=result)
         graph = store.load()
@@ -411,9 +438,16 @@ async def get_audit_logs(
     logs = await repo.query(actor=actor, action=action, limit=limit, offset=offset)
     await db.commit()
     return [
-        {"id": l.id, "actor": l.actor, "action": l.action, "resource": l.resource,
-         "result": l.result, "ip": l.ip, "created_at": str(l.created_at)}
-        for l in logs
+        {
+            "id": log.id,
+            "actor": log.actor,
+            "action": log.action,
+            "resource": log.resource,
+            "result": log.result,
+            "ip": log.ip,
+            "created_at": str(log.created_at),
+        }
+        for log in logs
     ]
 
 
@@ -436,7 +470,9 @@ async def _sync_k8s_knowledge_graph(
     return result.get("result", result) if isinstance(result, dict) else {"error": str(result)}
 
 
-def _knowledge_graph_needs_sync(graph: dict[str, Any], namespace: str, all_namespaces: bool = False) -> bool:
+def _knowledge_graph_needs_sync(
+    graph: dict[str, Any], namespace: str, all_namespaces: bool = False
+) -> bool:
     if not graph.get("nodes"):
         return True
     metadata = graph.get("metadata", {})
@@ -454,13 +490,11 @@ def _filter_knowledge_graph(graph: dict[str, Any], namespace: Optional[str]) -> 
             "edges": graph.get("edges", []),
         }
 
-    nodes = [
-        node for node in graph.get("nodes", [])
-        if node.get("namespace") in (namespace, None)
-    ]
+    nodes = [node for node in graph.get("nodes", []) if node.get("namespace") in (namespace, None)]
     node_ids = {node.get("id") for node in nodes}
     edges = [
-        edge for edge in graph.get("edges", [])
+        edge
+        for edge in graph.get("edges", [])
         if edge.get("source") in node_ids and edge.get("target") in node_ids
     ]
     return {"nodes": nodes, "edges": edges}
@@ -529,7 +563,9 @@ def _dashboard_insights(
             "id": "mcp-tools",
             "label": "MCP Tools",
             "title": f"{available_tools}/{total_tools} 可执行",
-            "detail": f"{unavailable_tools} 个工具不可用" if unavailable_tools else "工具链全量可用",
+            "detail": f"{unavailable_tools} 个工具不可用"
+            if unavailable_tools
+            else "工具链全量可用",
             "tone": "amber" if unavailable_tools else "green",
             "icon": "mcp-toolchain",
         },
@@ -552,13 +588,35 @@ def _dashboard_insights(
     ]
 
 
-def _dashboard_resource_map(graph_summary: dict[str, Any], cluster_available: bool) -> list[dict[str, Any]]:
+def _dashboard_resource_map(
+    graph_summary: dict[str, Any], cluster_available: bool
+) -> list[dict[str, Any]]:
     node_types = graph_summary.get("node_types", {})
     return [
-        {"kind": "Deployment", "count": node_types.get("deployment", 0), "tone": "blue", "icon": "knowledge-map"},
-        {"kind": "ReplicaSet", "count": node_types.get("replicaset", 0), "tone": "blue", "icon": "execution-flow"},
-        {"kind": "Pod", "count": node_types.get("pod", 0), "tone": "green" if cluster_available else "slate", "icon": "kubernetes-cluster"},
-        {"kind": "Event", "count": graph_summary.get("edges", 0), "tone": "amber", "icon": "mcp-toolchain"},
+        {
+            "kind": "Deployment",
+            "count": node_types.get("deployment", 0),
+            "tone": "blue",
+            "icon": "knowledge-map",
+        },
+        {
+            "kind": "ReplicaSet",
+            "count": node_types.get("replicaset", 0),
+            "tone": "blue",
+            "icon": "execution-flow",
+        },
+        {
+            "kind": "Pod",
+            "count": node_types.get("pod", 0),
+            "tone": "green" if cluster_available else "slate",
+            "icon": "kubernetes-cluster",
+        },
+        {
+            "kind": "Event",
+            "count": graph_summary.get("edges", 0),
+            "tone": "amber",
+            "icon": "mcp-toolchain",
+        },
     ]
 
 
@@ -587,14 +645,18 @@ def _dashboard_timeline(
         {
             "id": "events",
             "title": "调用 k8s-get-events",
-            "detail": f"图谱已有 {graph_summary.get('nodes', 0)} 个节点" if graph_summary.get("nodes") else "可在知识图谱页同步资源",
+            "detail": f"图谱已有 {graph_summary.get('nodes', 0)} 个节点"
+            if graph_summary.get("nodes")
+            else "可在知识图谱页同步资源",
             "tone": "green" if graph_summary.get("nodes") else "slate",
             "icon": "knowledge-map",
         },
         {
             "id": "answer",
             "title": "生成结论",
-            "detail": "LLM 已启用，可生成自然语言结论" if llm_enabled else "LLM 未启用，展示结构化证据",
+            "detail": "LLM 已启用，可生成自然语言结论"
+            if llm_enabled
+            else "LLM 未启用，展示结构化证据",
             "tone": "green" if llm_enabled else "amber",
             "icon": "execution-flow",
         },

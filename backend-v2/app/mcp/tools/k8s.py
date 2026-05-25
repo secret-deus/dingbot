@@ -9,8 +9,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from loguru import logger
-
 from app.core.config import get_settings
 from app.mcp.tools.knowledge_graph import (
     FileKnowledgeGraphStore,
@@ -957,7 +955,6 @@ class K8sClient:
     async def k8s_cluster_summary(self, **kwargs: Any) -> dict:
         v1 = self._get_v1()
         apps = self._get_apps_v1()
-        ns = self.default_namespace
         nodes = v1.list_node()
         pods = v1.list_pod_for_all_namespaces(limit=500)
         deps = apps.list_deployment_for_all_namespaces(limit=200)

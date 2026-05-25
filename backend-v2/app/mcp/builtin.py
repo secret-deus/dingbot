@@ -7,9 +7,14 @@ from typing import Any
 from loguru import logger
 
 from app.core.config import get_settings
-from app.mcp.tools.k8s import K8sClient
-from app.mcp.tools.ecs import ECSClient
 from app.mcp.tools.aliyun import AliyunReadOnlyRegistry, AliyunRuntimeConfig
+from app.mcp.tools.ecs import ECSClient
+from app.mcp.tools.k8s import K8sClient
+
+K8S_RESOURCE_TYPE_DESCRIPTION = (
+    "资源类型: pod/service/deployment/replicaset/ingress/configmap/secret/"
+    "statefulset/daemonset/job/cronjob/hpa/pvc/networkpolicy/pdb"
+)
 
 
 class BuiltinToolRegistry:
@@ -46,7 +51,10 @@ class BuiltinToolRegistry:
                 available=bool(
                     settings.alibaba_access_key_id and settings.alibaba_access_key_secret
                 ),
-                unavailable_reason="未配置 ALIBABA_CLOUD_ACCESS_KEY_ID / ALIBABA_CLOUD_ACCESS_KEY_SECRET",
+                unavailable_reason=(
+                    "未配置 ALIBABA_CLOUD_ACCESS_KEY_ID / "
+                    "ALIBABA_CLOUD_ACCESS_KEY_SECRET"
+                ),
             )
 
         self._aliyun = AliyunReadOnlyRegistry(AliyunRuntimeConfig.from_settings())
@@ -62,7 +70,9 @@ class BuiltinToolRegistry:
         k8s_tools = [
             {
                 "name": "k8s-get-pods",
-                "description": "获取 Pod 列表，namespace=all 或 all_namespaces=true 查询全部命名空间",
+                "description": (
+                    "获取 Pod 列表，namespace=all 或 all_namespaces=true 查询全部命名空间"
+                ),
                 "schema": {
                     "namespace": {
                         "type": "string",
@@ -451,7 +461,7 @@ class BuiltinToolRegistry:
                 "schema": {
                     "resource_type": {
                         "type": "string",
-                        "description": "资源类型: pod/service/deployment/replicaset/ingress/configmap/secret/statefulset/daemonset/job/cronjob/hpa/pvc/networkpolicy/pdb",
+                        "description": K8S_RESOURCE_TYPE_DESCRIPTION,
                     },
                     "name": {"type": "string", "description": "资源名称"},
                     "namespace": {"type": "string", "description": "命名空间"},
@@ -466,7 +476,7 @@ class BuiltinToolRegistry:
                 "schema": {
                     "resource_type": {
                         "type": "string",
-                        "description": "资源类型: pod/service/deployment/replicaset/ingress/configmap/secret/statefulset/daemonset/job/cronjob/hpa/pvc/networkpolicy/pdb",
+                        "description": K8S_RESOURCE_TYPE_DESCRIPTION,
                     },
                     "name": {"type": "string", "description": "资源名称"},
                     "namespace": {"type": "string", "description": "命名空间"},
@@ -481,7 +491,7 @@ class BuiltinToolRegistry:
                 "schema": {
                     "resource_type": {
                         "type": "string",
-                        "description": "资源类型: pod/service/deployment/replicaset/ingress/configmap/secret/statefulset/daemonset/job/cronjob/hpa/pvc/networkpolicy/pdb",
+                        "description": K8S_RESOURCE_TYPE_DESCRIPTION,
                     },
                     "name": {"type": "string", "description": "资源名称"},
                     "namespace": {"type": "string", "description": "命名空间"},

@@ -5,11 +5,9 @@ from __future__ import annotations
 import json
 from collections import Counter, deque
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from app.core.config import resolve_repo_path
-
 
 GRAPH_VERSION = "1.0"
 
@@ -64,7 +62,11 @@ class FileKnowledgeGraphStore:
             "nodes": sorted(nodes, key=lambda item: item.get("id", "")),
             "edges": sorted(
                 self._dedupe_edges(edges),
-                key=lambda item: (item.get("source", ""), item.get("target", ""), item.get("type", "")),
+                key=lambda item: (
+                    item.get("source", ""),
+                    item.get("target", ""),
+                    item.get("type", ""),
+                ),
             ),
         }
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -94,7 +96,8 @@ class FileKnowledgeGraphStore:
         node_ids = self._neighbor_ids(graph, root_id, max(0, min(int(depth), 5)))
         nodes = [node for node in graph.get("nodes", []) if node.get("id") in node_ids]
         edges = [
-            edge for edge in graph.get("edges", [])
+            edge
+            for edge in graph.get("edges", [])
             if edge.get("source") in node_ids and edge.get("target") in node_ids
         ]
         return {
@@ -127,7 +130,12 @@ class FileKnowledgeGraphStore:
             "nodes_with_metrics": len(nodes_with_metrics),
             "coverage": round(len(nodes_with_metrics) / total, 4) if total else 0,
             "missing_metrics": [
-                {"id": node.get("id"), "kind": node.get("kind"), "name": node.get("name"), "namespace": node.get("namespace")}
+                {
+                    "id": node.get("id"),
+                    "kind": node.get("kind"),
+                    "name": node.get("name"),
+                    "namespace": node.get("namespace"),
+                }
                 for node in nodes
                 if not node.get("metrics")
             ][:100],
@@ -156,10 +164,13 @@ class FileKnowledgeGraphStore:
         return deduped
 
     @staticmethod
-    def _find_node_id(graph: dict, resource_type: str, resource_name: str, namespace: str | None) -> str | None:
+    def _find_node_id(
+        graph: dict, resource_type: str, resource_name: str, namespace: str | None
+    ) -> str | None:
         kind = normalize_graph_kind(resource_type)
         candidates = [
-            node for node in graph.get("nodes", [])
+            node
+            for node in graph.get("nodes", [])
             if node.get("kind") == kind and node.get("name") == resource_name
         ]
         if namespace:

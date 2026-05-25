@@ -98,14 +98,16 @@
   - [x] Confirm existing `AssistantRunCard.vue` renders Aliyun tool chips and execution rows without new UI.
   - [x] Add output labels or summaries only if generic rendering is unclear.
   - [x] Ensure large raw SLS results live under technical details or are omitted by backend result shaping.
-  - [ ] Smoke test one chat question that selects an Aliyun read tool after credentials are available.
+  - [x] Smoke test one chat question that selects an Aliyun read tool after credentials are available.
     - 2026-05-25: credentials and `aliyun-swas-list-instances` runtime availability were verified, but the chat smoke did not reach tool selection because the selected LLM provider returned `Service is too busy`.
+    - 2026-05-25: after tightening Aliyun/SWAS intent anchoring, the chat smoke selected only `aliyun-swas-list-instances` and returned a bounded read-only answer.
 
 - [x] 12. Verification and rollout
   - [x] Run `cd backend-v2 && poetry run pytest tests/test_aliyun_config.py tests/test_aliyun_tools.py tests/test_aliyun_policy_audit.py tests/test_chat_toolsearch_orchestration.py tests/test_mcp_stdio_toolsearch.py tests/test_ecs_monitor_tool.py -q`.
-    - 2026-05-25: `31 passed in 2.82s`.
-  - [ ] Run `cd backend-v2 && poetry run ruff check app/mcp app/api/config.py app/core/config.py tests/test_aliyun_config.py tests/test_aliyun_tools.py tests/test_aliyun_policy_audit.py`.
-    - Current result: fails on pre-existing project-wide lint debt in `app/api/config.py`, `app/core/config.py`, `app/mcp/builtin.py`, `app/mcp/manager.py`, `app/mcp/tools/k8s.py`, and `app/mcp/tools/knowledge_graph.py`.
+    - 2026-05-25: `32 passed in 2.62s`.
+    - 2026-05-25: full backend suite passed with `62 passed, 1 warning in 4.23s`.
+  - [x] Run `cd backend-v2 && poetry run ruff check app/mcp app/api/config.py app/core/config.py tests/test_aliyun_config.py tests/test_aliyun_tools.py tests/test_aliyun_policy_audit.py`.
+    - 2026-05-25: scoped ruff check passed after formatting existing `app/mcp` and config files.
   - [x] Run `PATH=/Users/xhang/.nvm/versions/node/v24.14.0/bin:$PATH npm run build` in `frontend-v3`.
   - [x] Log in as `admin/admin` and open `/spa/mcp-config`.
   - [x] Verify Aliyun config state, hidden secret behavior, and tool health.
