@@ -112,6 +112,57 @@
           <span class="dr-panel-subtitle">保留真实数据表格，方便筛查操作人、资源与结果。</span>
         </div>
       </div>
+      <div class="audit-filter-bar">
+        <label class="field compact">
+          <span>操作人</span>
+          <n-input
+            v-model:value="auditFilters.actor"
+            clearable
+            placeholder="admin / scheduler"
+            @keyup.enter="applyAuditFilters"
+          />
+        </label>
+        <label class="field compact">
+          <span>操作</span>
+          <n-input
+            v-model:value="auditFilters.action"
+            clearable
+            placeholder="api.get / tool"
+            @keyup.enter="applyAuditFilters"
+          />
+        </label>
+        <label class="field compact">
+          <span>资源</span>
+          <n-input
+            v-model:value="auditFilters.resource"
+            clearable
+            placeholder="/chat / aliyun"
+            @keyup.enter="applyAuditFilters"
+          />
+        </label>
+        <label class="field compact">
+          <span>资源 ID</span>
+          <n-input
+            v-model:value="auditFilters.resource_id"
+            clearable
+            placeholder="实例 / 会话 / 任务"
+            @keyup.enter="applyAuditFilters"
+          />
+        </label>
+        <label class="field compact">
+          <span>结果</span>
+          <n-select
+            v-model:value="auditFilters.result"
+            clearable
+            placeholder="全部"
+            :options="resultOptions"
+          />
+        </label>
+        <div class="filter-actions">
+          <n-button type="primary" :loading="auditLoading" @click="applyAuditFilters">应用</n-button>
+          <n-button secondary :disabled="auditLoading" @click="clearAuditFilters">清空</n-button>
+        </div>
+      </div>
       <n-data-table :columns="auditColumns" :data="auditLogs" :loading="auditLoading" size="small" />
     </section>
   </div>
@@ -128,6 +179,13 @@ const auditLogs = ref<AuditLog[]>([])
 const auditLoading = ref(false)
 const userSearch = ref('')
 const selectedRole = ref<'admin' | 'operator' | 'viewer'>('operator')
+const auditFilters = ref({
+  actor: '',
+  action: '',
+  resource: '',
+  resource_id: '',
+  result: null as string | null,
+})
 
 const roleUsers = [
   { username: 'admin', role: 'admin', description: '本地默认管理员', scope: '全部工具、配置、审计', lastActive: '当前会话' },
@@ -142,6 +200,10 @@ const rolePolicies = [
 ] as const
 
 const roleOptions = rolePolicies.map((item) => ({ label: item.role, value: item.role }))
+const resultOptions = [
+  { label: 'success', value: 'success' },
+  { label: 'failure', value: 'failure' },
+]
 const selectedPolicy = computed(() => rolePolicies.find((item) => item.role === selectedRole.value) || rolePolicies[1])
 const filteredUsers = computed(() => {
   const query = userSearch.value.trim().toLowerCase()
@@ -155,6 +217,7 @@ const auditColumns = [
   { title: '操作人', key: 'actor', width: 120 },
   { title: '操作', key: 'action', width: 170 },
   { title: '资源', key: 'resource' },
+  { title: '资源 ID', key: 'resource_id', width: 140, render: (row: AuditLog) => row.resource_id || '-' },
   {
     title: '结果',
     key: 'result',
@@ -167,10 +230,43 @@ const auditColumns = [
 async function fetchAudit() {
   auditLoading.value = true
   try {
-    auditLogs.value = await systemApi.auditLogs({ limit: auditLimit })
+    auditLogs.value = await systemApi.auditLogs(auditQueryParams())
   } finally {
     auditLoading.value = false
   }
+}
+
+function auditQueryParams() {
+  const params: {
+    actor?: string
+    action?: string
+    resource?: string
+    resource_id?: string
+    result?: string
+    limit: number
+  } = { limit: auditLimit }
+  const fields = auditFilters.value
+  if (fields.actor.trim()) params.actor = fields.actor.trim()
+  if (fields.action.trim()) params.action = fields.action.trim()
+  if (fields.resource.trim()) params.resource = fields.resource.trim()
+  if (fields.resource_id.trim()) params.resource_id = fields.resource_id.trim()
+  if (fields.result) params.result = fields.result
+  return params
+}
+
+function applyAuditFilters() {
+  fetchAudit()
+}
+
+function clearAuditFilters() {
+  auditFilters.value = {
+    actor: '',
+    action: '',
+    resource: '',
+    resource_id: '',
+    result: null,
+  }
+  fetchAudit()
 }
 
 function formatTime(value: string) {
@@ -256,6 +352,10 @@ onMounted(fetchAudit)
   font-weight: 590;
 }
 
+.field.compact {
+  min-width: 0;
+}
+
 .policy-form p {
   margin: 0;
   color: var(--dr-text-muted);
@@ -268,6 +368,23 @@ onMounted(fetchAudit)
   flex-direction: column;
   min-height: 150px;
   padding: 6px 0;
+}
+
+.audit-filter-bar {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(120px, 1fr)) auto;
+  gap: 12px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--dr-border-soft);
+  border-bottom: 1px solid var(--dr-border-soft);
+  background: var(--dr-bg-page);
+}
+
+.filter-actions {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+  padding-bottom: 1px;
 }
 
 .audit-item {
@@ -304,6 +421,14 @@ onMounted(fetchAudit)
   .role-row {
     grid-template-columns: 1fr;
     gap: 8px;
+  }
+
+  .audit-filter-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .filter-actions {
+    align-items: stretch;
   }
 }
 </style>

@@ -35,13 +35,22 @@ class AuditRepository(BaseRepository[AuditLog]):
         self,
         actor: Optional[str] = None,
         action: Optional[str] = None,
+        resource: Optional[str] = None,
+        resource_id: Optional[str] = None,
+        result: Optional[str] = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list[AuditLog]:
         stmt = select(AuditLog).order_by(AuditLog.created_at.desc())
-        if actor:
-            stmt = stmt.where(AuditLog.actor == actor)
-        if action:
-            stmt = stmt.where(AuditLog.action == action)
+        if actor and actor.strip():
+            stmt = stmt.where(AuditLog.actor.contains(actor.strip()))
+        if action and action.strip():
+            stmt = stmt.where(AuditLog.action.contains(action.strip()))
+        if resource and resource.strip():
+            stmt = stmt.where(AuditLog.resource.contains(resource.strip()))
+        if resource_id and resource_id.strip():
+            stmt = stmt.where(AuditLog.resource_id.contains(resource_id.strip()))
+        if result and result.strip():
+            stmt = stmt.where(AuditLog.result == result.strip())
         result = await self.get_many(stmt, limit, offset)
         return list(result)

@@ -225,8 +225,10 @@ export interface AuditLog {
   actor: string
   action: string
   resource: string
+  resource_id?: string | null
   result: string
   ip?: string
+  details?: Record<string, unknown> | null
   created_at: string
 }
 

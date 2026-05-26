@@ -429,13 +429,24 @@ async def delete_llm_provider(
 async def get_audit_logs(
     actor: Optional[str] = None,
     action: Optional[str] = None,
+    resource: Optional[str] = None,
+    resource_id: Optional[str] = None,
+    result: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
-    _user: dict = Depends(get_current_user),
+    _user: dict = Depends(require_admin),
 ):
     repo = AuditRepository(db)
-    logs = await repo.query(actor=actor, action=action, limit=limit, offset=offset)
+    logs = await repo.query(
+        actor=actor,
+        action=action,
+        resource=resource,
+        resource_id=resource_id,
+        result=result,
+        limit=limit,
+        offset=offset,
+    )
     await db.commit()
     return [
         {
@@ -443,8 +454,10 @@ async def get_audit_logs(
             "actor": log.actor,
             "action": log.action,
             "resource": log.resource,
+            "resource_id": log.resource_id,
             "result": log.result,
             "ip": log.ip,
+            "details": log.details,
             "created_at": str(log.created_at),
         }
         for log in logs

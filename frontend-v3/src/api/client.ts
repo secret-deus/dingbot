@@ -98,7 +98,14 @@ export const systemApi = {
   updateLlmConfig: (data: Partial<LLMConfig> & { api_key?: string; provider?: Partial<LLMProviderConfig> & { api_key?: string }; provider_id?: string }) =>
     request<{ updated: string[]; restart_required: boolean; active: boolean }>({ method: 'patch', url: '/config/llm', data }),
   deleteLlmProvider: (id: string) => request<void>({ method: 'delete', url: `/config/llm/providers/${id}` }),
-  auditLogs: (params?: { actor?: string; action?: string; limit?: number }) =>
+  auditLogs: (params?: {
+    actor?: string
+    action?: string
+    resource?: string
+    resource_id?: string
+    result?: string
+    limit?: number
+  }) =>
     request<AuditLog[]>({ method: 'get', url: '/config/audit', params }),
 }
 
