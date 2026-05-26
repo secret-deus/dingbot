@@ -281,6 +281,42 @@ async def test_cluster_status_intent_seeds_k8s_anchor_tools(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_mutation_intent_seeds_k8s_write_anchor_tools(tmp_path):
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'chat-k8s-write-anchor.db'}")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session:
+        chat_session = Session(title="k8s write anchor tools")
+        session.add(chat_session)
+        await session.flush()
+
+        fake_chat = _NoToolChat()
+        orchestrator = ChatOrchestrator(
+            db=session,
+            chat_service=fake_chat,
+            mcp_manager=_K8SAnchorMCP(),
+            current_user={"username": "operator", "role": "operator"},
+        )
+
+        events = [
+            event
+            async for event in orchestrator.handle_message(
+                chat_session.id,
+                "请实际调用 MCP 工具 k8s-scale-deployment，把 default 命名空间里的 Deployment confirm-demo 副本数调整到 2。",
+            )
+        ]
+
+        first_tool_names = fake_chat.tool_names_by_call[0]
+        assert "toolsearch" in first_tool_names
+        assert "k8s-scale-deployment" in first_tool_names
+        assert events[-1]["type"] == "done"
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_aliyun_swas_intent_seeds_aliyun_anchor_without_k8s_service_tools(tmp_path):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'chat-aliyun-anchor.db'}")
     async with engine.begin() as conn:
@@ -968,6 +1004,22 @@ class _K8SAnchorMCP:
                 "description": "获取集群指标",
                 "inputSchema": {"type": "object", "properties": {}, "required": []},
                 "server": "builtin",
+                "available": True,
+            },
+            {
+                "name": "k8s-scale-deployment",
+                "description": "调整 Deployment 副本数",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "deployment_name": {"type": "string"},
+                        "replicas": {"type": "integer"},
+                        "namespace": {"type": "string"},
+                    },
+                    "required": ["deployment_name", "replicas"],
+                },
+                "server": "builtin",
+                "dangerLevel": "write",
                 "available": True,
             },
         ]

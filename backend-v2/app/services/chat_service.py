@@ -90,6 +90,28 @@ K8S_WORKLOAD_ANCHOR_TOOLS = (
     "k8s-get-deployment-history",
     "k8s-rollout-status",
 )
+K8S_MUTATION_ANCHOR_TOOLS = (
+    "k8s-scale-deployment",
+    "k8s-restart-deployment",
+    "k8s-edit-resource",
+    "k8s-patch-resource",
+    "k8s-delete-resource",
+    "k8s-exec-pod",
+)
+K8S_SCALE_CONTEXT_KEYWORDS = (
+    "扩容",
+    "缩容",
+    "扩缩容",
+    "副本",
+    "replica",
+    "replicas",
+    "scale",
+)
+K8S_RESTART_CONTEXT_KEYWORDS = (
+    "重启",
+    "滚动重启",
+    "restart",
+)
 ECS_CONTEXT_KEYWORDS = (
     "ecs",
     "云服务器",
@@ -715,6 +737,17 @@ class ChatOrchestrator:
             anchor_names.extend(K8S_SERVICE_ANCHOR_TOOLS)
         if any(keyword in content for keyword in K8S_WORKLOAD_CONTEXT_KEYWORDS):
             anchor_names.extend(K8S_WORKLOAD_ANCHOR_TOOLS)
+        for tool_name in K8S_MUTATION_ANCHOR_TOOLS:
+            if tool_name in content:
+                anchor_names.append(tool_name)
+        if any(keyword in content for keyword in K8S_SCALE_CONTEXT_KEYWORDS) and any(
+            keyword in content for keyword in K8S_WORKLOAD_CONTEXT_KEYWORDS
+        ):
+            anchor_names.append("k8s-scale-deployment")
+        if any(keyword in content for keyword in K8S_RESTART_CONTEXT_KEYWORDS) and any(
+            keyword in content for keyword in K8S_WORKLOAD_CONTEXT_KEYWORDS
+        ):
+            anchor_names.append("k8s-restart-deployment")
         if not aliyun_intent and any(keyword in content for keyword in ECS_CONTEXT_KEYWORDS):
             anchor_names.extend(ECS_ANCHOR_TOOLS)
         return [scoped_by_name[name] for name in anchor_names if name in scoped_by_name]
