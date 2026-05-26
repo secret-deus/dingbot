@@ -340,7 +340,7 @@ async def test_natural_scale_request_creates_pending_confirmation_without_tool_n
             event
             async for event in orchestrator.handle_message(
                 chat_session.id,
-                "把 default 命名空间里的 Deployment confirm-demo 扩到 2 个副本",
+                "帮我把 default 命名空间的 confirm-demo 调到 2 个副本",
             )
         ]
 
@@ -366,6 +366,127 @@ async def test_natural_scale_request_creates_pending_confirmation_without_tool_n
         assert tool_results[0]["error"] == "tool_execution_denied"
         assert tool_results[0]["requires_confirmation"] is True
         assert tool_results[0]["confirmation"]["tool"] == "k8s-scale-deployment"
+        assert fake_chat.tool_names_by_call == []
+        assert events[-1]["type"] == "done"
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_natural_restart_request_creates_pending_confirmation_without_tool_name(tmp_path):
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'chat-natural-restart.db'}")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session:
+        chat_session = Session(title="natural restart")
+        session.add(chat_session)
+        await session.flush()
+
+        fake_chat = _NoToolChat()
+        orchestrator = ChatOrchestrator(
+            db=session,
+            chat_service=fake_chat,
+            mcp_manager=_ScaleMCP(ToolCatalogPolicy(str(_scale_catalog(tmp_path)))),
+            current_user={"username": "operator", "role": "operator"},
+        )
+
+        events = [
+            event
+            async for event in orchestrator.handle_message(
+                chat_session.id,
+                "帮我把 default 命名空间的 confirm-demo 重启一下",
+            )
+        ]
+
+        tool_calls = [event["tool_call"] for event in events if event["type"] == "tool_call"]
+        assert tool_calls == [
+            {
+                "id": "direct-k8s-restart-deployment",
+                "type": "function",
+                "function": {
+                    "name": "k8s-restart-deployment",
+                    "arguments": json.dumps(
+                        {"deployment_name": "confirm-demo", "namespace": "default"},
+                        ensure_ascii=False,
+                    ),
+                },
+            }
+        ]
+        tool_results = [event["result"] for event in events if event["type"] == "tool_result"]
+        assert tool_results[0]["error"] == "tool_execution_denied"
+        assert tool_results[0]["requires_confirmation"] is True
+        assert tool_results[0]["confirmation"]["tool"] == "k8s-restart-deployment"
+        assert fake_chat.tool_names_by_call == []
+        assert events[-1]["type"] == "done"
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_natural_logs_request_executes_read_tool_without_tool_name(tmp_path):
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'chat-natural-logs.db'}")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session:
+        chat_session = Session(title="natural logs")
+        session.add(chat_session)
+        await session.flush()
+
+        fake_chat = _NoToolChat()
+        mcp = _ScaleMCP(ToolCatalogPolicy(str(_scale_catalog(tmp_path))))
+        orchestrator = ChatOrchestrator(
+            db=session,
+            chat_service=fake_chat,
+            mcp_manager=mcp,
+            current_user={"username": "operator", "role": "operator"},
+        )
+
+        events = [
+            event
+            async for event in orchestrator.handle_message(
+                chat_session.id,
+                "帮我看一下 default 命名空间 nginx-68c4864795-2fpbm 最近 50 行日志",
+            )
+        ]
+
+        tool_calls = [event["tool_call"] for event in events if event["type"] == "tool_call"]
+        assert tool_calls == [
+            {
+                "id": "direct-k8s-get-logs",
+                "type": "function",
+                "function": {
+                    "name": "k8s-get-logs",
+                    "arguments": json.dumps(
+                        {
+                            "pod_name": "nginx-68c4864795-2fpbm",
+                            "namespace": "default",
+                            "tail_lines": 50,
+                        },
+                        ensure_ascii=False,
+                    ),
+                },
+            }
+        ]
+        tool_results = [event["result"] for event in events if event["type"] == "tool_result"]
+        assert tool_results[0] == {
+            "result": {
+                "pod": "nginx-68c4864795-2fpbm",
+                "namespace": "default",
+                "tail_lines": 50,
+                "logs": "hello from nginx-68c4864795-2fpbm",
+            }
+        }
+        assert mcp.called_arguments == [
+            {
+                "pod_name": "nginx-68c4864795-2fpbm",
+                "namespace": "default",
+                "tail_lines": 50,
+            }
+        ]
         assert fake_chat.tool_names_by_call == []
         assert events[-1]["type"] == "done"
 
@@ -1273,6 +1394,7 @@ class _FakeMCP:
 class _ScaleMCP:
     def __init__(self, policy: ToolCatalogPolicy):
         self.policy = policy
+        self.called_arguments: list[dict] = []
         self.tools = [
             {
                 "name": "toolsearch",
@@ -1295,6 +1417,35 @@ class _ScaleMCP:
                 "server": "builtin",
                 "dangerLevel": "write",
             },
+            {
+                "name": "k8s-restart-deployment",
+                "description": "滚动重启 Deployment",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "deployment_name": {"type": "string"},
+                        "namespace": {"type": "string"},
+                    },
+                    "required": ["deployment_name"],
+                },
+                "server": "builtin",
+                "dangerLevel": "write",
+            },
+            {
+                "name": "k8s-get-logs",
+                "description": "获取 Pod 日志",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "pod_name": {"type": "string"},
+                        "namespace": {"type": "string"},
+                        "tail_lines": {"type": "integer"},
+                    },
+                    "required": ["pod_name"],
+                },
+                "server": "builtin",
+                "dangerLevel": "read",
+            },
         ]
 
     async def list_tools(self, skill_id=None):
@@ -1304,6 +1455,16 @@ class _ScaleMCP:
         return self.policy.authorize(name, user, arguments)
 
     async def call_tool(self, name, arguments, user=None):
+        self.called_arguments.append(arguments)
+        if name == "k8s-get-logs":
+            return {
+                "result": {
+                    "pod": arguments["pod_name"],
+                    "namespace": arguments.get("namespace"),
+                    "tail_lines": arguments.get("tail_lines"),
+                    "logs": f"hello from {arguments['pod_name']}",
+                }
+            }
         return {"result": {"scaled": True}}
 
 
@@ -1358,6 +1519,45 @@ def _scale_catalog(tmp_path):
                                 "replicas": {"type": "integer"},
                             },
                             "required": ["deployment_name", "replicas"],
+                        },
+                        "examples": [],
+                    },
+                    {
+                        "name": "k8s-restart-deployment",
+                        "title": "滚动重启 Deployment",
+                        "category": "kubernetes",
+                        "description": "滚动重启 Kubernetes Deployment",
+                        "tags": ["k8s", "deployment", "restart", "重启"],
+                        "dangerLevel": "write",
+                        "server": "builtin",
+                        "executionPolicy": "executable",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "deployment_name": {"type": "string"},
+                                "namespace": {"type": "string"},
+                            },
+                            "required": ["deployment_name"],
+                        },
+                        "examples": [],
+                    },
+                    {
+                        "name": "k8s-get-logs",
+                        "title": "获取 Pod 日志",
+                        "category": "kubernetes",
+                        "description": "获取 Kubernetes Pod 日志",
+                        "tags": ["k8s", "pod", "logs", "日志"],
+                        "dangerLevel": "read",
+                        "server": "builtin",
+                        "executionPolicy": "executable",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "pod_name": {"type": "string"},
+                                "namespace": {"type": "string"},
+                                "tail_lines": {"type": "integer"},
+                            },
+                            "required": ["pod_name"],
                         },
                         "examples": [],
                     }

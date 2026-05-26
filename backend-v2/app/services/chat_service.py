@@ -261,7 +261,7 @@ class ChatOrchestrator:
         if tool_context_enabled:
             tools, tool_pool, unavailable_tools = await self._get_initial_tool_context(
                 skill_id,
-                content_for_llm,
+                user_content,
             )
         else:
             tools, tool_pool, unavailable_tools = [], {}, {}
@@ -272,10 +272,10 @@ class ChatOrchestrator:
         tool_round_limit_reached = False
         tool_loop_stop_reason = None
         llm_error_after_tools = None
-        discovery_only = self._discovery_only_intent(content_for_llm)
+        discovery_only = self._discovery_only_intent(user_content)
         seen_tool_call_keys = set()
         direct_tool_call = (
-            self._infer_direct_tool_call(content_for_llm, tool_pool)
+            self._infer_direct_tool_call(user_content, tool_pool)
             if tool_context_enabled
             else None
         )
@@ -753,17 +753,24 @@ class ChatOrchestrator:
     ) -> Optional[dict]:
         if cls._discovery_only_intent(user_content):
             return None
-        if "k8s-scale-deployment" not in tool_pool:
-            return None
-        scale_arguments = cls._parse_k8s_scale_arguments(user_content)
-        if not scale_arguments:
-            return None
+        candidates = (
+            ("k8s-scale-deployment", cls._parse_k8s_scale_arguments(user_content)),
+            ("k8s-restart-deployment", cls._parse_k8s_restart_arguments(user_content)),
+            ("k8s-get-logs", cls._parse_k8s_logs_arguments(user_content)),
+        )
+        for tool_name, arguments in candidates:
+            if tool_name in tool_pool and arguments:
+                return cls._direct_tool_call(tool_name, arguments)
+        return None
+
+    @staticmethod
+    def _direct_tool_call(tool_name: str, arguments: dict[str, object]) -> dict:
         return {
-            "id": "direct-k8s-scale-deployment",
+            "id": f"direct-{tool_name}",
             "type": "function",
             "function": {
-                "name": "k8s-scale-deployment",
-                "arguments": json.dumps(scale_arguments, ensure_ascii=False),
+                "name": tool_name,
+                "arguments": json.dumps(arguments, ensure_ascii=False),
             },
         }
 
@@ -779,10 +786,52 @@ class ChatOrchestrator:
             "replicas": replicas,
         }
 
+    @classmethod
+    def _parse_k8s_restart_arguments(cls, user_content: str) -> Optional[dict[str, object]]:
+        content = user_content.lower()
+        if not any(keyword in content for keyword in K8S_RESTART_CONTEXT_KEYWORDS):
+            return None
+        deployment_name = cls._extract_deployment_name(user_content)
+        if not deployment_name:
+            return None
+        return {
+            "deployment_name": deployment_name,
+            "namespace": cls._extract_namespace(user_content) or "default",
+        }
+
+    @classmethod
+    def _parse_k8s_logs_arguments(cls, user_content: str) -> Optional[dict[str, object]]:
+        content = user_content.lower()
+        if not any(keyword in content for keyword in ("日志", "log", "logs")):
+            return None
+        pod_name = cls._extract_pod_name(user_content)
+        if not pod_name:
+            return None
+        arguments: dict[str, object] = {
+            "pod_name": pod_name,
+            "namespace": cls._extract_namespace(user_content) or "default",
+        }
+        tail_lines = cls._extract_tail_lines(user_content)
+        if tail_lines is not None:
+            arguments["tail_lines"] = tail_lines
+        return arguments
+
     @staticmethod
     def _extract_deployment_name(user_content: str) -> Optional[str]:
         patterns = (
             r"(?:deployment|deploy|工作负载)\s+([a-z0-9][a-z0-9.-]*)",
+            (
+                r"(?:重启|restart)\s*(?:一下|下)?\s*"
+                r"(?:[a-z0-9][a-z0-9.-]*\s*(?:命名空间|namespace)(?:里|内|下|的)?\s*)?"
+                r"(?:deployment|deploy|工作负载)?\s*([a-z0-9][a-z0-9.-]*)"
+            ),
+            (
+                r"(?:把|将|请把|请将|帮我把|帮忙把)?\s*"
+                r"(?:[a-z0-9][a-z0-9.-]*\s*(?:命名空间|namespace)(?:里|内|下|的)?\s*)?"
+                r"(?:deployment|deploy|工作负载)?\s*([a-z0-9][a-z0-9.-]*)\s*"
+                r"(?:扩到|缩到|扩容到|缩容到|调整到|调到|改成|设置为|设为|重启|restart)"
+            ),
+            r"([a-z0-9][a-z0-9.-]*)\s*(?:这个)?\s*(?:deployment|deploy|工作负载)\s*(?:重启|restart)",
             r"(?:把|将|请把|请将)\s+([a-z0-9][a-z0-9.-]*)\s*(?:扩|缩|副本|replica|调整|调|改|设|scale)",
         )
         for pattern in patterns:
@@ -811,6 +860,38 @@ class ChatOrchestrator:
             r"(?:扩到|缩到|扩容到|缩容到|调整到|调到|改成|设置为|设为)\s*(\d+)",
             r"(?:副本数?|replicas?)\D{0,12}(\d+)",
             r"(\d+)\s*个?\s*副本",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, user_content, flags=re.IGNORECASE)
+            if match:
+                return int(match.group(1))
+        return None
+
+    @staticmethod
+    def _extract_pod_name(user_content: str) -> Optional[str]:
+        patterns = (
+            r"(?:pod|pods|容器组)\s+([a-z0-9][a-z0-9.-]*)",
+            (
+                r"(?:看|查|查看|获取|帮我看|帮我查)\s*(?:一下)?\s*"
+                r"(?:[a-z0-9][a-z0-9.-]*\s*(?:命名空间|namespace)(?:里|内|下|的)?\s*)?"
+                r"([a-z0-9][a-z0-9.-]*)\s*(?:的)?"
+                r"(?:最近|最后|tail)?\s*\d*\s*行?\s*(?:日志|log|logs)"
+            ),
+            r"(?:看|查|查看|获取)\s+([a-z0-9][a-z0-9.-]*)\s*(?:的)?(?:日志|log|logs)",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, user_content, flags=re.IGNORECASE)
+            if match:
+                candidate = match.group(1).strip(" .,，。")
+                if candidate.lower() not in {"default", "namespace", "pod", "pods"}:
+                    return candidate
+        return None
+
+    @staticmethod
+    def _extract_tail_lines(user_content: str) -> Optional[int]:
+        patterns = (
+            r"(?:最近|最后|tail)\s*(\d+)\s*行?",
+            r"(\d+)\s*行\s*(?:日志|log|logs)",
         )
         for pattern in patterns:
             match = re.search(pattern, user_content, flags=re.IGNORECASE)
