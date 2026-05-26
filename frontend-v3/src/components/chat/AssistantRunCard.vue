@@ -8,7 +8,7 @@
       <span :class="['run-status', status]">{{ statusLabel }}</span>
     </header>
 
-    <section class="answer-body">
+    <section ref="answerBodyRef" class="answer-body">
       <div v-if="message.content" class="content assistant-content" v-html="renderedContent" />
       <p v-else class="empty-answer">{{ emptyAnswerText }}</p>
     </section>
@@ -95,6 +95,7 @@ const emit = defineEmits<{ 'tool-confirmed': [] }>()
 const router = useRouter()
 const messageApi = useMessage()
 const confirmingToolCallId = ref('')
+const answerBodyRef = ref<HTMLElement | null>(null)
 
 const resultsByCallId = computed(() => {
   const map = new Map<string, ToolResult>()
@@ -175,11 +176,64 @@ async function copyAnswer() {
     return
   }
   try {
-    await navigator.clipboard.writeText(text)
+    await copyTextToClipboard(text)
     messageApi.success('回答已复制')
   } catch {
+    if (selectAnswerText()) {
+      messageApi.warning('浏览器限制直接复制，已选中回答，请按 Cmd+C 复制')
+      return
+    }
     messageApi.error('复制失败，请手动选择文本')
   }
+}
+
+async function copyTextToClipboard(text: string) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return
+    } catch {
+      // Fall back to selection-based copy below for embedded browsers without clipboard support.
+    }
+  }
+  if (copyTextWithTextarea(text)) return
+  throw new Error('clipboard unavailable')
+}
+
+function copyTextWithTextarea(text: string) {
+  const textarea = document.createElement('textarea')
+  const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  textarea.value = text
+  textarea.setAttribute('readonly', '')
+  textarea.style.position = 'fixed'
+  textarea.style.top = '0'
+  textarea.style.left = '-9999px'
+  textarea.style.opacity = '0'
+  document.body.appendChild(textarea)
+  textarea.focus({ preventScroll: true })
+  textarea.select()
+  textarea.setSelectionRange(0, text.length)
+  let copied = false
+  try {
+    copied = document.execCommand('copy')
+  } catch {
+    copied = false
+  } finally {
+    document.body.removeChild(textarea)
+    previousFocus?.focus({ preventScroll: true })
+  }
+  return copied
+}
+
+function selectAnswerText() {
+  const element = answerBodyRef.value
+  const selection = window.getSelection()
+  if (!element || !selection) return false
+  const range = document.createRange()
+  range.selectNodeContents(element)
+  selection.removeAllRanges()
+  selection.addRange(range)
+  return true
 }
 
 function goToMcp() {
