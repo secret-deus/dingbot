@@ -304,13 +304,69 @@ async def test_mutation_intent_seeds_k8s_write_anchor_tools(tmp_path):
             event
             async for event in orchestrator.handle_message(
                 chat_session.id,
-                "请实际调用 MCP 工具 k8s-scale-deployment，把 default 命名空间里的 Deployment confirm-demo 副本数调整到 2。",
+                "我想处理 Deployment 扩缩容，先看看当前有哪些可用能力。",
             )
         ]
 
         first_tool_names = fake_chat.tool_names_by_call[0]
         assert "toolsearch" in first_tool_names
         assert "k8s-scale-deployment" in first_tool_names
+        assert events[-1]["type"] == "done"
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_natural_scale_request_creates_pending_confirmation_without_tool_name(tmp_path):
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'chat-natural-scale.db'}")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session:
+        chat_session = Session(title="natural scale")
+        session.add(chat_session)
+        await session.flush()
+
+        fake_chat = _NoToolChat()
+        orchestrator = ChatOrchestrator(
+            db=session,
+            chat_service=fake_chat,
+            mcp_manager=_ScaleMCP(ToolCatalogPolicy(str(_scale_catalog(tmp_path)))),
+            current_user={"username": "operator", "role": "operator"},
+        )
+
+        events = [
+            event
+            async for event in orchestrator.handle_message(
+                chat_session.id,
+                "把 default 命名空间里的 Deployment confirm-demo 扩到 2 个副本",
+            )
+        ]
+
+        tool_calls = [event["tool_call"] for event in events if event["type"] == "tool_call"]
+        assert tool_calls == [
+            {
+                "id": "direct-k8s-scale-deployment",
+                "type": "function",
+                "function": {
+                    "name": "k8s-scale-deployment",
+                    "arguments": json.dumps(
+                        {
+                            "deployment_name": "confirm-demo",
+                            "namespace": "default",
+                            "replicas": 2,
+                        },
+                        ensure_ascii=False,
+                    ),
+                },
+            }
+        ]
+        tool_results = [event["result"] for event in events if event["type"] == "tool_result"]
+        assert tool_results[0]["error"] == "tool_execution_denied"
+        assert tool_results[0]["requires_confirmation"] is True
+        assert tool_results[0]["confirmation"]["tool"] == "k8s-scale-deployment"
+        assert fake_chat.tool_names_by_call == []
         assert events[-1]["type"] == "done"
 
     await engine.dispose()
@@ -1214,6 +1270,43 @@ class _FakeMCP:
         return {"error": f"unexpected tool {name}"}
 
 
+class _ScaleMCP:
+    def __init__(self, policy: ToolCatalogPolicy):
+        self.policy = policy
+        self.tools = [
+            {
+                "name": "toolsearch",
+                "description": "Search tools",
+                "inputSchema": {"type": "object", "properties": {}, "required": []},
+                "server": "toolsearch",
+            },
+            {
+                "name": "k8s-scale-deployment",
+                "description": "调整 Deployment 副本数",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "deployment_name": {"type": "string"},
+                        "namespace": {"type": "string"},
+                        "replicas": {"type": "integer"},
+                    },
+                    "required": ["deployment_name", "replicas"],
+                },
+                "server": "builtin",
+                "dangerLevel": "write",
+            },
+        ]
+
+    async def list_tools(self, skill_id=None):
+        return self.tools
+
+    def authorize_tool_call(self, name, user, arguments=None):
+        return self.policy.authorize(name, user, arguments)
+
+    async def call_tool(self, name, arguments, user=None):
+        return {"result": {"scaled": True}}
+
+
 def _catalog(tmp_path):
     path = tmp_path / "tool_catalog.json"
     path.write_text(
@@ -1231,6 +1324,41 @@ def _catalog(tmp_path):
                         "server": "builtin",
                         "executionPolicy": "executable",
                         "inputSchema": {"type": "object", "properties": {}, "required": []},
+                        "examples": [],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def _scale_catalog(tmp_path):
+    path = tmp_path / "scale_tool_catalog.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": "test",
+                "tools": [
+                    {
+                        "name": "k8s-scale-deployment",
+                        "title": "调整 Deployment 副本数",
+                        "category": "kubernetes",
+                        "description": "调整 Kubernetes Deployment 的 replicas 副本数",
+                        "tags": ["k8s", "deployment", "scale", "副本"],
+                        "dangerLevel": "write",
+                        "server": "builtin",
+                        "executionPolicy": "executable",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "deployment_name": {"type": "string"},
+                                "namespace": {"type": "string"},
+                                "replicas": {"type": "integer"},
+                            },
+                            "required": ["deployment_name", "replicas"],
+                        },
                         "examples": [],
                     }
                 ],

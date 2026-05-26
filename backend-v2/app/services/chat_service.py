@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import AsyncGenerator, Optional
 
 from loguru import logger
@@ -273,6 +274,42 @@ class ChatOrchestrator:
         llm_error_after_tools = None
         discovery_only = self._discovery_only_intent(content_for_llm)
         seen_tool_call_keys = set()
+        direct_tool_call = (
+            self._infer_direct_tool_call(content_for_llm, tool_pool)
+            if tool_context_enabled
+            else None
+        )
+
+        if direct_tool_call:
+            tool_calls_made.append(direct_tool_call)
+            yield {"type": "tool_call", "tool_call": direct_tool_call}
+            tool_result = await self._execute_tool(direct_tool_call)
+            tool_results_made.append(
+                {
+                    "tool": direct_tool_call["function"]["name"],
+                    "tool_call_id": direct_tool_call["id"],
+                    "tool_name": direct_tool_call["function"]["name"],
+                    "result": tool_result,
+                }
+            )
+            yield {
+                "type": "tool_result",
+                "tool_call_id": direct_tool_call["id"],
+                "result": tool_result,
+            }
+            final_text = self._direct_tool_result_message(direct_tool_call, tool_result)
+            yield {"type": "token", "content": final_text}
+            await self.message_repo.add_message(
+                session_id,
+                MessageRole.ASSISTANT,
+                final_text,
+                seq + 1,
+                tool_calls=tool_calls_made,
+                tool_results=tool_results_made,
+            )
+            await self.db.commit()
+            yield {"type": "done", "session_id": session_id}
+            return
 
         if chat is None:
             response_text = self._disabled_llm_message(runtime_config, llm_provider_id)
@@ -707,6 +744,88 @@ class ChatOrchestrator:
             if name:
                 deduped[name] = tool
         return list(deduped.values())
+
+    @classmethod
+    def _infer_direct_tool_call(
+        cls,
+        user_content: str,
+        tool_pool: dict[str, dict],
+    ) -> Optional[dict]:
+        if cls._discovery_only_intent(user_content):
+            return None
+        if "k8s-scale-deployment" not in tool_pool:
+            return None
+        scale_arguments = cls._parse_k8s_scale_arguments(user_content)
+        if not scale_arguments:
+            return None
+        return {
+            "id": "direct-k8s-scale-deployment",
+            "type": "function",
+            "function": {
+                "name": "k8s-scale-deployment",
+                "arguments": json.dumps(scale_arguments, ensure_ascii=False),
+            },
+        }
+
+    @classmethod
+    def _parse_k8s_scale_arguments(cls, user_content: str) -> Optional[dict[str, object]]:
+        deployment_name = cls._extract_deployment_name(user_content)
+        replicas = cls._extract_replicas(user_content)
+        if not deployment_name or replicas is None:
+            return None
+        return {
+            "deployment_name": deployment_name,
+            "namespace": cls._extract_namespace(user_content) or "default",
+            "replicas": replicas,
+        }
+
+    @staticmethod
+    def _extract_deployment_name(user_content: str) -> Optional[str]:
+        patterns = (
+            r"(?:deployment|deploy|工作负载)\s+([a-z0-9][a-z0-9.-]*)",
+            r"(?:把|将|请把|请将)\s+([a-z0-9][a-z0-9.-]*)\s*(?:扩|缩|副本|replica|调整|调|改|设|scale)",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, user_content, flags=re.IGNORECASE)
+            if match:
+                candidate = match.group(1).strip(" .,，。")
+                if candidate.lower() not in {"default", "namespace", "deployment", "deploy"}:
+                    return candidate
+        return None
+
+    @staticmethod
+    def _extract_namespace(user_content: str) -> Optional[str]:
+        patterns = (
+            r"([a-z0-9][a-z0-9.-]*)\s*(?:命名空间|namespace)",
+            r"(?:namespace|命名空间)\s*[:=]?\s*([a-z0-9][a-z0-9.-]*)",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, user_content, flags=re.IGNORECASE)
+            if match:
+                return match.group(1).strip(" .,，。")
+        return None
+
+    @staticmethod
+    def _extract_replicas(user_content: str) -> Optional[int]:
+        patterns = (
+            r"(?:扩到|缩到|扩容到|缩容到|调整到|调到|改成|设置为|设为)\s*(\d+)",
+            r"(?:副本数?|replicas?)\D{0,12}(\d+)",
+            r"(\d+)\s*个?\s*副本",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, user_content, flags=re.IGNORECASE)
+            if match:
+                return int(match.group(1))
+        return None
+
+    @staticmethod
+    def _direct_tool_result_message(tool_call: dict, result: dict) -> str:
+        tool_name = (tool_call.get("function") or {}).get("name") or "工具"
+        if result.get("requires_confirmation"):
+            return f"已识别为需要确认的写入操作 `{tool_name}`，请在执行链路中确认后再执行。"
+        if result.get("error"):
+            return f"`{tool_name}` 执行未完成：{result.get('message') or result.get('reason') or result.get('error')}"
+        return f"`{tool_name}` 已执行完成。"
 
     @staticmethod
     def _intent_anchor_tools(user_content: str, scoped_by_name: dict[str, dict]) -> list[dict]:
