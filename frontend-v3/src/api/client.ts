@@ -38,6 +38,15 @@ export const authApi = {
   me: () => request<{ username: string; role: string }>({ method: 'get', url: '/auth/me' }),
 }
 
+export const userApi = {
+  list: (limit = 100, offset = 0) =>
+    request<User[]>({ method: 'get', url: '/auth/users', params: { limit, offset } }),
+  create: (data: { username: string; password: string; display_name?: string; role: User['role'] }) =>
+    request<{ id: string; username: string; role: string }>({ method: 'post', url: '/auth/register', data }),
+  update: (username: string, data: Partial<Pick<User, 'display_name' | 'role' | 'is_active'>>) =>
+    request<User>({ method: 'patch', url: `/auth/users/${username}`, data }),
+}
+
 // --- Sessions ---
 export const sessionApi = {
   list: (limit = 50, offset = 0) =>
@@ -111,7 +120,7 @@ export const systemApi = {
 
 // Re-export types used in API signatures
 import type {
-  Session, Message, MCPTool, ScheduledTask, TaskExecution,
+  User, Session, Message, MCPTool, ScheduledTask, TaskExecution,
   AuditLog, LLMConfig, LLMProviderConfig, HealthStatus,
   MCPConfig, K8sMCPConfig, ECSMCPConfig, AliyunMCPConfig,
   K8sKnowledgeGraph, K8sKnowledgeGraphSyncResult,

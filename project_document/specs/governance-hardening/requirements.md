@@ -7,8 +7,6 @@ used during local release validation without exposing secrets or mutating cloud 
 
 ## Slice 1: Audit Filtering
 
-The first implementation slice covers audit filtering only.
-
 ### Functional Requirements
 
 1. `/api/v2/config/audit` must be admin-only.
@@ -34,6 +32,26 @@ The first implementation slice covers audit filtering only.
 - No new write or dangerous tool confirmation flow in this slice.
 - No migration of old audit rows.
 
+## Slice 2: User Management
+
+### Functional Requirements
+
+1. Admin can list users with username, display name, role, active state, and timestamps.
+2. Admin can create a user with username, password, display name, and role.
+3. Admin can update another user's display name, role, and active state.
+4. Admin cannot deactivate or demote their own account through the API.
+5. Role changes and inactive state must be enforced on existing tokens through authenticated route checks.
+6. Viewer/operator cannot list, create, or update users.
+7. AccessControl page must load real users from the backend instead of static examples.
+8. AccessControl page must keep role policy descriptions read-only.
+
+### Non-Goals
+
+- No hard delete of users.
+- No password reset flow.
+- No multi-tenant groups or fine-grained per-tool grants.
+- No self-service profile editing.
+
 ## Acceptance
 
 1. Admin can filter audit rows by actor/action/resource/result.
@@ -41,3 +59,6 @@ The first implementation slice covers audit filtering only.
 3. The permissions page can apply and clear filters.
 4. Existing audit middleware and tool-execution audit writes continue to work.
 5. Backend focused tests and frontend build pass.
+6. Admin can create and update users from the permissions page.
+7. Self-demotion and self-deactivation are rejected.
+8. Deactivated users cannot keep using an existing token.

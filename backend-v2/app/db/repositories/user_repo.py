@@ -23,6 +23,11 @@ class UserRepository(BaseRepository[User]):
         result = await self.get_many(stmt, limit, offset)
         return list(result)
 
+    async def list_all(self, limit: int = 100, offset: int = 0) -> list[User]:
+        stmt = select(User).order_by(User.created_at.desc())
+        result = await self.get_many(stmt, limit, offset)
+        return list(result)
+
     async def create_user(self, username: str, hashed_password: str, role: Role = Role.VIEWER) -> User:
         user = User(username=username, hashed_password=hashed_password, role=role)
         return await self.create(user)

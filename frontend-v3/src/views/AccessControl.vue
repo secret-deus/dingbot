@@ -3,11 +3,11 @@
     <header class="dr-page-header">
       <div>
         <h1>权限管理</h1>
-        <p>管理当前角色边界、工具权限策略和审计事件。未接入真实后端的用户写入能力保持只读展示。</p>
+        <p>管理当前角色边界、用户状态、工具权限策略和审计事件。</p>
       </div>
       <div class="dr-toolbar">
         <n-button secondary :loading="auditLoading" @click="fetchAudit">刷新审计</n-button>
-        <n-button type="primary" disabled>新增用户</n-button>
+        <n-button type="primary" @click="showCreateUser = true">新增用户</n-button>
       </div>
     </header>
 
@@ -39,12 +39,34 @@
         <div class="dr-panel-head">
           <div>
             <h2 class="dr-panel-title">用户和角色</h2>
-            <span class="dr-panel-subtitle">展示当前系统约定角色，不模拟不存在的保存接口。</span>
+            <span class="dr-panel-subtitle">真实读取 `/auth/users`，支持新增、角色调整和账号启停。</span>
           </div>
-          <n-button secondary disabled>筛选</n-button>
+          <n-button secondary :loading="usersLoading" @click="fetchUsers">刷新用户</n-button>
         </div>
         <div class="search-row">
           <n-input v-model:value="userSearch" clearable placeholder="搜索用户名或角色" />
+        </div>
+        <div v-if="showCreateUser" class="create-user-form">
+          <n-form :show-label="false">
+            <div class="create-grid">
+              <n-form-item>
+                <n-input v-model:value="newUser.username" placeholder="用户名" />
+              </n-form-item>
+              <n-form-item>
+                <n-input v-model:value="newUser.display_name" placeholder="显示名" />
+              </n-form-item>
+              <n-form-item>
+                <n-input v-model:value="newUser.password" type="password" show-password-on="click" placeholder="初始密码" />
+              </n-form-item>
+              <n-form-item>
+                <n-select v-model:value="newUser.role" :options="roleOptions" />
+              </n-form-item>
+              <div class="create-actions">
+                <n-button type="primary" :loading="createLoading" @click="createUser">创建</n-button>
+                <n-button secondary :disabled="createLoading" @click="resetCreateForm">取消</n-button>
+              </div>
+            </div>
+          </n-form>
         </div>
         <div class="role-list">
           <article v-for="user in filteredUsers" :key="user.username" class="role-row">
@@ -52,12 +74,16 @@
               <span class="avatar">{{ user.username.slice(0, 1).toUpperCase() }}</span>
               <span>
                 <strong>{{ user.username }}</strong>
-                <small>{{ user.description }}</small>
+                <small>{{ user.display_name || '未设置显示名' }}</small>
               </span>
             </div>
-            <span :class="['dr-badge', user.role]">{{ user.role }}</span>
-            <span>{{ user.scope }}</span>
-            <span class="dr-muted">{{ user.lastActive }}</span>
+            <n-select v-model:value="user.role" :options="roleOptions" size="small" />
+            <n-switch v-model:value="user.is_active" size="small">
+              <template #checked>启用</template>
+              <template #unchecked>停用</template>
+            </n-switch>
+            <span class="dr-muted">{{ formatTime(user.updated_at) }}</span>
+            <n-button size="small" :loading="savingUser === user.username" @click="saveUser(user)">保存</n-button>
           </article>
         </div>
       </section>
@@ -170,15 +196,27 @@
 
 <script setup lang="ts">
 import { computed, h, onMounted, ref } from 'vue'
-import { NButton, NDataTable, NInput, NSelect, NTag } from 'naive-ui'
-import { systemApi } from '@/api/client'
-import type { AuditLog } from '@/types'
+import { NButton, NDataTable, NForm, NFormItem, NInput, NSelect, NSwitch, NTag, useMessage } from 'naive-ui'
+import { systemApi, userApi } from '@/api/client'
+import type { AuditLog, User } from '@/types'
 
 const auditLimit = 50
+const message = useMessage()
 const auditLogs = ref<AuditLog[]>([])
 const auditLoading = ref(false)
+const roleUsers = ref<User[]>([])
+const usersLoading = ref(false)
+const createLoading = ref(false)
+const savingUser = ref('')
+const showCreateUser = ref(false)
 const userSearch = ref('')
 const selectedRole = ref<'admin' | 'operator' | 'viewer'>('operator')
+const newUser = ref({
+  username: '',
+  display_name: '',
+  password: '',
+  role: 'viewer' as User['role'],
+})
 const auditFilters = ref({
   actor: '',
   action: '',
@@ -186,12 +224,6 @@ const auditFilters = ref({
   resource_id: '',
   result: null as string | null,
 })
-
-const roleUsers = [
-  { username: 'admin', role: 'admin', description: '本地默认管理员', scope: '全部工具、配置、审计', lastActive: '当前会话' },
-  { username: 'ops', role: 'operator', description: '值班工程师', scope: 'K8s / ECS 工具与定时任务', lastActive: '示例角色' },
-  { username: 'viewer', role: 'viewer', description: '观察者账号', scope: 'Dashboard、会话与只读上下文', lastActive: '示例角色' },
-]
 
 const rolePolicies = [
   { role: 'admin', toolPrefix: 'all tools', description: '管理员拥有配置、审计、工具执行和高危确认权限。' },
@@ -207,8 +239,10 @@ const resultOptions = [
 const selectedPolicy = computed(() => rolePolicies.find((item) => item.role === selectedRole.value) || rolePolicies[1])
 const filteredUsers = computed(() => {
   const query = userSearch.value.trim().toLowerCase()
-  if (!query) return roleUsers
-  return roleUsers.filter((user) => [user.username, user.role, user.scope].some((value) => value.toLowerCase().includes(query)))
+  if (!query) return roleUsers.value
+  return roleUsers.value.filter((user) =>
+    [user.username, user.role, user.display_name].some((value) => value.toLowerCase().includes(query)),
+  )
 })
 const recentAuditLogs = computed(() => auditLogs.value.slice(0, 4))
 
@@ -231,8 +265,73 @@ async function fetchAudit() {
   auditLoading.value = true
   try {
     auditLogs.value = await systemApi.auditLogs(auditQueryParams())
+  } catch {
+    message.error('读取审计日志失败')
   } finally {
     auditLoading.value = false
+  }
+}
+
+async function fetchUsers() {
+  usersLoading.value = true
+  try {
+    roleUsers.value = await userApi.list()
+  } catch {
+    message.error('读取用户列表失败')
+  } finally {
+    usersLoading.value = false
+  }
+}
+
+async function createUser() {
+  if (!newUser.value.username.trim() || !newUser.value.password.trim()) {
+    message.warning('请填写用户名和初始密码')
+    return
+  }
+  createLoading.value = true
+  try {
+    await userApi.create({
+      username: newUser.value.username.trim(),
+      password: newUser.value.password,
+      display_name: newUser.value.display_name.trim(),
+      role: newUser.value.role,
+    })
+    message.success('用户已创建')
+    resetCreateForm()
+    await fetchUsers()
+  } catch (error) {
+    message.error(errorMessage(error, '创建用户失败'))
+  } finally {
+    createLoading.value = false
+  }
+}
+
+async function saveUser(user: User) {
+  savingUser.value = user.username
+  try {
+    const updated = await userApi.update(user.username, {
+      display_name: user.display_name,
+      role: user.role,
+      is_active: user.is_active,
+    })
+    const index = roleUsers.value.findIndex((item) => item.username === user.username)
+    if (index >= 0) roleUsers.value[index] = updated
+    message.success('用户已保存')
+  } catch (error) {
+    message.error(errorMessage(error, '保存用户失败'))
+    await fetchUsers()
+  } finally {
+    savingUser.value = ''
+  }
+}
+
+function resetCreateForm() {
+  showCreateUser.value = false
+  newUser.value = {
+    username: '',
+    display_name: '',
+    password: '',
+    role: 'viewer',
   }
 }
 
@@ -274,7 +373,16 @@ function formatTime(value: string) {
   return new Date(value).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
-onMounted(fetchAudit)
+function errorMessage(error: unknown, fallback: string) {
+  const maybe = error as { response?: { data?: { detail?: unknown } }; message?: string }
+  const detail = maybe.response?.data?.detail
+  return typeof detail === 'string' ? detail : maybe.message || fallback
+}
+
+onMounted(() => {
+  fetchUsers()
+  fetchAudit()
+})
 </script>
 
 <style scoped>
@@ -294,7 +402,7 @@ onMounted(fetchAudit)
 
 .role-row {
   display: grid;
-  grid-template-columns: minmax(220px, 1.2fr) 110px minmax(180px, 1fr) 120px;
+  grid-template-columns: minmax(220px, 1.2fr) 140px 90px 110px 82px;
   align-items: center;
   gap: 12px;
   min-height: 72px;
@@ -310,6 +418,24 @@ onMounted(fetchAudit)
 
 .role-row:hover {
   background: #fbf6ee;
+}
+
+.create-user-form {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--dr-border-soft);
+  background: var(--dr-bg-page);
+}
+
+.create-grid {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) minmax(130px, 1fr) minmax(150px, 1fr) 120px auto;
+  gap: 10px;
+  align-items: start;
+}
+
+.create-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .user-cell {
@@ -421,6 +547,10 @@ onMounted(fetchAudit)
   .role-row {
     grid-template-columns: 1fr;
     gap: 8px;
+  }
+
+  .create-grid {
+    grid-template-columns: 1fr;
   }
 
   .audit-filter-bar {

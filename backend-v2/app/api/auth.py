@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -12,7 +13,6 @@ from app.core.deps import get_current_user, require_admin
 from app.core.security import (
     Role,
     create_access_token,
-    decode_access_token,
     hash_password,
     verify_password,
 )
@@ -38,6 +38,22 @@ class CreateUserRequest(BaseModel):
     password: str
     role: Role = Role.VIEWER
     display_name: str = ""
+
+
+class UpdateUserRequest(BaseModel):
+    role: Optional[Role] = None
+    display_name: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class UserResponse(BaseModel):
+    id: str
+    username: str
+    display_name: str
+    role: str
+    is_active: bool
+    created_at: str
+    updated_at: str
 
 
 @router.post("/login", response_model=LoginResponse)
@@ -70,6 +86,59 @@ async def register(
     return {"id": user.id, "username": user.username, "role": user.role.value}
 
 
+@router.get("/users", response_model=list[UserResponse])
+async def list_users(
+    limit: int = 100,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db),
+    _admin: dict = Depends(require_admin),
+):
+    repo = UserRepository(db)
+    users = await repo.list_all(limit=limit, offset=offset)
+    await db.commit()
+    return [_user_response(user) for user in users]
+
+
+@router.patch("/users/{username}", response_model=UserResponse)
+async def update_user(
+    username: str,
+    req: UpdateUserRequest,
+    db: AsyncSession = Depends(get_db),
+    admin: dict = Depends(require_admin),
+):
+    repo = UserRepository(db)
+    user = await repo.get_by_username(username)
+    if not user:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "用户不存在")
+    if username == admin["username"]:
+        if req.role is not None and req.role != user.role:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "不能修改自己的管理员角色")
+        if req.is_active is False:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "不能停用当前登录账号")
+
+    if req.role is not None:
+        user.role = req.role
+    if req.display_name is not None:
+        user.display_name = req.display_name
+    if req.is_active is not None:
+        user.is_active = req.is_active
+
+    await db.commit()
+    return _user_response(user)
+
+
 @router.get("/me")
 async def me(user: dict = Depends(get_current_user)):
     return {"username": user["username"], "role": user["role"]}
+
+
+def _user_response(user: User) -> UserResponse:
+    return UserResponse(
+        id=user.id,
+        username=user.username,
+        display_name=user.display_name,
+        role=user.role.value,
+        is_active=user.is_active,
+        created_at=str(user.created_at),
+        updated_at=str(user.updated_at),
+    )

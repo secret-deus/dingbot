@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import AppSettings, get_settings
 from app.core.security import Role, decode_access_token, has_permission
+from app.db.repositories.user_repo import UserRepository
 from app.db.session import get_db
 
 _bearer = HTTPBearer(auto_error=False)
@@ -15,13 +16,20 @@ _bearer = HTTPBearer(auto_error=False)
 
 async def get_current_user(
     creds: Optional[HTTPAuthorizationCredentials] = Depends(_bearer),
+    db: AsyncSession = Depends(get_db),
 ) -> dict:
     if creds is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "未提供认证凭据")
     payload = decode_access_token(creds.credentials)
     if payload is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "无效或过期的令牌")
-    return {"username": payload["sub"], "role": payload["role"]}
+    repo = UserRepository(db)
+    user = await repo.get_by_username(payload["sub"])
+    if not user:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "用户不存在")
+    if not user.is_active:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "账号已禁用")
+    return {"username": user.username, "role": user.role.value}
 
 
 def require_role(min_role: Role):
