@@ -28,6 +28,21 @@
               <span :class="['chain-state', row.state]">{{ row.stateLabel }}</span>
             </div>
             <small>{{ row.summary }}</small>
+            <div v-if="row.confirmation" class="confirmation-panel">
+              <div>
+                <strong>需要确认</strong>
+                <span>{{ confirmationLabel(row.confirmation) }}</span>
+              </div>
+              <n-button
+                size="tiny"
+                type="warning"
+                :loading="confirmingToolCallId === row.id"
+                :disabled="props.streaming"
+                @click="confirmTool(row.id)"
+              >
+                确认执行
+              </n-button>
+            </div>
           </div>
         </article>
       </div>
@@ -65,18 +80,21 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { NButton, useMessage } from 'naive-ui'
 import { marked } from 'marked'
 import 'highlight.js/styles/github.css'
+import { chatApi } from '@/api/client'
 import ToolCandidateCards from './ToolCandidateCards.vue'
-import type { Message, ToolResult, ToolSearchResponse } from '@/types'
+import type { Message, ToolConfirmation, ToolResult, ToolSearchResponse } from '@/types'
 
 const props = defineProps<{ message: Message; streaming?: boolean }>()
+const emit = defineEmits<{ 'tool-confirmed': [] }>()
 
 const router = useRouter()
 const messageApi = useMessage()
+const confirmingToolCallId = ref('')
 
 const resultsByCallId = computed(() => {
   const map = new Map<string, ToolResult>()
@@ -90,17 +108,19 @@ const toolRows = computed(() =>
   (props.message.tool_calls || []).map((call) => {
     const result = resultsByCallId.value.get(call.id)
     const toolSearchPayload = toolSearchResult(result)
-    const state = result ? 'done' : props.streaming ? 'waiting' : 'called'
+    const confirmation = confirmationResult(result)
+    const state = confirmation ? 'needs-confirmation' : result ? 'done' : props.streaming ? 'waiting' : 'called'
     return {
       id: call.id,
       name: call.function.name,
       arguments: formatArgs(call.function.arguments),
       state,
-      stateLabel: state === 'done' ? '有结果' : state === 'waiting' ? '等待中' : '已调用',
-      summary: result ? '工具已返回结果，摘要和候选内容收在技术细节中。' : '已发起工具调用，正在等待返回。',
+      stateLabel: state === 'needs-confirmation' ? '待确认' : state === 'done' ? '有结果' : state === 'waiting' ? '等待中' : '已调用',
+      summary: confirmation ? '写入或高危工具需要人工确认后才会执行。' : result ? '工具已返回结果，摘要和候选内容收在技术细节中。' : '已发起工具调用，正在等待返回。',
       resultSummary: result ? summarizeResult(result.result) : '',
       rawResult: result ? formatUnknown(result.result) : '',
       toolSearchPayload,
+      confirmation,
     }
   }),
 )
@@ -166,6 +186,20 @@ function goToMcp() {
   router.push({ name: 'MCPConfig' })
 }
 
+async function confirmTool(toolCallId: string) {
+  if (props.streaming || confirmingToolCallId.value) return
+  confirmingToolCallId.value = toolCallId
+  try {
+    await chatApi.confirmToolCall(props.message.id, toolCallId)
+    messageApi.success('已确认并执行工具')
+    emit('tool-confirmed')
+  } catch (error) {
+    messageApi.error(errorMessage(error, '确认执行失败'))
+  } finally {
+    confirmingToolCallId.value = ''
+  }
+}
+
 function formatArgs(argsStr: string): string {
   try {
     return JSON.stringify(JSON.parse(argsStr), null, 2)
@@ -187,6 +221,22 @@ function toolSearchResult(result?: ToolResult): ToolSearchResponse | null {
     return payload as ToolSearchResponse
   }
   return null
+}
+
+function confirmationResult(result?: ToolResult): ToolConfirmation | null {
+  const payload = unwrapToolPayload(result?.result)
+  if (!payload || typeof payload !== 'object') return null
+  const candidate = payload as { requires_confirmation?: boolean; confirmation?: unknown }
+  if (candidate.requires_confirmation !== true || !candidate.confirmation || typeof candidate.confirmation !== 'object') {
+    return null
+  }
+  const confirmation = candidate.confirmation as ToolConfirmation
+  return confirmation.token ? confirmation : null
+}
+
+function confirmationLabel(confirmation: ToolConfirmation) {
+  const level = confirmation.dangerLevel === 'dangerous' ? '高危' : '写入'
+  return `${level}操作 · ${confirmation.tool}`
 }
 
 function unwrapToolPayload(value: unknown): unknown {
@@ -236,6 +286,16 @@ function escapeHtml(value: string) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
+}
+
+function errorMessage(error: unknown, fallback: string) {
+  const maybe = error as { response?: { data?: { detail?: unknown } }; message?: string }
+  const detail = maybe.response?.data?.detail
+  if (typeof detail === 'string') return detail
+  if (detail && typeof detail === 'object' && 'reason' in detail) {
+    return `确认被拒绝：${String((detail as { reason?: unknown }).reason)}`
+  }
+  return maybe.message || fallback
 }
 </script>
 
@@ -309,6 +369,11 @@ function escapeHtml(value: string) {
 .chain-state.called {
   background: var(--dr-blue-soft);
   color: var(--dr-blue);
+}
+
+.chain-state.needs-confirmation {
+  background: var(--dr-amber-soft);
+  color: var(--dr-amber);
 }
 
 .answer-body {
@@ -418,6 +483,35 @@ function escapeHtml(value: string) {
   margin-top: 4px;
   color: var(--dr-text-muted);
   line-height: 1.45;
+}
+
+.confirmation-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid #f0d18b;
+  border-radius: var(--dr-radius);
+  background: #fff8e6;
+}
+
+.confirmation-panel div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.confirmation-panel strong {
+  color: var(--dr-text);
+  font-size: var(--dr-text-sm);
+}
+
+.confirmation-panel span {
+  color: var(--dr-text-muted);
+  font-size: var(--dr-text-xs);
+  overflow-wrap: anywhere;
 }
 
 .technical-details {

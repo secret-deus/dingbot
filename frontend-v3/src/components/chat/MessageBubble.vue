@@ -6,7 +6,7 @@
         <div v-if="message.content" class="content" v-html="renderedContent" />
       </template>
       <template v-else>
-        <AssistantRunCard :message="message" :streaming="streaming" />
+        <AssistantRunCard :message="message" :streaming="streaming" @tool-confirmed="emit('tool-confirmed')" />
       </template>
     </div>
   </div>
@@ -20,6 +20,7 @@ import AssistantRunCard from './AssistantRunCard.vue'
 import type { Message } from '@/types'
 
 const props = defineProps<{ message: Message; streaming?: boolean }>()
+const emit = defineEmits<{ 'tool-confirmed': [] }>()
 
 const roleAvatars: Record<string, string> = {
   assistant: 'AI',

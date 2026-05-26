@@ -61,6 +61,11 @@ export const sessionApi = {
 // --- Chat ---
 export const chatApi = {
   streamUrl: (sessionId: string) => `/api/v2/chat/sessions/${sessionId}/stream`,
+  confirmToolCall: (messageId: string, toolCallId: string) =>
+    request<{ result: unknown }>({
+      method: 'post',
+      url: `/chat/messages/${messageId}/tool-calls/${toolCallId}/confirm`,
+    }),
 }
 
 // --- Tools ---

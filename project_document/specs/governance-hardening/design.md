@@ -94,6 +94,38 @@ descriptions read-only and exposes only user create/update controls:
 
 Password reset, hard delete, groups, and fine-grained grants remain out of scope.
 
+## Dangerous Tool Confirmation Slice
+
+The existing policy owner remains `backend-v2/app/mcp/policy.py`, but confirmation
+switches from model-controlled `__confirmed` booleans to backend-signed confirmation
+tokens.
+
+Confirmation token contract:
+
+- Signed with `SECRET_KEY`.
+- Contains token type, user, tool name, danger level, argument hash, and expiry.
+- The argument hash is calculated after removing internal confirmation fields.
+- Default TTL is 10 minutes.
+
+Execution flow:
+
+1. Chat orchestration receives an LLM tool call.
+2. `ToolCatalogPolicy.authorize()` denies write/dangerous calls without a valid token and
+   returns a confirmation payload.
+3. The denied tool result is persisted with the assistant message.
+4. The frontend renders a pending-confirmation row and calls
+   `POST /api/v2/chat/messages/{message_id}/tool-calls/{tool_call_id}/confirm`.
+5. The backend reloads the stored tool call and confirmation payload, validates the token
+   against the current user and original arguments, then executes the tool through the MCP
+   manager.
+6. The confirmed result is appended to the same message's `tool_results`.
+
+Audit behavior:
+
+- The original attempt remains `tool.execute` / `denied`.
+- The explicit confirmation writes `tool.confirm` / `allowed` or `denied`.
+- Audit details include safe argument previews only, not confirmation tokens.
+
 ## Compatibility
 
 - Existing callers using only `actor`, `action`, `limit`, and `offset` continue to work.
@@ -103,6 +135,8 @@ Password reset, hard delete, groups, and fine-grained grants remain out of scope
 - `/auth/register` keeps its request shape and gains no weakening of admin-only access.
 - User updates do not rotate JWTs, but authenticated route checks use the current database
   role and active state instead of trusting the stale token role.
+- The legacy `__confirmed` boolean is intentionally retired for write/dangerous tools.
+- Read-only tools and discovery tools keep their existing execution path.
 
 ## Verification
 
@@ -110,3 +144,4 @@ Password reset, hard delete, groups, and fine-grained grants remain out of scope
 - Run focused backend tests.
 - Run frontend build.
 - Run `git diff --check`.
+- Add policy and chat confirmation-flow tests.

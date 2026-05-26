@@ -45,6 +45,21 @@
   - [x] Keep policy descriptions read-only.
   - [x] Verify frontend build.
 
+- [x] 6. Backend dangerous tool confirmation
+  - [x] Add failing tests proving `__confirmed` no longer bypasses confirmation.
+  - [x] Add backend-signed confirmation tokens scoped to user/tool/arguments.
+  - [x] Return confirmation payloads for denied write/dangerous tool calls.
+  - [x] Add chat confirmation execution path.
+  - [x] Append confirmed tool results to the originating assistant message.
+  - [x] Audit explicit confirmation as `tool.confirm`.
+
+- [x] 7. Frontend confirmation controls
+  - [x] Add confirm-tool API client.
+  - [x] Render pending confirmation state in assistant run cards.
+  - [x] Add explicit confirm button for pending tool calls.
+  - [x] Reload chat messages after confirmation.
+  - [x] Verify frontend build.
+
 ## Verification
 
 - [x] `cd backend-v2 && poetry run pytest tests/test_audit_filters.py -q`
@@ -55,6 +70,8 @@
 - [x] `cd frontend-v3 && PATH=/Users/xhang/.nvm/versions/node/v24.14.0/bin:$PATH npm run build`
 - [x] `cd backend-v2 && poetry run pytest -q`
 - [x] Browser smoke on `/spa/access-control` with temp SQLite backend
+- [x] `cd backend-v2 && poetry run pytest tests/test_tool_policy.py tests/test_tool_confirmation_flow.py tests/test_chat_toolsearch_orchestration.py -q`
+- [x] Browser smoke on `/spa/chat` pending dangerous-tool confirmation panel without executing the write action
 
 ## Done Definition
 
@@ -67,3 +84,5 @@
 7. Non-admin user management access is denied.
 8. Admin cannot demote or deactivate their own account.
 9. Disabled users cannot keep using an existing token.
+10. Write/dangerous tools require backend-signed confirmation.
+11. Confirmed tool calls append results and audit `tool.confirm`.

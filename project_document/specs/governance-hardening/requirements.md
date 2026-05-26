@@ -52,6 +52,24 @@ used during local release validation without exposing secrets or mutating cloud 
 - No multi-tenant groups or fine-grained per-tool grants.
 - No self-service profile editing.
 
+## Slice 3: Dangerous Tool Confirmation
+
+### Functional Requirements
+
+1. Write and dangerous tools must not be executable by passing a model-controlled boolean flag.
+2. When an operator/admin triggers a write or dangerous tool without confirmation, the backend must return a confirmation payload instead of executing the tool.
+3. The confirmation payload must be signed by the backend, scoped to the current user, tool name, danger level, and exact arguments.
+4. Confirmation tokens must expire quickly.
+5. Confirming a pending chat tool call must execute the original tool arguments only if the token is valid.
+6. Confirmation attempts must write audit rows distinct from the original denied execution.
+7. The chat UI must show pending write/dangerous tool calls and expose an explicit confirm action.
+
+### Non-Goals
+
+- No automatic confirmation from the LLM.
+- No cloud or Kubernetes write smoke against real resources.
+- No long-lived approval queue or multi-user approval workflow.
+
 ## Acceptance
 
 1. Admin can filter audit rows by actor/action/resource/result.
@@ -62,3 +80,5 @@ used during local release validation without exposing secrets or mutating cloud 
 6. Admin can create and update users from the permissions page.
 7. Self-demotion and self-deactivation are rejected.
 8. Deactivated users cannot keep using an existing token.
+9. Write/dangerous tools require a backend-signed confirmation token.
+10. Confirmed tool calls are audited as `tool.confirm`.

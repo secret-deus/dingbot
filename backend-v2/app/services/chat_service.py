@@ -381,6 +381,66 @@ class ChatOrchestrator:
 
         yield {"type": "done", "session_id": session_id}
 
+    async def confirm_tool_call(self, message_id: str, tool_call_id: str) -> dict:
+        message = await self.message_repo.get_by_id(message_id)
+        if not message or message.role != MessageRole.ASSISTANT:
+            return {"error": "message_not_found", "message": "未找到可确认的助手消息"}
+        tool_call = self._find_tool_call(message.tool_calls or [], tool_call_id)
+        if not tool_call:
+            return {"error": "tool_call_not_found", "message": "未找到工具调用"}
+        pending = self._find_pending_confirmation(message.tool_results or [], tool_call_id)
+        if not pending:
+            return {"error": "confirmation_not_found", "message": "未找到待确认操作"}
+        confirmation = pending.get("confirmation") or {}
+        token = confirmation.get("token")
+        if not isinstance(token, str) or not token:
+            return {"error": "confirmation_not_found", "message": "确认令牌不存在"}
+
+        name = tool_call["function"]["name"]
+        try:
+            arguments = json.loads(tool_call["function"]["arguments"])
+        except json.JSONDecodeError:
+            return {"error": "invalid_tool_arguments", "message": "工具参数无效"}
+        arguments_with_token = {**arguments, "__confirmation_token": token}
+
+        if not self.mcp:
+            return {"error": "mcp_unavailable", "message": "MCP 服务未连接"}
+
+        decision = self.mcp.authorize_tool_call(name, self.current_user, dict(arguments_with_token))
+        await self.audit_repo.log(
+            actor=self.current_user.get("username", "unknown"),
+            action="tool.confirm",
+            resource=name,
+            result="allowed" if decision.allowed else "denied",
+            details=decision.to_audit_details(arguments_with_token),
+        )
+        await self.db.commit()
+        if not decision.allowed:
+            denied = {
+                "error": "tool_execution_denied",
+                "reason": decision.reason,
+                "requires_confirmation": decision.requires_confirmation,
+                "tool": name,
+            }
+            confirmation_payload = decision.to_confirmation_payload(arguments_with_token)
+            if confirmation_payload:
+                denied["confirmation"] = confirmation_payload
+            return denied
+
+        result = await self.mcp.call_tool(name, arguments_with_token, user=self.current_user)
+        stored_results = list(message.tool_results or [])
+        stored_results.append(
+            {
+                "tool_call_id": tool_call_id,
+                "tool_name": name,
+                "result": result,
+                "confirmed": True,
+            }
+        )
+        message.tool_results = stored_results
+        await self.db.commit()
+        return result
+
     def _resolve_chat(
         self, provider_id: Optional[str]
     ) -> tuple[Optional[ChatService], Optional[LLMRuntimeConfig]]:
@@ -803,12 +863,16 @@ class ChatOrchestrator:
                 )
                 await self.db.commit()
                 if not decision.allowed:
-                    return {
+                    denied = {
                         "error": "tool_execution_denied",
                         "reason": decision.reason,
                         "requires_confirmation": decision.requires_confirmation,
                         "tool": name,
                     }
+                    confirmation = decision.to_confirmation_payload(arguments)
+                    if confirmation:
+                        denied["confirmation"] = confirmation
+                    return denied
                 result = await self.mcp.call_tool(name, arguments, user=self.current_user)
             else:
                 result = {"error": "MCP 服务未连接"}
@@ -817,6 +881,29 @@ class ChatOrchestrator:
             result = {"error": str(e)}
 
         return result
+
+    @staticmethod
+    def _find_tool_call(tool_calls: list[dict], tool_call_id: str) -> Optional[dict]:
+        for tool_call in tool_calls:
+            if tool_call.get("id") == tool_call_id:
+                return tool_call
+        return None
+
+    @staticmethod
+    def _find_pending_confirmation(tool_results: list[dict], tool_call_id: str) -> Optional[dict]:
+        for item in reversed(tool_results):
+            if item.get("tool_call_id") != tool_call_id:
+                continue
+            result = item.get("result")
+            if (
+                isinstance(result, dict)
+                and result.get("requires_confirmation") is True
+                and isinstance(result.get("confirmation"), dict)
+            ):
+                return result
+            if item.get("confirmed"):
+                return None
+        return None
 
     @staticmethod
     def _tool_available_for_chat(tool: dict) -> bool:

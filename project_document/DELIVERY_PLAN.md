@@ -21,9 +21,9 @@
    必须轮换。
 3. Real Aliyun resource smoke：在具备 ECS/LB/SLS 具体资源 ID 或映射后，验证 detail、
    metrics、load-balancer health 和 SLS log tools。
-4. 产品化治理：审计筛选切片已完成，详见
-   `project_document/specs/governance-hardening/`；下一步推进真实用户管理 API 和
-   危险操作确认流设计。
+4. 产品化治理：审计筛选、真实用户管理和危险工具确认流已完成，详见
+   `project_document/specs/governance-hardening/`；下一步进入发布前的全链路自测和
+   真实资源 smoke 条件收集。
 
 ## 工作规则
 
@@ -42,7 +42,7 @@
 | DingTalk 仅有配置字段 | 通知开关误导用户 | 已在 S4 接入 webhook service 和 mock-backed 测试 |
 | Docker 后端镜像缺少 ToolSearch runtime | Compose 下启用 ToolSearch 会启动失败 | 已在 S5 改为根构建上下文并把 Node 22/ToolSearch dist 打入后端镜像 |
 | 本地 MCP 配置包含宿主机绝对路径 | Compose 内 ToolSearch stdio 启动失败 | RC1 已在 MCP manager 中按运行时 repo root 规范化 Node/cwd/env 路径 |
-| 权限页只有静态角色和弱审计查询 | 管理员无法按资源/结果定位权限事件 | 已补 `/config/audit` admin-only 和 actor/action/resource/resource_id/result 筛选 |
+| 权限页只有静态角色和弱审计查询 | 管理员无法按资源/结果定位权限事件 | 已补 `/config/audit` admin-only、真实用户管理和危险工具确认流 |
 | 后端测试覆盖不足 | 重构容易回归 | 从公共端点测试扩展到 auth/session/MCP |
 | 前端 bundle 偏大 | 首屏加载慢 | S3/S5 做 manualChunks 和路由级拆包 |
 | 本地验证依赖错误 Node.js | `scripts/verify.sh` 在部分 shell 下可能找不到 `tsc` 或触发 Homebrew Node 动态库错误 | RC1 先固定验证入口，再决定文档化或脚本化 Node 选择 |

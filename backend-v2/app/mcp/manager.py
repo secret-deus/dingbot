@@ -12,7 +12,7 @@ from loguru import logger
 
 from app.core.config import get_settings
 from app.mcp.builtin import BuiltinToolRegistry
-from app.mcp.policy import ToolCatalogPolicy
+from app.mcp.policy import ToolCatalogPolicy, public_tool_arguments
 
 
 class MCPServerConnection:
@@ -312,18 +312,23 @@ class MCPManager:
     ) -> dict:
         decision = self._policy.authorize(name, user, arguments)
         if not decision.allowed:
-            return {
+            denied = {
                 "error": "tool_execution_denied",
                 "reason": decision.reason,
                 "requires_confirmation": decision.requires_confirmation,
                 "tool": name,
             }
+            confirmation = decision.to_confirmation_payload(arguments)
+            if confirmation:
+                denied["confirmation"] = confirmation
+            return denied
 
+        public_arguments = public_tool_arguments(arguments)
         server_name = self._tool_server_map.get(name)
         if server_name == "builtin":
-            return await self._builtin.call(name, arguments)
+            return await self._builtin.call(name, public_arguments)
         if server_name and server_name in self._servers:
-            return await self._servers[server_name].call_tool(name, arguments)
+            return await self._servers[server_name].call_tool(name, public_arguments)
         if decision.metadata is not None:
             return {
                 "error": "tool_unavailable",

@@ -118,3 +118,29 @@ async def stream_chat(
             yield {"event": event.get("type", "message"), "data": json.dumps(event, ensure_ascii=False)}
 
     return EventSourceResponse(_generate())
+
+
+@router.post("/messages/{message_id}/tool-calls/{tool_call_id}/confirm")
+async def confirm_tool_call(
+    message_id: str,
+    tool_call_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    from app.core.deps import _get_app_state
+
+    state = _get_app_state()
+    orchestrator = ChatOrchestrator(
+        db=db,
+        chat_service=state.get("chat_service"),
+        mcp_manager=state.get("mcp_manager"),
+        current_user=user,
+    )
+    result = await orchestrator.confirm_tool_call(message_id, tool_call_id)
+    if result.get("error") in {"message_not_found", "tool_call_not_found", "confirmation_not_found"}:
+        raise HTTPException(404, result.get("message") or result["error"])
+    if result.get("error") in {"invalid_tool_arguments", "mcp_unavailable"}:
+        raise HTTPException(400, result.get("message") or result["error"])
+    if result.get("error") == "tool_execution_denied":
+        raise HTTPException(403, result)
+    return {"result": result}

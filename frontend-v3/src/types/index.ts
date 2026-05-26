@@ -70,6 +70,15 @@ export interface ToolResult {
   tool_call_id: string
   tool_name: string
   result: unknown
+  confirmed?: boolean
+}
+
+export interface ToolConfirmation {
+  token: string
+  expires_in_seconds: number
+  tool: string
+  dangerLevel: ToolDangerLevel
+  argumentPreview?: Record<string, unknown>
 }
 
 export interface Message {

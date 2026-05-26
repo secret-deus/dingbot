@@ -3,13 +3,19 @@
 from __future__ import annotations
 
 import json
+import base64
+import hashlib
+import hmac
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
+from app.core.config import get_settings
 from app.db.models import Role
 
 DISCOVERY_TOOLS = {"toolsearch", "tool_get", "tool_categories", "tool_reload_catalog"}
+CONFIRMATION_TOKEN_TTL_SECONDS = 600
 
 
 @dataclass(frozen=True)
@@ -27,9 +33,12 @@ class ToolPolicyDecision:
     reason: str
     metadata: Optional[ToolMetadata]
     requires_confirmation: bool = False
+    confirmation_token: Optional[str] = None
+    confirmation_expires_in_seconds: Optional[int] = None
 
     def to_audit_details(self, arguments: dict[str, Any]) -> dict[str, Any]:
         metadata = self.metadata
+        public_arguments = public_tool_arguments(arguments)
         return {
             "allowed": self.allowed,
             "reason": self.reason,
@@ -39,9 +48,21 @@ class ToolPolicyDecision:
             "executionPolicy": metadata.execution_policy if metadata else None,
             "server": metadata.server if metadata else None,
             "requiresConfirmation": self.requires_confirmation,
-            "argumentKeys": sorted(arguments.keys()),
-            "argumentPreview": _safe_argument_preview(arguments),
+            "argumentKeys": sorted(public_arguments.keys()),
+            "argumentPreview": _safe_argument_preview(public_arguments),
             **_aliyun_audit_context(metadata.name if metadata else "", arguments),
+        }
+
+    def to_confirmation_payload(self, arguments: dict[str, Any]) -> Optional[dict[str, Any]]:
+        if not self.requires_confirmation or not self.confirmation_token or not self.metadata:
+            return None
+        return {
+            "token": self.confirmation_token,
+            "expires_in_seconds": self.confirmation_expires_in_seconds
+            or CONFIRMATION_TOKEN_TTL_SECONDS,
+            "tool": self.metadata.name,
+            "dangerLevel": self.metadata.danger_level,
+            "argumentPreview": _safe_argument_preview(public_tool_arguments(arguments)),
         }
 
 
@@ -75,8 +96,9 @@ class ToolCatalogPolicy:
         user: Optional[dict],
         arguments: Optional[dict[str, Any]] = None,
     ) -> ToolPolicyDecision:
-        args = arguments or {}
-        confirmed = bool(args.pop("__confirmed", False))
+        args = dict(arguments or {})
+        confirmation_token = args.get("__confirmation_token")
+        public_arguments = public_tool_arguments(args)
 
         if name in DISCOVERY_TOOLS:
             return ToolPolicyDecision(
@@ -109,15 +131,37 @@ class ToolCatalogPolicy:
         if metadata.danger_level == "write":
             if not self._has_role(role, Role.OPERATOR):
                 return ToolPolicyDecision(False, "operator_role_required", metadata)
-            if not confirmed:
-                return ToolPolicyDecision(False, "confirmation_required", metadata, True)
+            confirmation_reason = self._confirmation_reason(
+                token=confirmation_token,
+                metadata=metadata,
+                user=user,
+                arguments=public_arguments,
+            )
+            if confirmation_reason != "confirmed":
+                return self._confirmation_required_decision(
+                    metadata,
+                    user,
+                    public_arguments,
+                    reason=confirmation_reason,
+                )
             return ToolPolicyDecision(True, "write_allowed", metadata)
 
         if metadata.danger_level == "dangerous":
             if not self._has_role(role, Role.ADMIN):
                 return ToolPolicyDecision(False, "admin_role_required", metadata)
-            if not confirmed:
-                return ToolPolicyDecision(False, "confirmation_required", metadata, True)
+            confirmation_reason = self._confirmation_reason(
+                token=confirmation_token,
+                metadata=metadata,
+                user=user,
+                arguments=public_arguments,
+            )
+            if confirmation_reason != "confirmed":
+                return self._confirmation_required_decision(
+                    metadata,
+                    user,
+                    public_arguments,
+                    reason=confirmation_reason,
+                )
             return ToolPolicyDecision(True, "dangerous_allowed", metadata)
 
         return ToolPolicyDecision(
@@ -133,6 +177,34 @@ class ToolCatalogPolicy:
     def _has_role(actual: Role, required: Role) -> bool:
         levels = {Role.VIEWER: 1, Role.OPERATOR: 2, Role.ADMIN: 3}
         return levels.get(actual, 0) >= levels.get(required, 0)
+
+    def _confirmation_required_decision(
+        self,
+        metadata: ToolMetadata,
+        user: Optional[dict],
+        arguments: dict[str, Any],
+        reason: str,
+    ) -> ToolPolicyDecision:
+        token = create_confirmation_token(metadata, user, arguments)
+        return ToolPolicyDecision(
+            allowed=False,
+            reason=reason,
+            metadata=metadata,
+            requires_confirmation=True,
+            confirmation_token=token,
+            confirmation_expires_in_seconds=CONFIRMATION_TOKEN_TTL_SECONDS,
+        )
+
+    def _confirmation_reason(
+        self,
+        token: Any,
+        metadata: ToolMetadata,
+        user: Optional[dict],
+        arguments: dict[str, Any],
+    ) -> str:
+        if not isinstance(token, str) or not token:
+            return "confirmation_required"
+        return verify_confirmation_token(token, metadata, user, arguments)
 
     @classmethod
     def _resolve_catalog_path(cls, catalog_path: Optional[str]) -> Path:
@@ -190,6 +262,83 @@ def _safe_argument_preview(arguments: dict[str, Any]) -> dict[str, Any]:
         }:
             preview[key] = value
     return preview
+
+
+def public_tool_arguments(arguments: Optional[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in (arguments or {}).items()
+        if not key.startswith("__confirmation") and key != "__confirmed"
+    }
+
+
+def create_confirmation_token(
+    metadata: ToolMetadata,
+    user: Optional[dict],
+    arguments: dict[str, Any],
+) -> str:
+    payload = {
+        "type": "tool-confirmation",
+        "sub": (user or {}).get("username", ""),
+        "tool": metadata.name,
+        "dangerLevel": metadata.danger_level,
+        "argumentsHash": _arguments_hash(arguments),
+        "exp": int(time.time()) + CONFIRMATION_TOKEN_TTL_SECONDS,
+    }
+    body = _b64url(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode())
+    signature = _sign(body)
+    return f"{body}.{signature}"
+
+
+def verify_confirmation_token(
+    token: str,
+    metadata: ToolMetadata,
+    user: Optional[dict],
+    arguments: dict[str, Any],
+) -> str:
+    try:
+        body, signature = token.split(".", 1)
+    except ValueError:
+        return "invalid_confirmation_token"
+    expected = _sign(body)
+    if not hmac.compare_digest(signature, expected):
+        return "invalid_confirmation_token"
+    try:
+        payload = json.loads(_b64url_decode(body).decode())
+    except (ValueError, json.JSONDecodeError):
+        return "invalid_confirmation_token"
+    if payload.get("type") != "tool-confirmation":
+        return "invalid_confirmation_token"
+    if payload.get("sub") != (user or {}).get("username", ""):
+        return "invalid_confirmation_token"
+    if payload.get("tool") != metadata.name:
+        return "invalid_confirmation_token"
+    if payload.get("dangerLevel") != metadata.danger_level:
+        return "invalid_confirmation_token"
+    if payload.get("argumentsHash") != _arguments_hash(arguments):
+        return "invalid_confirmation_token"
+    if int(payload.get("exp", 0)) < int(time.time()):
+        return "confirmation_token_expired"
+    return "confirmed"
+
+
+def _arguments_hash(arguments: dict[str, Any]) -> str:
+    encoded = json.dumps(arguments, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode()).hexdigest()
+
+
+def _sign(body: str) -> str:
+    secret = get_settings().secret_key.encode()
+    return _b64url(hmac.new(secret, body.encode(), hashlib.sha256).digest())
+
+
+def _b64url(value: bytes) -> str:
+    return base64.urlsafe_b64encode(value).decode().rstrip("=")
+
+
+def _b64url_decode(value: str) -> bytes:
+    padding = "=" * (-len(value) % 4)
+    return base64.urlsafe_b64decode(value + padding)
 
 
 def _aliyun_audit_context(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:

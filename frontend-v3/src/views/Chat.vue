@@ -108,7 +108,12 @@
         </div>
         <template v-else>
           <div class="message-column">
-            <MessageBubble v-for="msg in chatStore.messages" :key="msg.id" :message="msg" />
+            <MessageBubble
+              v-for="msg in chatStore.messages"
+              :key="msg.id"
+              :message="msg"
+              @tool-confirmed="reloadActiveMessages"
+            />
             <div v-if="chatStore.streaming" class="streaming-msg">
               <MessageBubble :message="{ id: 'streaming', role: 'assistant', content: chatStore.streamingContent, tool_calls: chatStore.streamingToolCalls, tool_results: chatStore.streamingToolResults, created_at: '' }" streaming />
               <n-spin size="small" />
@@ -198,6 +203,13 @@ async function newSession() {
 
 async function selectSession(id: string) {
   await chatStore.loadMessages(id)
+  await nextTick()
+  scrollToBottom()
+}
+
+async function reloadActiveMessages() {
+  if (!chatStore.activeSessionId) return
+  await chatStore.loadMessages(chatStore.activeSessionId)
   await nextTick()
   scrollToBottom()
 }
