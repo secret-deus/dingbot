@@ -130,10 +130,11 @@ const hasToolSearch = computed(() => toolRows.value.some((row) => Boolean(row.to
 const hasCopyableAnswer = computed(() => Boolean(props.message.content?.trim()))
 const hasAnyToolCall = computed(() => toolRows.value.length > 0)
 const hasIncompleteToolCall = computed(() => toolRows.value.some((row) => row.state !== 'done'))
-const hasErrorText = computed(() => /发生错误|执行失败|请求失败|error/i.test(props.message.content || ''))
+const hasErroredToolResult = computed(() => (props.message.tool_results || []).some((result) => toolPayloadHasError(result.result)))
+const hasErrorText = computed(() => /发生错误|执行失败|执行未完成|请求失败|调用失败|工具调用失败|failed to/i.test(props.message.content || ''))
 const failed = computed(() => {
   if (props.streaming) return false
-  return hasErrorText.value || (hasAnyToolCall.value && hasIncompleteToolCall.value)
+  return hasErrorText.value || hasErroredToolResult.value || (hasAnyToolCall.value && hasIncompleteToolCall.value)
 })
 const status = computed(() => {
   if (props.streaming) return 'running'
@@ -321,6 +322,12 @@ function summarizeResult(value: unknown): string {
   }
   if (unwrapped === undefined || unwrapped === null) return '空结果'
   return String(unwrapped)
+}
+
+function toolPayloadHasError(value: unknown): boolean {
+  const unwrapped = unwrapToolPayload(value)
+  if (!unwrapped || typeof unwrapped !== 'object' || Array.isArray(unwrapped)) return false
+  return Boolean((unwrapped as Record<string, unknown>).error)
 }
 
 function formatUnknown(value: unknown): string {
