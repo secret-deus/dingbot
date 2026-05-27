@@ -297,7 +297,20 @@ class ChatOrchestrator:
                 "tool_call_id": direct_tool_call["id"],
                 "result": tool_result,
             }
-            final_text = self._direct_tool_result_message(direct_tool_call, tool_result)
+            generated_text = ""
+            if chat is not None and self._direct_tool_result_can_be_summarized(
+                direct_tool_call["function"]["name"],
+                tool_result,
+            ):
+                generated_text = await self._generate_final_answer_from_tool_results(
+                    chat=chat,
+                    user_content=content_for_llm,
+                    tool_results=tool_results_made,
+                    stop_reason=None,
+                )
+            final_text = masker.unmask(generated_text) if masker else generated_text
+            if not final_text.strip():
+                final_text = self._direct_tool_result_message(direct_tool_call, tool_result)
             yield {"type": "token", "content": final_text}
             await self.message_repo.add_message(
                 session_id,
@@ -570,8 +583,9 @@ class ChatOrchestrator:
             "请直接生成最终回答。要求：\n"
             "1. 不要说还需要调用工具；\n"
             "2. 不要编造工具摘要中没有的数据；\n"
-            "3. 如果是巡检，给出健康结论、关键指标、异常/风险点和下一步建议；\n"
-            "4. 输出中文，结构清晰。"
+            "3. 如果是日志或事件查询，提炼关键现象、异常/错误线索和下一步建议；\n"
+            "4. 如果是巡检，给出健康结论、关键指标、异常/风险点和下一步建议；\n"
+            "5. 输出中文，结构清晰。"
         )
 
     @staticmethod
@@ -649,6 +663,17 @@ class ChatOrchestrator:
     def _tool_result_has_error(tool_result_item: dict) -> bool:
         payload = ChatOrchestrator._unwrap_tool_result(tool_result_item.get("result"))
         return isinstance(payload, dict) and bool(payload.get("error"))
+
+    @staticmethod
+    def _direct_tool_result_can_be_summarized(tool_name: str, tool_result: dict) -> bool:
+        if tool_name in K8S_MUTATION_ANCHOR_TOOLS:
+            return False
+        payload = ChatOrchestrator._unwrap_tool_result(tool_result)
+        if not isinstance(payload, dict):
+            return False
+        if payload.get("error") or payload.get("requires_confirmation"):
+            return False
+        return True
 
     @staticmethod
     def _build_masker(runtime_config: Optional[LLMRuntimeConfig]) -> Optional[DataMasker]:
@@ -1282,6 +1307,14 @@ class ChatOrchestrator:
             )
             suffix = f"；前 {min(len(items), 12)} 个：{preview}" if preview else ""
             return f"- `k8s-get-pods`: count={payload.get('count', len(items))}{suffix}"
+        if tool_name == "k8s-get-logs":
+            logs = str(payload.get("logs") or "").strip()
+            if len(logs) > 4000:
+                logs = f"{logs[:4000]}\n...<truncated>"
+            return (
+                f"- `k8s-get-logs`: namespace={payload.get('namespace')}, "
+                f"pod={payload.get('pod')}\n日志内容：\n{logs or '<empty>'}"
+            )
         if tool_name == "k8s-get-nodes":
             items = payload.get("items") or []
             preview = ", ".join(f"{item.get('name')}:{item.get('status')}" for item in items[:8])

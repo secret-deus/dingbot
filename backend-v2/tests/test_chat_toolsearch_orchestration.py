@@ -328,7 +328,7 @@ async def test_natural_scale_request_creates_pending_confirmation_without_tool_n
         session.add(chat_session)
         await session.flush()
 
-        fake_chat = _NoToolChat()
+        fake_chat = _FinalAnswerChat()
         orchestrator = ChatOrchestrator(
             db=session,
             chat_service=fake_chat,
@@ -367,6 +367,7 @@ async def test_natural_scale_request_creates_pending_confirmation_without_tool_n
         assert tool_results[0]["requires_confirmation"] is True
         assert tool_results[0]["confirmation"]["tool"] == "k8s-scale-deployment"
         assert fake_chat.tool_names_by_call == []
+        assert fake_chat.final_messages_by_call == []
         assert events[-1]["type"] == "done"
 
     await engine.dispose()
@@ -384,7 +385,7 @@ async def test_natural_restart_request_creates_pending_confirmation_without_tool
         session.add(chat_session)
         await session.flush()
 
-        fake_chat = _NoToolChat()
+        fake_chat = _FinalAnswerChat()
         orchestrator = ChatOrchestrator(
             db=session,
             chat_service=fake_chat,
@@ -419,6 +420,7 @@ async def test_natural_restart_request_creates_pending_confirmation_without_tool
         assert tool_results[0]["requires_confirmation"] is True
         assert tool_results[0]["confirmation"]["tool"] == "k8s-restart-deployment"
         assert fake_chat.tool_names_by_call == []
+        assert fake_chat.final_messages_by_call == []
         assert events[-1]["type"] == "done"
 
     await engine.dispose()
@@ -488,6 +490,48 @@ async def test_natural_logs_request_executes_read_tool_without_tool_name(tmp_pat
             }
         ]
         assert fake_chat.tool_names_by_call == []
+        assert events[-1]["type"] == "done"
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_direct_read_tool_generates_ai_summary_after_execution(tmp_path):
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'chat-direct-summary.db'}")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session:
+        chat_session = Session(title="direct summary")
+        session.add(chat_session)
+        await session.flush()
+
+        fake_chat = _FinalAnswerChat()
+        orchestrator = ChatOrchestrator(
+            db=session,
+            chat_service=fake_chat,
+            mcp_manager=_ScaleMCP(ToolCatalogPolicy(str(_scale_catalog(tmp_path)))),
+            current_user={"username": "operator", "role": "operator"},
+        )
+
+        events = [
+            event
+            async for event in orchestrator.handle_message(
+                chat_session.id,
+                "帮我看一下 default 命名空间 nginx-68c4864795-2fpbm 最近 50 行日志，并分析",
+            )
+        ]
+
+        tool_calls = [event["tool_call"] for event in events if event["type"] == "tool_call"]
+        assert [call["function"]["name"] for call in tool_calls] == ["k8s-get-logs"]
+        token_text = "".join(event["content"] for event in events if event["type"] == "token")
+        assert "日志分析：未发现异常" in token_text
+        assert fake_chat.tool_names_by_call == []
+        assert len(fake_chat.final_messages_by_call) == 1
+        final_prompt = fake_chat.final_messages_by_call[0][-1]["content"]
+        assert "hello from nginx-68c4864795-2fpbm" in final_prompt
+        assert "`k8s-get-logs`" in final_prompt
         assert events[-1]["type"] == "done"
 
     await engine.dispose()
@@ -751,6 +795,21 @@ class _NoToolChat:
         self.tool_names_by_call.append(sorted(tool["name"] for tool in (tools or [])))
         yield {"type": "token", "content": "已按当前上下文回答。"}
         yield {"type": "done"}
+
+
+class _FinalAnswerChat:
+    def __init__(self):
+        self.tool_names_by_call: list[list[str]] = []
+        self.final_messages_by_call: list[list[dict]] = []
+
+    async def stream_chat(self, messages, tools=None):
+        self.tool_names_by_call.append(sorted(tool["name"] for tool in (tools or [])))
+        yield {"type": "token", "content": "不应进入普通流式对话。"}
+        yield {"type": "done"}
+
+    async def chat(self, messages, tools=None):
+        self.final_messages_by_call.append(messages)
+        return {"content": "日志分析：未发现异常。"}
 
 
 class _DiscoveryOnlyChat:
