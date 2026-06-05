@@ -117,24 +117,24 @@ const collapsed = ref(false)
 const isNarrow = ref(false)
 const effectiveCollapsed = computed(() => isNarrow.value || collapsed.value)
 
-const appFontFamily = '"Tiempos Text", "Ivar Text", "Georgia", "Times New Roman", "Songti SC", "STSong", "SimSun", serif'
+const appFontFamily = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif'
 const themeOverrides: GlobalThemeOverrides = {
   common: {
     fontFamily: appFontFamily,
-    primaryColor: '#c96442',
-    primaryColorHover: '#d46d49',
-    primaryColorPressed: '#9f432d',
-    primaryColorSuppl: '#c96442',
-    bodyColor: '#f7f5ef',
-    cardColor: '#fffdf7',
-    modalColor: '#fffdf7',
-    popoverColor: '#fffdf7',
-    tableColor: '#fffdf7',
-    borderColor: '#ded8cd',
-    textColorBase: '#191814',
-    textColor1: '#191814',
-    textColor2: '#4f4a43',
-    textColor3: '#7b756a',
+    primaryColor: '#2f6fed',
+    primaryColorHover: '#1f63e8',
+    primaryColorPressed: '#174fc3',
+    primaryColorSuppl: '#2f6fed',
+    bodyColor: '#f4f7fb',
+    cardColor: '#ffffff',
+    modalColor: '#ffffff',
+    popoverColor: '#ffffff',
+    tableColor: '#ffffff',
+    borderColor: '#d7dee8',
+    textColorBase: '#171717',
+    textColor1: '#171717',
+    textColor2: '#3f4248',
+    textColor3: '#70727a',
     fontSize: '14px',
     borderRadius: '8px',
   },
@@ -146,31 +146,31 @@ const themeOverrides: GlobalThemeOverrides = {
     fontWeight: '570',
   },
   DataTable: {
-    thColor: '#fbf8f1',
-    tdColor: '#fffdf7',
-    tdColorHover: '#fbf6ee',
-    borderColor: '#e9e3d8',
-    thTextColor: '#7b756a',
-    tdTextColor: '#4f4a43',
+    thColor: '#f8fafc',
+    tdColor: '#ffffff',
+    tdColorHover: '#f6f8fb',
+    borderColor: '#e2e8f0',
+    thTextColor: '#70727a',
+    tdTextColor: '#3f4248',
   },
   Input: {
-    color: '#fffdf8',
-    colorFocus: '#fffdf8',
-    border: '1px solid #ded8cd',
-    borderHover: '1px solid #cbbdaa',
-    borderFocus: '1px solid #b7674c',
-    boxShadowFocus: '0 0 0 3px rgba(201, 100, 66, 0.14)',
+    color: '#ffffff',
+    colorFocus: '#ffffff',
+    border: '1px solid #d7dee8',
+    borderHover: '1px solid #bfc7d3',
+    borderFocus: '1px solid #2f6fed',
+    boxShadowFocus: '0 0 0 3px rgba(47, 111, 237, 0.18)',
     borderRadius: '8px',
   },
   Select: {
     peers: {
       InternalSelection: {
-        color: '#fffdf8',
-        colorActive: '#fffdf8',
-        border: '1px solid #ded8cd',
-        borderHover: '1px solid #cbbdaa',
-        borderActive: '1px solid #b7674c',
-        boxShadowActive: '0 0 0 3px rgba(201, 100, 66, 0.14)',
+        color: '#ffffff',
+        colorActive: '#ffffff',
+        border: '1px solid #d7dee8',
+        borderHover: '1px solid #bfc7d3',
+        borderActive: '1px solid #2f6fed',
+        boxShadowActive: '0 0 0 3px rgba(47, 111, 237, 0.18)',
         borderRadius: '8px',
       },
     },
@@ -238,14 +238,14 @@ onBeforeUnmount(() => {
 <style>
 .app-shell {
   display: grid;
-  grid-template-columns: 272px minmax(0, 1fr);
+  grid-template-columns: 280px minmax(0, 1fr);
   width: 100vw;
   height: 100dvh;
   min-height: 0;
   max-height: 100dvh;
   overflow: hidden;
-  border: 1px solid rgba(25, 24, 20, 0.08);
-  background: var(--dr-surface);
+  border: 0;
+  background: var(--dr-bg);
   color: var(--dr-text);
   transition: grid-template-columns 180ms ease;
 }
@@ -255,14 +255,52 @@ onBeforeUnmount(() => {
 }
 
 .app-sidebar {
+  position: relative;
+  isolation: isolate;
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 12px;
-  padding: 14px 12px;
-  border-right: 1px solid var(--dr-border);
-  background: var(--dr-sidebar);
+  gap: 14px;
+  padding: 16px 12px;
+  overflow: hidden;
+  border-right: 1px solid rgba(155, 215, 255, 0.18);
+  background:
+    linear-gradient(180deg, #0a0d14 0%, #111621 52%, #0a0d14 100%),
+    var(--dr-sidebar);
+  box-shadow: inset -1px 0 0 rgba(125, 227, 193, 0.08);
   transition: padding 180ms ease;
+}
+
+.app-sidebar::before {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background:
+    linear-gradient(115deg, rgba(155, 215, 255, 0.07) 0 1px, transparent 1px 58px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(255, 255, 255, 0.026) 1px, transparent 1px);
+  background-size: 100% 100%, 28px 28px, 28px 28px;
+  content: "";
+  opacity: 0.78;
+}
+
+.app-sidebar::after {
+  position: absolute;
+  top: 72px;
+  right: -42px;
+  z-index: -1;
+  width: 190px;
+  height: 320px;
+  background:
+    linear-gradient(135deg, rgba(155, 215, 255, 0.12), rgba(111, 140, 255, 0.05) 46%, transparent 47%),
+    linear-gradient(135deg, transparent 0 56%, rgba(125, 227, 193, 0.1) 56.4%, transparent 66%);
+  clip-path: polygon(22% 0, 100% 0, 78% 100%, 0 100%);
+  content: "";
+}
+
+.app-sidebar > * {
+  position: relative;
+  z-index: 1;
 }
 
 .window-dots {
@@ -278,7 +316,8 @@ onBeforeUnmount(() => {
   width: 36px;
   height: 8px;
   border-radius: 999px;
-  background: #d7cab9;
+  background: linear-gradient(90deg, var(--dr-neon-blue) 0 8px, var(--dr-neon-cyan) 8px 18px, var(--dr-neon-mint) 18px 28px);
+  box-shadow: 0 0 16px rgba(155, 215, 255, 0.16);
   content: "";
 }
 
@@ -297,7 +336,7 @@ onBeforeUnmount(() => {
   gap: 10px;
   border: 0;
   background: transparent;
-  color: var(--dr-text);
+  color: var(--dr-sidebar-text);
   cursor: pointer;
   text-align: left;
 }
@@ -308,12 +347,15 @@ onBeforeUnmount(() => {
   height: 28px;
   flex: 0 0 auto;
   place-items: center;
-  border: 1px solid #d4cbbd;
+  border: 1px solid rgba(155, 215, 255, 0.28);
   border-radius: var(--dr-radius);
-  background: #fffdf8;
-  color: var(--dr-accent-deep);
+  background:
+    linear-gradient(135deg, rgba(155, 215, 255, 0.16), rgba(125, 227, 193, 0.08)),
+    #0f1420;
+  color: #f7fbff;
   font-size: var(--dr-text-sm);
   font-weight: 680;
+  box-shadow: 0 0 0 1px rgba(155, 215, 255, 0.06), 0 0 18px rgba(111, 140, 255, 0.12);
 }
 
 .brand-copy {
@@ -323,15 +365,20 @@ onBeforeUnmount(() => {
 }
 
 .brand-copy strong {
-  color: var(--dr-text);
+  color: var(--dr-sidebar-text);
   font-size: var(--dr-text-lg);
   font-weight: 620;
   line-height: 1.15;
+  text-shadow: 0 0 18px rgba(155, 215, 255, 0.14);
 }
 
 .brand-copy small,
-.crumbs,
 .account-copy span {
+  color: var(--dr-sidebar-muted);
+  font-size: var(--dr-text-sm);
+}
+
+.crumbs {
   color: var(--dr-text-muted);
   font-size: var(--dr-text-sm);
 }
@@ -342,31 +389,48 @@ onBeforeUnmount(() => {
 }
 
 .new-chat-button {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   min-height: 44px;
   padding: 0 12px;
-  border: 1px solid #d9d1c4;
+  border: 1px solid rgba(155, 215, 255, 0.2);
   border-radius: var(--dr-radius);
-  background: #fffdf7;
-  color: var(--dr-text);
-  box-shadow: 0 1px 1px rgba(25, 24, 20, 0.04);
+  background:
+    linear-gradient(135deg, rgba(155, 215, 255, 0.08), rgba(125, 227, 193, 0.04)),
+    rgba(255, 255, 255, 0.06);
+  color: var(--dr-sidebar-text);
+  box-shadow: none;
   cursor: pointer;
   font-weight: 570;
+  overflow: hidden;
+}
+
+.new-chat-button::before {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(155, 215, 255, 0.1), transparent);
+  content: "";
+  opacity: 0;
+  transition: opacity 160ms ease;
 }
 
 .new-chat-button:hover,
 .nav-item:hover,
 .thread-item:hover {
-  background: var(--dr-surface-hover);
-  color: var(--dr-text);
+  background: rgba(155, 215, 255, 0.07);
+  color: var(--dr-sidebar-text);
 }
 
 .new-chat-button:hover {
-  border-color: #cabba7;
-  box-shadow: 0 8px 20px rgba(25, 24, 20, 0.06);
+  border-color: rgba(155, 215, 255, 0.34);
+  box-shadow: 0 0 0 1px rgba(155, 215, 255, 0.06), 0 0 24px rgba(111, 140, 255, 0.12);
+}
+
+.new-chat-button:hover::before {
+  opacity: 1;
 }
 
 .nav-group,
@@ -382,7 +446,7 @@ onBeforeUnmount(() => {
   border: 0;
   border-radius: var(--dr-radius);
   background: transparent;
-  color: var(--dr-text-soft);
+  color: var(--dr-sidebar-muted);
   cursor: pointer;
   text-align: left;
 }
@@ -395,23 +459,38 @@ onBeforeUnmount(() => {
   min-height: 38px;
   padding: 0 9px;
   font-size: var(--dr-text-md);
+  transition: background-color 160ms ease, box-shadow 160ms ease, color 160ms ease;
 }
 
 .nav-item.active {
-  background: #faf1ea;
-  color: var(--dr-text);
+  background:
+    linear-gradient(90deg, rgba(155, 215, 255, 0.16), rgba(111, 140, 255, 0.08) 54%, rgba(125, 227, 193, 0.05)),
+    rgba(255, 255, 255, 0.06);
+  color: var(--dr-sidebar-text);
   font-weight: 610;
-  box-shadow: inset 0 0 0 1px rgba(25, 24, 20, 0.05), 0 1px 0 rgba(255, 255, 255, 0.68);
+  clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 50%, calc(100% - 12px) 100%, 0 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(155, 215, 255, 0.2),
+    0 0 24px rgba(111, 140, 255, 0.1);
 }
 
 .nav-item.active::before {
   position: absolute;
-  left: -4px;
-  width: 3px;
-  height: 18px;
-  border-radius: 999px;
-  background: var(--dr-accent);
+  inset: 0 auto 0 0;
+  width: 9px;
+  background: linear-gradient(135deg, rgba(155, 215, 255, 0.8), rgba(125, 227, 193, 0.18) 70%, transparent 71%);
+  clip-path: polygon(0 0, 100% 0, 42% 100%, 0 100%);
   content: "";
+  opacity: 0.84;
+}
+
+.nav-item.active::after {
+  display: none;
+}
+
+.nav-item.active .n-icon {
+  color: var(--dr-neon-cyan);
+  filter: drop-shadow(0 0 8px rgba(155, 215, 255, 0.26));
 }
 
 .recent-context {
@@ -422,7 +501,7 @@ onBeforeUnmount(() => {
 
 .nav-title {
   margin: 14px 8px 6px;
-  color: var(--dr-text-muted);
+  color: color-mix(in srgb, var(--dr-neon-cyan) 60%, var(--dr-sidebar-muted) 40%);
   font-size: var(--dr-text-xs);
   font-weight: 590;
   text-transform: uppercase;
@@ -444,7 +523,7 @@ onBeforeUnmount(() => {
   gap: 10px;
   min-height: 48px;
   padding: 8px 0 0;
-  border-top: 1px solid #ded5c7;
+  border-top: 1px solid rgba(155, 215, 255, 0.14);
 }
 
 .avatar {
@@ -453,8 +532,10 @@ onBeforeUnmount(() => {
   height: 28px;
   place-items: center;
   border-radius: 50%;
-  background: #d8d0c3;
-  color: var(--dr-text);
+  background:
+    linear-gradient(135deg, rgba(155, 215, 255, 0.14), rgba(125, 227, 193, 0.08)),
+    rgba(255, 255, 255, 0.1);
+  color: var(--dr-sidebar-text);
   font-size: var(--dr-text-xs);
   font-weight: 650;
 }
@@ -467,7 +548,7 @@ onBeforeUnmount(() => {
 
 .account-copy strong {
   overflow: hidden;
-  color: var(--dr-text-soft);
+  color: var(--dr-sidebar-text);
   font-size: var(--dr-text-sm);
   font-weight: 610;
   text-overflow: ellipsis;
@@ -475,26 +556,50 @@ onBeforeUnmount(() => {
 }
 
 .app-main {
+  position: relative;
+  isolation: isolate;
   display: flex;
   min-width: 0;
   min-height: 0;
   height: 100%;
   overflow: hidden;
   flex-direction: column;
-  background: var(--dr-bg);
+  background: linear-gradient(135deg, #f4f7fb 0%, #ffffff 58%, #eef4f8 100%);
+}
+
+.app-main::before {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background:
+    linear-gradient(135deg, rgba(17, 17, 22, 0.16) 0 27%, transparent 27.2%),
+    linear-gradient(135deg, rgba(47, 111, 237, 0.1) 0 38%, transparent 38.2%);
+  content: "";
+}
+
+.app-main::after {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(135deg, transparent 0 31%, rgba(255, 255, 255, 0.78) 31.2% 100%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0.02));
+  content: "";
 }
 
 .app-topbar {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  flex: 0 0 56px;
-  min-height: 56px;
-  padding: 0 22px;
+  flex: 0 0 58px;
+  min-height: 58px;
+  padding: 0 24px;
   border-bottom: 1px solid var(--dr-border-soft);
-  background: rgba(250, 247, 241, 0.86);
-  backdrop-filter: blur(12px);
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(18px);
 }
 
 .crumbs {
@@ -520,11 +625,13 @@ onBeforeUnmount(() => {
 }
 
 .app-content {
+  position: relative;
+  z-index: 1;
   min-height: 0;
   flex: 1 1 auto;
   overflow: auto;
-  padding: 28px;
-  background: var(--dr-bg);
+  padding: 24px;
+  background: transparent;
 }
 
 .app-content-full {

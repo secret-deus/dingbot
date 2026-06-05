@@ -544,7 +544,7 @@ function parseSlsMappings(value: string) {
   border: 1px solid var(--dr-border-soft);
   border-radius: var(--dr-radius);
   padding: 0 10px;
-  background: #fffdf8;
+  background: #ffffff;
 }
 .wide-field {
   grid-column: 1 / -1;
@@ -562,7 +562,7 @@ function parseSlsMappings(value: string) {
   min-height: 58px;
   border: 1px solid var(--dr-border-soft);
   border-radius: var(--dr-radius-sm);
-  background: #fffdf8;
+  background: #ffffff;
   padding: 10px 12px;
   display: flex;
   flex-direction: column;

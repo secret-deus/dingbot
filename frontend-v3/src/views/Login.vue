@@ -71,17 +71,20 @@ async function onLogin() {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: var(--dr-bg);
+  background:
+    radial-gradient(circle at 18% 12%, rgba(47, 111, 237, 0.18), transparent 30%),
+    linear-gradient(135deg, #111116 0%, #1b1c22 38%, #f4f7fb 38%, #ffffff 100%);
   color: var(--dr-text);
 }
 
 .login-card {
   width: min(460px, 100%);
-  padding: 18px;
-  border: 1px solid var(--dr-border);
+  padding: 20px;
+  border: 1px solid rgba(23, 23, 23, 0.08);
   border-radius: var(--dr-radius-lg);
-  background: var(--dr-surface);
+  background: rgba(255, 255, 255, 0.92);
   box-shadow: var(--dr-shadow-lift);
+  backdrop-filter: blur(18px);
 }
 
 .login-brand {
@@ -103,7 +106,7 @@ async function onLogin() {
   margin: 4px 0 0;
   color: var(--dr-text);
   font-size: 22px;
-  font-weight: 620;
+  font-weight: 650;
   line-height: 1.14;
 }
 

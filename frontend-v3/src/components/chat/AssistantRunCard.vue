@@ -364,10 +364,10 @@ function errorMessage(error: unknown, fallback: string) {
 .assistant-run-card {
   width: 100%;
   overflow: hidden;
-  border: 1px solid var(--dr-border-soft);
+  border: 1px solid rgba(23, 23, 23, 0.08);
   border-radius: var(--dr-radius);
-  background: var(--dr-surface-lift);
-  box-shadow: var(--dr-shadow);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 1px 1px rgba(23, 23, 23, 0.04), 0 16px 36px rgba(42, 47, 55, 0.08);
 }
 
 .run-card-head {
@@ -377,8 +377,8 @@ function errorMessage(error: unknown, fallback: string) {
   gap: 12px;
   min-height: 56px;
   padding: 14px 16px;
-  border-bottom: 1px solid var(--dr-border-soft);
-  background: var(--dr-bg-page);
+  border-bottom: 1px solid rgba(23, 23, 23, 0.08);
+  background: linear-gradient(180deg, #ffffff, #f8fafc);
 }
 
 .card-kicker,
@@ -465,7 +465,7 @@ function errorMessage(error: unknown, fallback: string) {
   padding: 12px;
   border: 1px solid var(--dr-border-soft);
   border-radius: var(--dr-radius);
-  background: #fbf8f1;
+  background: #f7f8fa;
 }
 
 .content :deep(code) {
@@ -484,7 +484,7 @@ function errorMessage(error: unknown, fallback: string) {
   align-items: center;
   min-height: 28px;
   padding: 0 9px;
-  border: 1px solid #e5cfc5;
+  border: 1px solid rgba(47, 111, 237, 0.24);
   border-radius: var(--dr-radius);
   background: var(--dr-accent-wash);
   color: var(--dr-accent-deep);
@@ -507,9 +507,9 @@ function errorMessage(error: unknown, fallback: string) {
   grid-template-columns: 10px minmax(0, 1fr);
   gap: 10px;
   padding: 10px;
-  border: 1px solid var(--dr-border-soft);
+  border: 1px solid rgba(23, 23, 23, 0.08);
   border-radius: var(--dr-radius);
-  background: #fffdf8;
+  background: #ffffff;
 }
 
 .chain-dot {
@@ -518,6 +518,7 @@ function errorMessage(error: unknown, fallback: string) {
   margin-top: 8px;
   border-radius: 50%;
   background: var(--dr-accent);
+  box-shadow: 0 0 0 4px rgba(47, 111, 237, 0.12);
 }
 
 .chain-main {
@@ -553,9 +554,9 @@ function errorMessage(error: unknown, fallback: string) {
   gap: 12px;
   margin-top: 10px;
   padding: 10px;
-  border: 1px solid #f0d18b;
+  border: 1px solid rgba(180, 83, 9, 0.32);
   border-radius: var(--dr-radius);
-  background: #fff8e6;
+  background: var(--dr-amber-soft);
 }
 
 .confirmation-panel div {
@@ -576,8 +577,8 @@ function errorMessage(error: unknown, fallback: string) {
 }
 
 .technical-details {
-  border-top: 1px solid var(--dr-border-soft);
-  background: var(--dr-bg-page);
+  border-top: 1px solid rgba(23, 23, 23, 0.08);
+  background: #f8fafc;
 }
 
 .technical-details > summary {
@@ -600,9 +601,9 @@ function errorMessage(error: unknown, fallback: string) {
   display: grid;
   gap: 8px;
   padding: 12px;
-  border: 1px solid var(--dr-border-soft);
+  border: 1px solid rgba(23, 23, 23, 0.08);
   border-radius: var(--dr-radius);
-  background: var(--dr-surface);
+  background: #ffffff;
 }
 
 .detail-head span,
@@ -625,7 +626,7 @@ function errorMessage(error: unknown, fallback: string) {
   padding: 10px;
   border: 1px solid var(--dr-border-soft);
   border-radius: var(--dr-radius);
-  background: #fbf8f1;
+  background: #f7f8fa;
   color: var(--dr-text-soft);
   font-family: var(--dr-font-mono);
   font-size: var(--dr-text-xs);

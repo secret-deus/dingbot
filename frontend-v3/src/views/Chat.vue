@@ -330,7 +330,9 @@ function stopStream() {
   min-height: 0;
   display: grid;
   grid-template-columns: 276px minmax(0, 1fr);
-  background: var(--dr-bg);
+  background:
+    radial-gradient(circle at 20% 0%, rgba(47, 111, 237, 0.11), transparent 28%),
+    linear-gradient(135deg, #f4f7fb 0%, #ffffff 52%, #eef4f8 100%);
   color: var(--dr-text);
   overflow: hidden;
   transition: grid-template-columns 180ms ease;
@@ -341,8 +343,9 @@ function stopStream() {
 .session-rail {
   min-width: 0;
   min-height: 0;
-  border-right: 1px solid var(--dr-border);
-  background: var(--dr-sidebar);
+  border-right: 1px solid rgba(23, 23, 23, 0.08);
+  background: rgba(255, 255, 255, 0.76);
+  backdrop-filter: blur(16px);
   padding: 14px;
   overflow: hidden;
   display: flex;
@@ -400,11 +403,12 @@ function stopStream() {
   overflow: hidden;
 }
 .session-row:hover {
-  background: var(--dr-surface-hover);
+  background: rgba(47, 111, 237, 0.06);
 }
 .session-row.active {
-  background: #faf1ea;
-  border-color: rgba(25, 24, 20, 0.06);
+  background: #ffffff;
+  border-color: rgba(47, 111, 237, 0.28);
+  box-shadow: 0 1px 1px rgba(23, 23, 23, 0.03), 0 10px 24px rgba(42, 47, 55, 0.07);
 }
 .session-item {
   min-width: 0;
@@ -478,9 +482,9 @@ function stopStream() {
   height: 30px;
   display: grid;
   place-items: center;
-  border: 1px solid #d8d0c3;
+  border: 1px solid rgba(47, 111, 237, 0.24);
   border-radius: var(--dr-radius);
-  background: #fffdf8;
+  background: var(--dr-accent-wash);
   color: var(--dr-accent-deep);
   font-size: 12px;
   font-weight: 650;
@@ -493,7 +497,7 @@ function stopStream() {
   max-height: 100%;
   display: grid;
   grid-template-rows: 64px minmax(0, 1fr);
-  background: var(--dr-bg);
+  background: transparent;
   overflow: hidden;
 }
 .chat-topbar {
@@ -501,9 +505,9 @@ function stopStream() {
   z-index: 2;
   min-height: 64px;
   padding: 0 24px;
-  border-bottom: 1px solid var(--dr-border-soft);
-  background: rgba(250, 247, 241, 0.86);
-  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(23, 23, 23, 0.08);
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(18px);
 }
 .chat-title {
   font-size: 15px;
@@ -534,11 +538,11 @@ function stopStream() {
   overflow-y: scroll;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  scrollbar-color: #b9ad9c transparent;
+  scrollbar-color: #b7c2d3 transparent;
   scrollbar-width: thin;
   scrollbar-gutter: stable;
-  padding: 28px 24px 154px;
-  box-shadow: inset -1px 0 0 #e3dacc;
+  padding: 30px 24px 156px;
+  box-shadow: inset -1px 0 0 rgba(23, 23, 23, 0.05);
 }
 .message-scroll::-webkit-scrollbar,
 .session-list::-webkit-scrollbar {
@@ -552,11 +556,11 @@ function stopStream() {
 .session-list::-webkit-scrollbar-thumb {
   border: 3px solid transparent;
   border-radius: 999px;
-  background: #cfc5b7;
+  background: #c1cad8;
   background-clip: content-box;
 }
 .message-column {
-  width: min(100%, 880px);
+  width: min(100%, 920px);
   margin: 0 auto;
 }
 .streaming-msg {
@@ -594,9 +598,9 @@ function stopStream() {
   height: 48px;
   display: grid;
   place-items: center;
-  border: 1px solid #d4cbbd;
+  border: 1px solid rgba(47, 111, 237, 0.28);
   border-radius: var(--dr-radius);
-  background: #fffdf8;
+  background: var(--dr-accent-wash);
   color: var(--dr-accent-deep);
   font-weight: 700;
 }

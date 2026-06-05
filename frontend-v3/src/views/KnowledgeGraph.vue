@@ -64,7 +64,7 @@
           >
             <defs>
               <marker id="kg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                <path d="M 0 0 L 10 5 L 0 10 z" fill="#7b756a" />
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#7b8794" />
               </marker>
             </defs>
             <path
@@ -159,12 +159,12 @@ const kindNames: Record<string, string> = {
   node: 'Node',
 }
 const kindColors: Record<string, string> = {
-  ingress: '#9f432d',
-  service: '#3f667c',
-  deployment: '#39745d',
-  replicaset: '#7a6a45',
-  pod: '#5f7d5a',
-  node: '#9a6a1b',
+  ingress: '#4d6786',
+  service: '#315a85',
+  deployment: '#0f766e',
+  replicaset: '#53616f',
+  pod: '#49766c',
+  node: '#5b6f99',
 }
 
 const selectedNode = computed(() => graph.value?.nodes.find((node) => node.id === selectedNodeId.value) || null)
@@ -318,7 +318,7 @@ function kindLabel(kind: string) {
 }
 
 function kindColor(kind: string) {
-  return kindColors[kind] || '#7b756a'
+  return kindColors[kind] || '#64748b'
 }
 
 function trimName(value: string) {
@@ -400,7 +400,7 @@ onMounted(async () => {
   min-height: 92px;
   border: 1px solid var(--dr-border-soft);
   border-radius: var(--dr-radius);
-  background: var(--dr-surface);
+  background: #ffffff;
   padding: 15px;
   display: flex;
   flex-direction: column;
@@ -474,7 +474,11 @@ onMounted(async () => {
   overflow: auto;
   border: 1px solid var(--dr-border-soft);
   border-radius: var(--dr-radius);
-  background: #fbf8f1;
+  background:
+    linear-gradient(90deg, rgba(49, 90, 133, 0.045) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(49, 90, 133, 0.04) 1px, transparent 1px),
+    #f6f8fb;
+  background-size: 28px 28px;
 }
 .graph-svg {
   width: 100%;
@@ -483,21 +487,21 @@ onMounted(async () => {
 }
 .graph-edge {
   fill: none;
-  stroke: #7b756a;
+  stroke: #7b8794;
   stroke-width: 1.5;
-  opacity: 0.72;
+  opacity: 0.68;
 }
 .graph-node {
   cursor: pointer;
   outline: none;
 }
 .graph-node rect {
-  stroke: rgba(255, 250, 243, 0.65);
+  stroke: rgba(219, 231, 255, 0.7);
   stroke-width: 1;
 }
 .graph-node:hover rect,
 .graph-node.selected rect {
-  stroke: #fffaf3;
+  stroke: #dbe7ff;
   stroke-width: 2;
 }
 .node-kind {
@@ -539,7 +543,7 @@ onMounted(async () => {
   overflow: auto;
   border: 1px solid var(--dr-border-soft);
   border-radius: var(--dr-radius);
-  background: #fbf8f1;
+  background: #f6f8fb;
   color: var(--dr-text-soft);
   font-family: "SFMono-Regular", Consolas, monospace;
   font-size: 12px;

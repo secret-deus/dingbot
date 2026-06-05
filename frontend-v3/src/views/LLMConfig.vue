@@ -478,7 +478,7 @@ onMounted(loadConfig)
   border: 1px solid var(--dr-border-soft);
   border-radius: var(--dr-radius);
   padding: 0 12px;
-  background: #fffdf8;
+  background: #ffffff;
   color: var(--dr-text-soft);
 }
 .provider-list {
@@ -498,7 +498,7 @@ onMounted(loadConfig)
   padding: 12px;
   border: 1px solid transparent;
   border-radius: var(--dr-radius);
-  background: #fffdf8;
+  background: #ffffff;
   color: var(--dr-text-soft);
   text-align: left;
   cursor: pointer;
@@ -507,7 +507,7 @@ onMounted(loadConfig)
   background: var(--dr-surface-hover);
 }
 .provider-item.active {
-  background: #faf1ea;
+  background: var(--dr-accent-wash);
   border-color: rgba(25, 24, 20, 0.06);
 }
 .provider-main {

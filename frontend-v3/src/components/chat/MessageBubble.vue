@@ -51,9 +51,9 @@ const renderedContent = computed(() => {
   flex: 0 0 30px;
   display: grid;
   place-items: center;
-  border: 1px solid #d4cbbd;
+  border: 1px solid rgba(47, 111, 237, 0.24);
   border-radius: var(--dr-radius);
-  background: #fffdf8;
+  background: var(--dr-accent-wash);
   color: var(--dr-accent-deep);
   font-size: 11px;
   font-weight: 700;
@@ -72,9 +72,10 @@ const renderedContent = computed(() => {
 .message-row.user .message-body {
   max-width: 70%;
   padding: 10px 14px;
-  border: 1px solid #e5cfc5;
+  border: 1px solid rgba(47, 111, 237, 0.3);
   border-radius: var(--dr-radius);
-  background: var(--dr-accent-wash);
+  background: #ffffff;
+  box-shadow: 0 1px 1px rgba(23, 23, 23, 0.03), 0 12px 28px rgba(42, 47, 55, 0.07);
 }
 .message-row.assistant .message-body,
 .message-row.system .message-body,
@@ -99,7 +100,7 @@ const renderedContent = computed(() => {
   margin-bottom: 0;
 }
 .content :deep(pre) {
-  background: #fbf8f1;
+  background: #f7f8fa;
   border: 1px solid var(--dr-border-soft);
   padding: 12px;
   border-radius: var(--dr-radius);

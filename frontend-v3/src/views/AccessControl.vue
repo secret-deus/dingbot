@@ -417,7 +417,7 @@ onMounted(() => {
 }
 
 .role-row:hover {
-  background: #fbf6ee;
+  background: #f6f8fb;
 }
 
 .create-user-form {
@@ -526,7 +526,7 @@ onMounted(() => {
   margin-top: 7px;
   border-radius: 50%;
   background: var(--dr-accent);
-  box-shadow: 0 0 0 4px rgba(201, 100, 66, 0.1);
+  box-shadow: 0 0 0 4px rgba(47, 111, 237, 0.1);
 }
 
 .audit-item strong {

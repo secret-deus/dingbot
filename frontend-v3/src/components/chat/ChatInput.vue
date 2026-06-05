@@ -58,18 +58,19 @@ function onKeydown(e: KeyboardEvent) {
 
 <style scoped>
 .composer {
-  width: min(100%, 880px);
-  min-height: 58px;
+  width: min(100%, 920px);
+  min-height: 62px;
   margin: 0 auto;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 44px;
   align-items: end;
   gap: 10px;
-  padding: 10px 10px 10px 16px;
-  border: 1px solid var(--dr-border);
+  padding: 11px 11px 11px 16px;
+  border: 1px solid rgba(47, 111, 237, 0.3);
   border-radius: var(--dr-radius);
-  background: var(--dr-surface-lift);
-  box-shadow: var(--dr-shadow-lift);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 0 0 4px rgba(47, 111, 237, 0.06), var(--dr-shadow-lift);
+  backdrop-filter: blur(14px);
 }
 .composer-input :deep(.n-input-wrapper) {
   padding-left: 0;
@@ -84,14 +85,14 @@ function onKeydown(e: KeyboardEvent) {
   color: var(--dr-text);
 }
 .send-button {
-  width: 40px;
-  height: 40px;
+  width: 42px;
+  height: 42px;
   align-self: end;
 }
 .stop-button {
-  --n-color: #a33d2f;
-  --n-color-hover: #8f3328;
-  --n-color-pressed: #7d2b22;
-  --n-color-focus: #a33d2f;
+  --n-color: var(--dr-red);
+  --n-color-hover: #9f1f16;
+  --n-color-pressed: #842018;
+  --n-color-focus: var(--dr-red);
 }
 </style>

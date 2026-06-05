@@ -22,27 +22,42 @@
 
     <section class="command-strip" aria-label="运行状态摘要">
       <div class="command-metric">
-        <span>Namespace</span>
+        <div class="metric-header">
+          <span>Namespace</span>
+          <em :class="['metric-status', cluster.available ? 'green' : 'amber']">{{ cluster.available ? 'active' : 'hold' }}</em>
+        </div>
         <strong>{{ cluster.namespace }}</strong>
         <small>{{ clusterModeText }}</small>
       </div>
       <div class="command-metric">
-        <span>MCP Tools</span>
+        <div class="metric-header">
+          <span>MCP Tools</span>
+          <em :class="['metric-status', tools.unavailable > 0 ? 'amber' : 'green']">{{ tools.unavailable > 0 ? 'check' : 'ready' }}</em>
+        </div>
         <strong>{{ tools.available }}/{{ tools.total }}</strong>
         <small>{{ tools.unavailable }} unavailable</small>
       </div>
       <div class="command-metric">
-        <span>Knowledge Graph</span>
+        <div class="metric-header">
+          <span>Knowledge Graph</span>
+          <em :class="['metric-status', graphNodeCount > 0 ? 'blue' : 'amber']">{{ graphNodeCount > 0 ? 'mapped' : 'empty' }}</em>
+        </div>
         <strong>{{ graphNodeCount }}</strong>
         <small>{{ coveragePercent }}% metrics coverage</small>
       </div>
       <div class="command-metric">
-        <span>Automation</span>
+        <div class="metric-header">
+          <span>Automation</span>
+          <em :class="['metric-status', dashboard?.scheduler.running ? 'green' : 'amber']">{{ dashboard?.scheduler.running ? 'live' : 'idle' }}</em>
+        </div>
         <strong>{{ schedulerJobs }}</strong>
         <small>{{ schedulerState }}</small>
       </div>
       <div class="command-metric">
-        <span>LLM</span>
+        <div class="metric-header">
+          <span>LLM</span>
+          <em :class="['metric-status', dashboard?.llm.enabled ? 'green' : 'amber']">{{ dashboard?.llm.enabled ? 'on' : 'off' }}</em>
+        </div>
         <strong>{{ llmState }}</strong>
         <small>structured fallback ready</small>
       </div>
@@ -270,18 +285,18 @@ const router = useRouter()
 const message = useMessage()
 
 const defaultTheme: DashboardTheme = {
-  background: '#f7f5ef',
-  shell: '#fffdf7',
-  surface: '#fffefa',
-  surface_alt: '#f1eee6',
-  surface_light: '#fffefa',
-  border: '#ded8cd',
-  text: '#191814',
-  muted: '#7b756a',
-  primary: '#39745d',
-  accent: '#c96442',
-  warning: '#9a6a1b',
-  danger: '#b84535',
+  background: '#f4f7fb',
+  shell: '#ffffff',
+  surface: '#ffffff',
+  surface_alt: '#eef4ff',
+  surface_light: '#ffffff',
+  border: '#d7dee8',
+  text: '#171717',
+  muted: '#70727a',
+  primary: '#0f766e',
+  accent: '#2f6fed',
+  warning: '#8f6b18',
+  danger: '#b42318',
 }
 
 const fallbackCluster: DashboardCluster = {
@@ -377,25 +392,26 @@ onMounted(refresh)
 
 <style scoped>
 .ops-page {
+  position: relative;
   min-height: calc(100dvh - 48px);
   overflow: auto;
   padding: 20px;
   box-sizing: border-box;
-  background: var(--ops-bg);
+  background: transparent;
   color: var(--ops-text);
   font-size: var(--dr-text-sm);
   line-height: 1.5;
-  --ops-row: #fbf8f1;
-  --ops-row-hover: #f2ece1;
+  --ops-row: #f8fafc;
+  --ops-row-hover: #eef1f5;
   --ops-text-secondary: var(--ops-muted);
   --tone-green: var(--ops-primary);
   --tone-green-bg: #dcebe2;
   --tone-blue: var(--ops-accent);
-  --tone-blue-bg: #fff1e8;
+  --tone-blue-bg: #eaf1ff;
   --tone-amber: var(--ops-warning);
-  --tone-amber-bg: #f2e5c8;
-  --tone-slate: #7b756a;
-  --tone-slate-bg: #f1eee6;
+  --tone-amber-bg: #f5ebc6;
+  --tone-slate: #64748b;
+  --tone-slate-bg: #eef1f5;
 }
 
 .ops-page *,
@@ -436,7 +452,7 @@ onMounted(refresh)
   flex: 0 0 auto;
   border: 1px solid var(--ops-border);
   border-radius: 8px;
-  background: #fffdf8;
+  background: #ffffff;
   color: var(--ops-accent);
   display: grid;
   place-items: center;
@@ -561,25 +577,74 @@ onMounted(refresh)
 }
 
 .command-metric {
+  --metric-accent: var(--ops-accent);
+  position: relative;
   min-width: 0;
   min-height: 76px;
-  padding: 12px;
+  padding: 13px 12px 12px;
   border: 1px solid color-mix(in srgb, var(--ops-border) 82%, white 18%);
-  border-left: 3px solid var(--ops-accent);
   border-radius: 8px;
   background: var(--ops-surface);
+  overflow: hidden;
 }
 
 .command-metric:nth-child(2),
 .command-metric:nth-child(4) {
-  border-left-color: var(--ops-primary);
+  --metric-accent: var(--ops-primary);
 }
 
 .command-metric:nth-child(5) {
-  border-left-color: var(--ops-warning);
+  --metric-accent: var(--ops-warning);
 }
 
-.command-metric span,
+.command-metric::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 3px;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--metric-accent) 55%, transparent), transparent 78%);
+  content: "";
+}
+
+.metric-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  gap: 8px;
+}
+
+.metric-status {
+  min-height: 22px;
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border: 1px solid color-mix(in srgb, var(--metric-accent) 24%, var(--ops-border) 76%);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--metric-accent) 10%, white 90%);
+  color: var(--metric-accent);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 760;
+  line-height: 1.2;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.metric-status.green {
+  --metric-accent: var(--ops-primary);
+}
+
+.metric-status.amber {
+  --metric-accent: var(--ops-warning);
+}
+
+.metric-status.blue {
+  --metric-accent: var(--ops-accent);
+}
+
+.command-metric .metric-header span,
 .command-metric small {
   display: block;
   overflow: hidden;
@@ -588,7 +653,7 @@ onMounted(refresh)
   white-space: nowrap;
 }
 
-.command-metric span {
+.command-metric .metric-header span {
   font-size: 12px;
   font-weight: 700;
 }
@@ -596,7 +661,7 @@ onMounted(refresh)
 .command-metric strong {
   display: block;
   overflow: hidden;
-  margin-top: 4px;
+  margin-top: 8px;
   color: var(--ops-text);
   font-size: 18px;
   line-height: 1.15;
@@ -662,15 +727,18 @@ onMounted(refresh)
 }
 
 .insight-card {
+  --card-accent: var(--ops-accent);
+  position: relative;
   display: grid;
-  grid-template-columns: 40px minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 11px;
   min-height: 74px;
   padding: 10px;
   border: 1px solid color-mix(in srgb, var(--ops-border) 78%, white 22%);
-  border-left-width: 3px;
   border-radius: 8px;
-  background: var(--ops-surface);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(250, 252, 255, 0.92)),
+    var(--ops-surface);
 }
 
 .insight-card span,
@@ -701,36 +769,45 @@ onMounted(refresh)
 }
 
 .generated-icon {
-  width: 40px;
-  height: 40px;
+  width: 38px;
+  height: 38px;
   display: grid;
   place-items: center;
   border: 1px solid color-mix(in srgb, var(--ops-border) 70%, white 30%);
-  border-radius: 8px;
-  background: #fffdf8;
+  border-radius: 7px;
+  background: #ffffff;
   color: var(--ops-accent);
   font-size: 11px;
   font-weight: 700;
 }
 
+.insight-card .generated-icon,
+.resource-node .generated-icon {
+  border-color: color-mix(in srgb, var(--card-accent) 22%, var(--ops-border) 78%);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--card-accent) 18%, white 82%), color-mix(in srgb, var(--card-accent) 7%, white 93%));
+  color: var(--card-accent);
+  clip-path: polygon(0 0, 100% 0, 100% 72%, 74% 100%, 0 100%);
+}
+
 .insight-card.green,
 .resource-node.green {
-  border-left-color: var(--ops-primary);
+  --card-accent: var(--ops-primary);
 }
 
 .insight-card.amber,
 .resource-node.amber {
-  border-left-color: var(--ops-warning);
+  --card-accent: var(--ops-warning);
 }
 
 .insight-card.blue,
 .resource-node.blue {
-  border-left-color: var(--ops-accent);
+  --card-accent: var(--ops-accent);
 }
 
 .insight-card.slate,
 .resource-node.slate {
-  border-left-color: var(--ops-muted);
+  --card-accent: var(--ops-muted);
 }
 
 .matrix-grid {
@@ -758,8 +835,32 @@ onMounted(refresh)
 }
 
 .ask-panel {
+  position: relative;
   padding: 16px;
+  overflow: hidden;
+  border-radius: 0;
   background: var(--ops-surface);
+  clip-path: polygon(0 0, calc(100% - 24px) 0, 100% 24px, 100% 100%, 0 100%);
+}
+
+.ask-panel::after {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 84px;
+  height: 84px;
+  background:
+    linear-gradient(135deg, transparent 0 49%, rgba(47, 111, 237, 0.28) 50%, transparent 51%),
+    linear-gradient(135deg, rgba(47, 111, 237, 0.1), rgba(15, 118, 110, 0.05) 62%, transparent 63%);
+  content: "";
+  pointer-events: none;
+}
+
+.ask-head,
+.prompt-box,
+.suggestions {
+  position: relative;
+  z-index: 1;
 }
 
 .agent-state {
@@ -791,7 +892,7 @@ onMounted(refresh)
   padding: 8px 8px 8px 12px;
   border: 1px solid color-mix(in srgb, var(--ops-accent) 54%, var(--ops-border) 46%);
   border-radius: 8px;
-  background: #fffdf8;
+  background: #ffffff;
 }
 
 .prompt-icon {
@@ -835,12 +936,12 @@ onMounted(refresh)
   gap: 7px;
   padding: 0 14px;
   background: var(--ops-accent);
-  color: #fffaf6;
+  color: #ffffff;
 }
 
 .prompt-box button:hover,
 .action-row button:first-child:hover {
-  background: #d46d49;
+  background: #1f63e8;
 }
 
 .suggestions {
@@ -900,7 +1001,7 @@ onMounted(refresh)
 }
 
 .avatar.bot {
-  background: #fffdf8;
+  background: #ffffff;
   color: var(--ops-accent);
 }
 
@@ -918,7 +1019,7 @@ onMounted(refresh)
   padding: 14px;
   border: 1px solid color-mix(in srgb, var(--ops-border) 80%, white 20%);
   border-radius: 8px;
-  background: #fffdf8;
+  background: #ffffff;
 }
 
 .bot-summary h3 {
@@ -1001,7 +1102,7 @@ onMounted(refresh)
 .action-row button:first-child {
   border-color: var(--ops-accent);
   background: var(--ops-accent);
-  color: #fffaf6;
+  color: #ffffff;
 }
 
 .resource-map {
@@ -1014,13 +1115,14 @@ onMounted(refresh)
 }
 
 .resource-node {
+  --card-accent: var(--ops-accent);
+  position: relative;
   display: flex;
   align-items: center;
   gap: 10px;
   min-height: 56px;
   padding: 10px;
   border: 1px solid color-mix(in srgb, var(--ops-border) 78%, white 22%);
-  border-left-width: 3px;
   border-radius: 8px;
   background: var(--ops-surface);
 }
@@ -1085,7 +1187,7 @@ onMounted(refresh)
   place-items: center;
   border: 1px solid var(--ops-border);
   border-radius: 8px;
-  background: #fffdf8;
+  background: #ffffff;
   color: var(--ops-accent);
   font-size: 10px;
   font-weight: 700;
@@ -1120,6 +1222,120 @@ onMounted(refresh)
   border-color: var(--ops-border);
   background: var(--ops-surface);
   color: var(--ops-text);
+}
+
+.ops-page {
+  padding: 24px;
+  background: transparent;
+}
+
+.ops-topbar {
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.title-icon,
+.generated-icon,
+.timeline-symbol,
+.avatar.bot {
+  border-color: #d5e0f5;
+  background: var(--dr-accent-wash);
+  color: var(--ops-accent);
+}
+
+.ops-topbar h1 {
+  font-size: 24px;
+  font-weight: 650;
+}
+
+.title-block p {
+  color: #5f636b;
+}
+
+.status-pill,
+.icon-button,
+.panel,
+.ask-panel,
+.conversation-panel,
+.command-strip {
+  border-color: rgba(23, 23, 23, 0.08);
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 1px 1px rgba(23, 23, 23, 0.04), 0 16px 38px rgba(42, 47, 55, 0.07);
+}
+
+.command-strip {
+  padding: 8px;
+  backdrop-filter: blur(12px);
+}
+
+.command-metric,
+.insight-card,
+.matrix-item,
+.result-grid > div,
+.resource-node,
+.bot-card {
+  border-color: rgba(23, 23, 23, 0.08);
+  background: #ffffff;
+  box-shadow: 0 1px 0 rgba(23, 23, 23, 0.03);
+}
+
+.command-metric {
+  min-height: 78px;
+}
+
+.command-metric strong,
+.matrix-item strong {
+  font-weight: 650;
+}
+
+.ask-panel {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.92)),
+    var(--ops-surface);
+}
+
+.prompt-box {
+  min-height: 64px;
+  border-color: rgba(47, 111, 237, 0.38);
+  background: #ffffff;
+  box-shadow: 0 0 0 4px rgba(47, 111, 237, 0.06);
+}
+
+.prompt-box button,
+.action-row button:first-child {
+  background: var(--ops-accent);
+  color: #ffffff;
+}
+
+.prompt-box button:hover,
+.action-row button:first-child:hover {
+  background: #1f63e8;
+}
+
+.suggestions button,
+.next-actions button,
+.action-row button {
+  border-color: rgba(23, 23, 23, 0.08);
+  background: #ffffff;
+}
+
+.suggestions button:hover,
+.next-actions button:hover,
+.action-row button:not(:first-child):hover {
+  border-color: rgba(47, 111, 237, 0.38);
+  background: var(--dr-accent-wash);
+}
+
+.tool-chip,
+.bubble {
+  border-color: rgba(47, 111, 237, 0.28);
+  background: var(--dr-accent-wash);
+  color: var(--ops-text);
+}
+
+.result-badge,
+.agent-state.green {
+  background: var(--dr-green-soft);
 }
 
 @media (max-width: 1280px) {

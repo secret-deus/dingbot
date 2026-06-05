@@ -85,7 +85,7 @@ function unwrapToolPayload(value: unknown): unknown {
   overflow-x: auto;
   border: 1px solid var(--dr-border-soft);
   border-radius: var(--dr-radius);
-  background: #fbf8f1;
+  background: #f6f8fb;
   color: var(--dr-text-soft);
   font-size: var(--dr-text-xs);
 }
