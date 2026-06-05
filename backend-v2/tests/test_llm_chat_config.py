@@ -40,3 +40,22 @@ def test_prefixed_model_is_not_prefixed_again():
     )
 
     assert service._build_kwargs()["model"] == "openai/gpt-4o-mini"
+
+
+def test_custom_provider_with_base_url_uses_openai_compatible_prefix():
+    service = ChatService(
+        LLMProviderRuntime(
+            id="opencode",
+            name="opencode",
+            enabled=True,
+            model="glm-5.1",
+            api_key="secret",
+            base_url="https://opencode.ai/zen/go/v1",
+            temperature=0.3,
+            max_tokens=2000,
+            timeout=60,
+            stream=True,
+        )
+    )
+
+    assert service._build_kwargs()["model"] == "openai/glm-5.1"

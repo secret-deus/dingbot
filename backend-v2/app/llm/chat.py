@@ -61,7 +61,7 @@ class ChatService:
     def _litellm_model(self) -> str:
         if "/" in self.model:
             return self.model
-        if self.base_url and self.provider_id in {"openai", "openai-compatible", "env"}:
+        if self.base_url:
             return f"openai/{self.model}"
         return self.model
 
