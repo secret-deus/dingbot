@@ -1,9 +1,10 @@
 <template>
   <div class="access-page dr-page">
     <header class="dr-page-header">
-      <div>
+      <div class="access-heading">
+        <span class="access-kicker">Access Control</span>
         <h1>权限管理</h1>
-        <p>管理当前角色边界、用户状态、工具权限策略和审计事件。</p>
+        <p>配置用户角色、工具访问范围和审计追踪，保障运维动作边界清晰。</p>
       </div>
       <div class="dr-toolbar">
         <n-button secondary :loading="auditLoading" @click="fetchAudit">刷新审计</n-button>
@@ -11,26 +12,31 @@
       </div>
     </header>
 
-    <section class="dr-stats-grid">
-      <article class="dr-stat-card">
-        <span>用户角色</span>
+    <section class="access-summary-strip" aria-label="权限状态概览">
+      <article class="summary-item">
+        <span>用户</span>
         <strong>{{ roleUsers.length }}</strong>
-        <small>admin / operator / viewer</small>
+        <small>启用 {{ activeUserCount }} 个账号</small>
       </article>
-      <article class="dr-stat-card">
+      <article class="summary-item">
         <span>角色策略</span>
         <strong>{{ rolePolicies.length }}</strong>
-        <small>当前前端只读展示</small>
+        <small>admin / operator / viewer</small>
       </article>
-      <article class="dr-stat-card">
-        <span>审计事件</span>
+      <article class="summary-item">
+        <span>最近审计</span>
         <strong>{{ auditLogs.length }}</strong>
         <small>最近 {{ auditLimit }} 条</small>
       </article>
-      <article class="dr-stat-card">
+      <article class="summary-item">
+        <span>异常结果</span>
+        <strong>{{ failedAuditCount }}</strong>
+        <small>失败或需要复核</small>
+      </article>
+      <article class="summary-item summary-rule">
         <span>危险动作</span>
-        <strong>确认</strong>
-        <small>写入与高危工具走确认门</small>
+        <strong>确认门</strong>
+        <small>写入与高危工具必须二次确认</small>
       </article>
     </section>
 
@@ -39,7 +45,7 @@
         <div class="dr-panel-head">
           <div>
             <h2 class="dr-panel-title">用户和角色</h2>
-            <span class="dr-panel-subtitle">真实读取 `/auth/users`，支持新增、角色调整和账号启停。</span>
+            <span class="dr-panel-subtitle">调整账号启停和角色归属，保存后立即生效。</span>
           </div>
           <n-button secondary :loading="usersLoading" @click="fetchUsers">刷新用户</n-button>
         </div>
@@ -69,6 +75,13 @@
           </n-form>
         </div>
         <div class="role-list">
+          <div class="role-row role-row-head" aria-hidden="true">
+            <span>用户</span>
+            <span>角色</span>
+            <span>状态</span>
+            <span>更新时间</span>
+            <span>操作</span>
+          </div>
           <article v-for="user in filteredUsers" :key="user.username" class="role-row">
             <div class="user-cell">
               <span class="avatar">{{ user.username.slice(0, 1).toUpperCase() }}</span>
@@ -85,6 +98,7 @@
             <span class="dr-muted">{{ formatTime(user.updated_at) }}</span>
             <n-button size="small" :loading="savingUser === user.username" @click="saveUser(user)">保存</n-button>
           </article>
+          <div v-if="!filteredUsers.length" class="dr-empty compact-empty">没有匹配的用户</div>
         </div>
       </section>
 
@@ -93,7 +107,7 @@
           <div class="dr-panel-head">
             <div>
               <h2 class="dr-panel-title">角色策略</h2>
-              <span class="dr-panel-subtitle">策略来自当前权限约定，后续接入真实管理 API 后再开放编辑。</span>
+              <span class="dr-panel-subtitle">按角色查看工具边界，策略编辑待接口开放。</span>
             </div>
           </div>
           <div class="policy-form">
@@ -103,10 +117,14 @@
             </label>
             <label class="field">
               <span>工具权限</span>
-              <n-input :value="selectedPolicy.toolPrefix" readonly />
+              <span class="permission-chip-list">
+                <span v-for="permission in selectedPolicy.permissions" :key="permission" class="permission-chip">
+                  {{ permission }}
+                </span>
+              </span>
             </label>
             <p>{{ selectedPolicy.description }}</p>
-            <n-button type="primary" disabled>保存策略</n-button>
+            <n-button secondary disabled>策略编辑待开放</n-button>
           </div>
         </section>
 
@@ -114,12 +132,12 @@
           <div class="dr-panel-head">
             <div>
               <h2 class="dr-panel-title">最近审计</h2>
-              <span class="dr-panel-subtitle">真实读取 `/config/audit`。</span>
+              <span class="dr-panel-subtitle">最近访问、配置和工具调用记录。</span>
             </div>
           </div>
           <div class="audit-list">
             <article v-for="log in recentAuditLogs" :key="log.id" class="audit-item">
-              <span class="audit-dot" />
+              <span class="audit-dot" :class="auditResultClass(log.result)" />
               <div>
                 <strong>{{ log.actor }} · {{ log.action }}</strong>
                 <small>{{ log.resource }} / {{ log.result }} / {{ formatTime(log.created_at) }}</small>
@@ -135,7 +153,7 @@
       <div class="dr-panel-head">
         <div>
           <h2 class="dr-panel-title">审计日志</h2>
-          <span class="dr-panel-subtitle">保留真实数据表格，方便筛查操作人、资源与结果。</span>
+          <span class="dr-panel-subtitle">按操作人、动作、资源和结果筛选完整记录。</span>
         </div>
       </div>
       <div class="audit-filter-bar">
@@ -226,9 +244,9 @@ const auditFilters = ref({
 })
 
 const rolePolicies = [
-  { role: 'admin', toolPrefix: 'all tools', description: '管理员拥有配置、审计、工具执行和高危确认权限。' },
-  { role: 'operator', toolPrefix: 'k8s-, ecs-describe-, toolsearch', description: '值班角色可执行常规巡检与调度动作，高危写入仍需要确认。' },
-  { role: 'viewer', toolPrefix: 'dashboard, sessions, read-only', description: '观察者只查看聚合状态、历史会话和只读上下文。' },
+  { role: 'admin', permissions: ['全部工具', '配置写入', '审计管理', '高危确认'], description: '管理员拥有配置、审计、工具执行和高危确认权限。' },
+  { role: 'operator', permissions: ['k8s-*', 'ecs-describe-*', 'toolsearch', '调度执行'], description: '值班角色可执行常规巡检与调度动作，高危写入仍需要确认。' },
+  { role: 'viewer', permissions: ['Dashboard', '历史会话', '只读上下文'], description: '观察者只查看聚合状态、历史会话和只读上下文。' },
 ] as const
 
 const roleOptions = rolePolicies.map((item) => ({ label: item.role, value: item.role }))
@@ -237,6 +255,8 @@ const resultOptions = [
   { label: 'failure', value: 'failure' },
 ]
 const selectedPolicy = computed(() => rolePolicies.find((item) => item.role === selectedRole.value) || rolePolicies[1])
+const activeUserCount = computed(() => roleUsers.value.filter((user) => user.is_active).length)
+const failedAuditCount = computed(() => auditLogs.value.filter((log) => log.result !== 'success').length)
 const filteredUsers = computed(() => {
   const query = userSearch.value.trim().toLowerCase()
   if (!query) return roleUsers.value
@@ -256,7 +276,7 @@ const auditColumns = [
     title: '结果',
     key: 'result',
     width: 100,
-    render: (row: AuditLog) => h(NTag, { size: 'small', type: row.result === 'success' ? 'success' : 'warning' }, { default: () => row.result }),
+    render: (row: AuditLog) => h(NTag, { size: 'small', type: row.result === 'success' ? 'success' : 'error' }, { default: () => row.result }),
   },
   { title: 'IP', key: 'ip', width: 140 },
 ]
@@ -373,6 +393,10 @@ function formatTime(value: string) {
   return new Date(value).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
+function auditResultClass(result: string) {
+  return result === 'success' ? 'success' : 'danger'
+}
+
 function errorMessage(error: unknown, fallback: string) {
   const maybe = error as { response?: { data?: { detail?: unknown } }; message?: string }
   const detail = maybe.response?.data?.detail
@@ -386,8 +410,78 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.access-heading {
+  min-width: 0;
+}
+
+.access-kicker {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  margin-bottom: 7px;
+  padding: 0 8px;
+  border: 1px solid var(--dr-border-soft);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--dr-blue);
+  font-size: var(--dr-text-xs);
+  font-weight: 650;
+}
+
+.access-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.summary-item {
+  min-width: 0;
+  min-height: 76px;
+  padding: 12px 14px;
+  border: 1px solid var(--dr-border-soft);
+  border-radius: var(--dr-radius);
+  background: #ffffff;
+  box-shadow: 0 1px 0 rgba(25, 24, 20, 0.02);
+}
+
+.summary-item span {
+  display: block;
+  color: var(--dr-text-muted);
+  font-size: var(--dr-text-sm);
+  font-weight: 590;
+}
+
+.summary-item strong {
+  display: block;
+  margin-top: 7px;
+  color: var(--dr-text);
+  font-size: var(--dr-text-xl);
+  font-weight: 650;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.summary-item small {
+  display: block;
+  margin-top: 6px;
+  color: var(--dr-text-muted);
+  font-size: var(--dr-text-sm);
+  line-height: 1.35;
+}
+
+.summary-rule {
+  border-color: #cbd8f3;
+  background: linear-gradient(180deg, #ffffff, #f7faff);
+}
+
+.summary-rule strong {
+  color: var(--dr-accent-deep);
+}
+
 .access-workspace {
-  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.8fr);
+  grid-template-columns: minmax(0, 1.55fr) minmax(300px, 0.72fr);
+  gap: 14px;
 }
 
 .search-row {
@@ -412,12 +506,26 @@ onMounted(() => {
   font-size: var(--dr-text-sm);
 }
 
+.role-row-head {
+  min-height: 36px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  background: #fbfcfe;
+  color: var(--dr-text-muted);
+  font-size: var(--dr-text-xs);
+  font-weight: 650;
+}
+
 .role-row:last-child {
   border-bottom: 0;
 }
 
-.role-row:hover {
+.role-row:hover:not(.role-row-head) {
   background: #f6f8fb;
+}
+
+.role-row-head:hover {
+  background: #fbfcfe;
 }
 
 .create-user-form {
@@ -446,6 +554,15 @@ onMounted(() => {
   color: var(--dr-text);
 }
 
+.user-cell .avatar {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--dr-border-soft);
+  background: var(--dr-accent-wash);
+  color: var(--dr-accent-deep);
+  box-shadow: none;
+}
+
 .user-cell strong {
   display: block;
   font-size: var(--dr-text-md);
@@ -467,7 +584,7 @@ onMounted(() => {
 }
 
 .policy-form {
-  padding: 16px;
+  padding: 14px 16px 16px;
 }
 
 .field {
@@ -489,11 +606,35 @@ onMounted(() => {
   line-height: 1.58;
 }
 
+.permission-chip-list {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.permission-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--dr-border-soft);
+  border-radius: 999px;
+  background: var(--dr-bg-page);
+  color: var(--dr-text-soft);
+  font-size: var(--dr-text-xs);
+  font-weight: 610;
+}
+
+.policy-form .n-button {
+  align-self: flex-start;
+}
+
 .audit-list {
   display: flex;
   flex-direction: column;
-  min-height: 150px;
-  padding: 6px 0;
+  min-height: 122px;
+  padding: 4px 0 8px;
 }
 
 .audit-filter-bar {
@@ -517,7 +658,7 @@ onMounted(() => {
   display: grid;
   grid-template-columns: 10px minmax(0, 1fr);
   gap: 10px;
-  padding: 10px 16px;
+  padding: 8px 16px;
 }
 
 .audit-dot {
@@ -527,6 +668,16 @@ onMounted(() => {
   border-radius: 50%;
   background: var(--dr-accent);
   box-shadow: 0 0 0 4px rgba(47, 111, 237, 0.1);
+}
+
+.audit-dot.success {
+  background: var(--dr-green);
+  box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.1);
+}
+
+.audit-dot.danger {
+  background: var(--dr-red);
+  box-shadow: 0 0 0 4px rgba(180, 35, 24, 0.1);
 }
 
 .audit-item strong {
@@ -541,12 +692,32 @@ onMounted(() => {
   margin-top: 2px;
   color: var(--dr-text-muted);
   font-size: var(--dr-text-xs);
+  line-height: 1.38;
+  overflow-wrap: anywhere;
+}
+
+.compact-empty {
+  min-height: 96px;
+}
+
+@media (max-width: 1240px) {
+  .access-summary-strip {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 980px) {
+  .access-summary-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .role-row {
     grid-template-columns: 1fr;
     gap: 8px;
+  }
+
+  .role-row-head {
+    display: none;
   }
 
   .create-grid {
@@ -559,6 +730,12 @@ onMounted(() => {
 
   .filter-actions {
     align-items: stretch;
+  }
+}
+
+@media (max-width: 620px) {
+  .access-summary-strip {
+    grid-template-columns: 1fr;
   }
 }
 </style>

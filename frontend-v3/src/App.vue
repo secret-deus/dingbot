@@ -281,21 +281,12 @@ onBeforeUnmount(() => {
     linear-gradient(0deg, rgba(255, 255, 255, 0.026) 1px, transparent 1px);
   background-size: 100% 100%, 28px 28px, 28px 28px;
   content: "";
-  opacity: 0.78;
+  opacity: 0.34;
 }
 
 .app-sidebar::after {
-  position: absolute;
-  top: 72px;
-  right: -42px;
-  z-index: -1;
-  width: 190px;
-  height: 320px;
-  background:
-    linear-gradient(135deg, rgba(155, 215, 255, 0.12), rgba(111, 140, 255, 0.05) 46%, transparent 47%),
-    linear-gradient(135deg, transparent 0 56%, rgba(125, 227, 193, 0.1) 56.4%, transparent 66%);
-  clip-path: polygon(22% 0, 100% 0, 78% 100%, 0 100%);
   content: "";
+  display: none;
 }
 
 .app-sidebar > * {
@@ -463,25 +454,20 @@ onBeforeUnmount(() => {
 }
 
 .nav-item.active {
-  background:
-    linear-gradient(90deg, rgba(155, 215, 255, 0.16), rgba(111, 140, 255, 0.08) 54%, rgba(125, 227, 193, 0.05)),
-    rgba(255, 255, 255, 0.06);
+  background: rgba(155, 215, 255, 0.1);
   color: var(--dr-sidebar-text);
   font-weight: 610;
-  clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 50%, calc(100% - 12px) 100%, 0 100%);
-  box-shadow:
-    inset 0 0 0 1px rgba(155, 215, 255, 0.2),
-    0 0 24px rgba(111, 140, 255, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(155, 215, 255, 0.16);
 }
 
 .nav-item.active::before {
   position: absolute;
-  inset: 0 auto 0 0;
-  width: 9px;
-  background: linear-gradient(135deg, rgba(155, 215, 255, 0.8), rgba(125, 227, 193, 0.18) 70%, transparent 71%);
-  clip-path: polygon(0 0, 100% 0, 42% 100%, 0 100%);
+  inset: 9px auto 9px 0;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--dr-neon-cyan);
   content: "";
-  opacity: 0.84;
+  opacity: 0.86;
 }
 
 .nav-item.active::after {
@@ -564,27 +550,17 @@ onBeforeUnmount(() => {
   height: 100%;
   overflow: hidden;
   flex-direction: column;
-  background: linear-gradient(135deg, #f4f7fb 0%, #ffffff 58%, #eef4f8 100%);
+  background: var(--dr-bg);
 }
 
 .app-main::before {
-  position: absolute;
-  inset: 0;
-  z-index: -2;
-  background:
-    linear-gradient(135deg, rgba(17, 17, 22, 0.16) 0 27%, transparent 27.2%),
-    linear-gradient(135deg, rgba(47, 111, 237, 0.1) 0 38%, transparent 38.2%);
   content: "";
+  display: none;
 }
 
 .app-main::after {
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background:
-    linear-gradient(135deg, transparent 0 31%, rgba(255, 255, 255, 0.78) 31.2% 100%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0.02));
   content: "";
+  display: none;
 }
 
 .app-topbar {
