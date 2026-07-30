@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass, field
 from typing import AsyncGenerator, Optional
 
 from loguru import logger
@@ -21,6 +22,37 @@ from app.mcp.manager import MCPManager
 DISCOVERY_CONTEXT_TOOLS = {"toolsearch", "tool_get", "tool_categories"}
 DISCOVERY_RESULT_TOOLS = {"toolsearch", "tool_get"}
 MAX_TOOL_CALL_ROUNDS = 6
+HISTORICAL_K8S_CONTEXT_LIMIT = 16
+K8S_CONTEXTUAL_NAMESPACE_TOOLS = {
+    "k8s-get-pods",
+    "k8s-get-logs",
+    "k8s-describe-pod",
+    "k8s-get-events",
+    "k8s-exec-pod",
+    "k8s-resource-monitor",
+    "k8s-resource-metrics-query",
+    "k8s-relation-query",
+    "k8s-get-deployment-history",
+    "k8s-rollout-status",
+}
+K8S_RESOURCE_NAME_ARGUMENTS = (
+    "pod_name",
+    "deployment_name",
+    "service_name",
+    "ingress_name",
+    "configmap_name",
+    "secret_name",
+    "resource_name",
+    "app_name",
+    "name",
+)
+K8S_ALL_NAMESPACE_VALUES = {
+    "all",
+    "all-namespaces",
+    "all_namespaces",
+    "*",
+}
+K8S_DEFAULT_NAMESPACE_VALUES = {"", "default"}
 K8S_INSPECTION_KEYWORDS = (
     "巡检",
     "健康检查",
@@ -222,6 +254,28 @@ DISCOVERY_ONLY_KEYWORDS = (
 )
 
 
+@dataclass
+class ToolLoopState:
+    response_text: str = ""
+    tool_calls: list[dict] = field(default_factory=list)
+    tool_results: list[dict] = field(default_factory=list)
+    round_limit_reached: bool = False
+    stop_reason: Optional[str] = None
+    llm_error_after_tools: Optional[str] = None
+    seen_call_keys: set[str] = field(default_factory=set)
+
+    def record_tool_result(self, tool_call: dict, tool_result: object) -> None:
+        tool_name = tool_call["function"]["name"]
+        self.tool_results.append(
+            {
+                "tool": tool_name,
+                "tool_call_id": tool_call["id"],
+                "tool_name": tool_name,
+                "result": tool_result,
+            }
+        )
+
+
 class ChatOrchestrator:
     def __init__(
         self,
@@ -255,7 +309,7 @@ class ChatOrchestrator:
         await self.message_repo.add_message(session_id, MessageRole.USER, user_content, seq)
         await self.db.commit()
 
-        messages = await self._build_messages(session_id)
+        messages, historical_k8s_context = await self._build_messages_with_context(session_id)
         if messages and messages[-1].get("role") == "user":
             messages[-1]["content"] = content_for_llm
         if tool_context_enabled:
@@ -266,32 +320,22 @@ class ChatOrchestrator:
         else:
             tools, tool_pool, unavailable_tools = [], {}, {}
 
-        response_text = ""
-        tool_calls_made = []
-        tool_results_made = []
-        tool_round_limit_reached = False
-        tool_loop_stop_reason = None
-        llm_error_after_tools = None
+        tool_state = ToolLoopState()
         discovery_only = self._discovery_only_intent(user_content)
-        seen_tool_call_keys = set()
         direct_tool_call = (
-            self._infer_direct_tool_call(user_content, tool_pool)
-            if tool_context_enabled
-            else None
+            self._infer_direct_tool_call(user_content, tool_pool) if tool_context_enabled else None
         )
 
         if direct_tool_call:
-            tool_calls_made.append(direct_tool_call)
+            direct_tool_call = self._normalize_contextual_k8s_tool_call(
+                direct_tool_call,
+                user_content=user_content,
+                historical_context=historical_k8s_context,
+            )
+            tool_state.tool_calls.append(direct_tool_call)
             yield {"type": "tool_call", "tool_call": direct_tool_call}
             tool_result = await self._execute_tool(direct_tool_call)
-            tool_results_made.append(
-                {
-                    "tool": direct_tool_call["function"]["name"],
-                    "tool_call_id": direct_tool_call["id"],
-                    "tool_name": direct_tool_call["function"]["name"],
-                    "result": tool_result,
-                }
-            )
+            tool_state.record_tool_result(direct_tool_call, tool_result)
             yield {
                 "type": "tool_result",
                 "tool_call_id": direct_tool_call["id"],
@@ -305,7 +349,7 @@ class ChatOrchestrator:
                 generated_text = await self._generate_final_answer_from_tool_results(
                     chat=chat,
                     user_content=content_for_llm,
-                    tool_results=tool_results_made,
+                    tool_results=tool_state.tool_results,
                     stop_reason=None,
                 )
             final_text = masker.unmask(generated_text) if masker else generated_text
@@ -317,20 +361,20 @@ class ChatOrchestrator:
                 MessageRole.ASSISTANT,
                 final_text,
                 seq + 1,
-                tool_calls=tool_calls_made,
-                tool_results=tool_results_made,
+                tool_calls=tool_state.tool_calls,
+                tool_results=tool_state.tool_results,
             )
             await self.db.commit()
             yield {"type": "done", "session_id": session_id}
             return
 
         if chat is None:
-            response_text = self._disabled_llm_message(runtime_config, llm_provider_id)
-            yield {"type": "token", "content": response_text}
+            tool_state.response_text = self._disabled_llm_message(runtime_config, llm_provider_id)
+            yield {"type": "token", "content": tool_state.response_text}
             await self.message_repo.add_message(
                 session_id,
                 MessageRole.ASSISTANT,
-                response_text,
+                tool_state.response_text,
                 seq + 1,
             )
             await self.db.commit()
@@ -350,14 +394,19 @@ class ChatOrchestrator:
                         event["tool_call"],
                         content_for_llm,
                     )
+                    tool_call = self._normalize_contextual_k8s_tool_call(
+                        tool_call,
+                        user_content=user_content,
+                        historical_context=historical_k8s_context,
+                    )
                     tool_call_key = self._tool_call_key(tool_call)
-                    if tool_call_key in seen_tool_call_keys:
-                        tool_loop_stop_reason = "duplicate_tool_call"
+                    if tool_call_key in tool_state.seen_call_keys:
+                        tool_state.stop_reason = "duplicate_tool_call"
                         break
 
-                    seen_tool_call_keys.add(tool_call_key)
+                    tool_state.seen_call_keys.add(tool_call_key)
                     made_tool_call = True
-                    tool_calls_made.append(tool_call)
+                    tool_state.tool_calls.append(tool_call)
                     yield {"type": "tool_call", "tool_call": tool_call}
 
                     tool_result = await self._execute_tool(tool_call)
@@ -367,14 +416,7 @@ class ChatOrchestrator:
                             tool_pool,
                             unavailable_tools,
                         )
-                    tool_results_made.append(
-                        {
-                            "tool": tool_call["function"]["name"],
-                            "tool_call_id": tool_call["id"],
-                            "tool_name": tool_call["function"]["name"],
-                            "result": tool_result,
-                        }
-                    )
+                    tool_state.record_tool_result(tool_call, tool_result)
                     yield {
                         "type": "tool_result",
                         "tool_call_id": tool_call["id"],
@@ -397,47 +439,47 @@ class ChatOrchestrator:
                         }
                     )
                     if discovery_only and tool_call["function"]["name"] in DISCOVERY_RESULT_TOOLS:
-                        tool_loop_stop_reason = "discovery_sufficient"
+                        tool_state.stop_reason = "discovery_sufficient"
                         break
                     if not discovery_only:
                         tools = self._expand_tools_after_result(tools, tool_pool, tool_result)
-                    if self._should_finalize_after_tools(content_for_llm, tool_results_made):
-                        tool_loop_stop_reason = "inspection_sufficient"
+                    if self._should_finalize_after_tools(content_for_llm, tool_state.tool_results):
+                        tool_state.stop_reason = "inspection_sufficient"
                         break
 
                 elif event["type"] == "error":
-                    if tool_results_made:
-                        llm_error_after_tools = event["message"]
+                    if tool_state.tool_results:
+                        tool_state.llm_error_after_tools = event["message"]
                         break
                     yield {"type": "error", "message": event["message"]}
                     return
 
-            if llm_error_after_tools:
-                tool_loop_stop_reason = "llm_error_after_tools"
+            if tool_state.llm_error_after_tools:
+                tool_state.stop_reason = "llm_error_after_tools"
                 break
-            if tool_loop_stop_reason:
+            if tool_state.stop_reason:
                 break
             if not made_tool_call:
-                response_text += round_text
+                tool_state.response_text += round_text
                 break
         else:
-            tool_round_limit_reached = True
-            tool_loop_stop_reason = "tool_round_limit"
+            tool_state.round_limit_reached = True
+            tool_state.stop_reason = "tool_round_limit"
 
-        final_text = masker.unmask(response_text) if masker else response_text
-        if not final_text.strip() and tool_results_made:
+        final_text = masker.unmask(tool_state.response_text) if masker else tool_state.response_text
+        if not final_text.strip() and tool_state.tool_results:
             generated_text = await self._generate_final_answer_from_tool_results(
                 chat=chat,
                 user_content=content_for_llm,
-                tool_results=tool_results_made,
-                stop_reason=tool_loop_stop_reason,
+                tool_results=tool_state.tool_results,
+                stop_reason=tool_state.stop_reason,
             )
             final_text = masker.unmask(generated_text) if masker else generated_text
             if not final_text.strip():
                 final_text = self._tool_result_fallback(
-                    tool_results_made,
-                    tool_round_limit_reached=tool_round_limit_reached,
-                    stop_reason=tool_loop_stop_reason,
+                    tool_state.tool_results,
+                    tool_round_limit_reached=tool_state.round_limit_reached,
+                    stop_reason=tool_state.stop_reason,
                 )
             yield {"type": "token", "content": final_text}
 
@@ -446,8 +488,8 @@ class ChatOrchestrator:
             MessageRole.ASSISTANT,
             final_text,
             seq + 1,
-            tool_calls=tool_calls_made if tool_calls_made else None,
-            tool_results=tool_results_made if tool_results_made else None,
+            tool_calls=tool_state.tool_calls if tool_state.tool_calls else None,
+            tool_results=tool_state.tool_results if tool_state.tool_results else None,
         )
         await self.db.commit()
 
@@ -629,6 +671,124 @@ class ChatOrchestrator:
         updated_call["function"] = updated_function
         return updated_call
 
+    @classmethod
+    def _normalize_contextual_k8s_tool_call(
+        cls,
+        tool_call: dict,
+        user_content: str,
+        historical_context: dict,
+    ) -> dict:
+        function = tool_call.get("function") or {}
+        tool_name = str(function.get("name") or "")
+        if not tool_name.startswith("k8s-"):
+            return tool_call
+        if cls._extract_namespace(user_content):
+            return tool_call
+
+        raw_arguments = function.get("arguments") or "{}"
+        try:
+            arguments = (
+                json.loads(raw_arguments) if isinstance(raw_arguments, str) else raw_arguments
+            )
+        except json.JSONDecodeError:
+            return tool_call
+        if not isinstance(arguments, dict):
+            return tool_call
+
+        if cls._as_bool(arguments.get("all_namespaces")):
+            return tool_call
+        current_namespace = cls._clean_k8s_token(arguments.get("namespace")).lower()
+        if current_namespace in K8S_ALL_NAMESPACE_VALUES:
+            return tool_call
+        if current_namespace not in K8S_DEFAULT_NAMESPACE_VALUES:
+            return tool_call
+        if "namespace" not in arguments and tool_name not in K8S_CONTEXTUAL_NAMESPACE_TOOLS:
+            return tool_call
+
+        inferred_namespace = cls._infer_namespace_from_historical_context(
+            user_content=user_content,
+            arguments=arguments,
+            historical_context=historical_context,
+        )
+        if not inferred_namespace:
+            return tool_call
+
+        updated_call = dict(tool_call)
+        updated_function = dict(function)
+        updated_arguments = dict(arguments)
+        updated_arguments["namespace"] = inferred_namespace
+        updated_function["arguments"] = json.dumps(updated_arguments, ensure_ascii=False)
+        updated_call["function"] = updated_function
+        return updated_call
+
+    @classmethod
+    def _infer_namespace_from_historical_context(
+        cls,
+        user_content: str,
+        arguments: dict,
+        historical_context: dict,
+    ) -> str:
+        namespaces_by_name = historical_context.get("namespaces_by_name") or {}
+        if not namespaces_by_name:
+            return ""
+
+        candidate_names = cls._contextual_resource_name_candidates(
+            user_content=user_content,
+            arguments=arguments,
+            historical_context=historical_context,
+        )
+        for name in candidate_names:
+            namespaces = namespaces_by_name.get(name.lower()) or set()
+            if len(namespaces) == 1:
+                return next(iter(namespaces))
+        return ""
+
+    @classmethod
+    def _contextual_resource_name_candidates(
+        cls,
+        user_content: str,
+        arguments: dict,
+        historical_context: dict,
+    ) -> list[str]:
+        candidates: list[str] = []
+        for key in K8S_RESOURCE_NAME_ARGUMENTS:
+            value = cls._clean_k8s_token(arguments.get(key))
+            if value:
+                candidates.append(value)
+
+        for ref in historical_context.get("refs") or []:
+            name = ref.get("name")
+            if isinstance(name, str) and cls._name_mentioned(user_content, name):
+                candidates.append(name)
+
+        deduped = []
+        seen = set()
+        for candidate in candidates:
+            key = candidate.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(candidate)
+        return deduped
+
+    @staticmethod
+    def _name_mentioned(text: str, name: str) -> bool:
+        return bool(
+            re.search(
+                rf"(?<![a-z0-9.-]){re.escape(name)}(?![a-z0-9.-])",
+                text,
+                flags=re.IGNORECASE,
+            )
+        )
+
+    @staticmethod
+    def _as_bool(value: object) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+        return bool(value)
+
     @staticmethod
     def _normalize_toolsearch_arguments(arguments: dict, user_content: str) -> dict:
         query = str(arguments.get("query") or "")
@@ -706,14 +866,204 @@ class ChatOrchestrator:
             )
         return "LLM 服务未配置。请到 LLM 配置页添加模型配置，保存后新消息会立即生效。"
 
-    async def _build_messages(self, session_id: str) -> list[dict]:
+    async def _build_messages_with_context(self, session_id: str) -> tuple[list[dict], dict]:
         db_msgs = await self.message_repo.list_by_session(session_id)
+        historical_k8s_context = self._build_historical_k8s_context(db_msgs)
+        return (
+            self._format_messages_from_db(db_msgs, historical_k8s_context),
+            historical_k8s_context,
+        )
+
+    async def _build_messages(self, session_id: str) -> list[dict]:
+        messages, _ = await self._build_messages_with_context(session_id)
+        return messages
+
+    @classmethod
+    def _format_messages_from_db(cls, db_msgs: list, historical_k8s_context: dict) -> list[dict]:
         result = []
         for m in db_msgs:
             if m.role == MessageRole.TOOL:
                 continue
             result.append({"role": m.role.value, "content": m.content})
+
+        summary = cls._historical_k8s_context_summary(historical_k8s_context)
+        if summary:
+            context_message = {
+                "role": "assistant",
+                "content": (
+                    "【历史工具上下文摘要】\n"
+                    f"{summary}\n"
+                    "后续排障如果用户追问上述资源但未重新指定 namespace，必须沿用这里的 namespace；"
+                    "不要退回 default 命名空间。"
+                ),
+            }
+            if result and result[-1].get("role") == MessageRole.USER.value:
+                result.insert(len(result) - 1, context_message)
+            else:
+                result.append(context_message)
         return result
+
+    @classmethod
+    def _build_historical_k8s_context(cls, db_msgs: list) -> dict:
+        refs: list[dict[str, str]] = []
+        for msg in reversed(db_msgs):
+            for tool_result in cls._as_list(getattr(msg, "tool_results", None)):
+                refs.extend(cls._k8s_refs_from_tool_result(tool_result))
+            for tool_call in cls._as_list(getattr(msg, "tool_calls", None)):
+                refs.extend(cls._k8s_refs_from_tool_call(tool_call))
+
+        deduped: list[dict[str, str]] = []
+        seen = set()
+        for ref in refs:
+            name = ref.get("name")
+            namespace = ref.get("namespace")
+            if not name or not namespace:
+                continue
+            key = (ref.get("kind") or "resource", namespace, name)
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(
+                {
+                    "kind": ref.get("kind") or "resource",
+                    "namespace": namespace,
+                    "name": name,
+                }
+            )
+            if len(deduped) >= HISTORICAL_K8S_CONTEXT_LIMIT:
+                break
+
+        namespaces_by_name: dict[str, set[str]] = {}
+        for ref in deduped:
+            namespaces_by_name.setdefault(ref["name"].lower(), set()).add(ref["namespace"])
+
+        return {"refs": deduped, "namespaces_by_name": namespaces_by_name}
+
+    @staticmethod
+    def _historical_k8s_context_summary(context: dict) -> str:
+        refs = context.get("refs") or []
+        if not refs:
+            return ""
+        lines = [
+            f"- {ref.get('kind') or 'resource'} {ref['namespace']}/{ref['name']}"
+            for ref in refs[:HISTORICAL_K8S_CONTEXT_LIMIT]
+            if ref.get("name") and ref.get("namespace")
+        ]
+        return "\n".join(lines)
+
+    @classmethod
+    def _k8s_refs_from_tool_result(cls, tool_result: object) -> list[dict[str, str]]:
+        if not isinstance(tool_result, dict):
+            return []
+        tool_name = str(tool_result.get("tool") or tool_result.get("tool_name") or "")
+        if not tool_name.startswith("k8s-"):
+            return []
+
+        payload = cls._unwrap_tool_result(tool_result.get("result"))
+        if not isinstance(payload, dict):
+            return []
+
+        refs = cls._k8s_refs_from_payload(tool_name, payload)
+        for item in payload.get("items") or []:
+            if isinstance(item, dict):
+                refs.extend(cls._k8s_refs_from_payload(tool_name, item))
+        return refs
+
+    @classmethod
+    def _k8s_refs_from_tool_call(cls, tool_call: object) -> list[dict[str, str]]:
+        if not isinstance(tool_call, dict):
+            return []
+        function = tool_call.get("function") or {}
+        tool_name = str(function.get("name") or "")
+        if not tool_name.startswith("k8s-"):
+            return []
+        raw_arguments = function.get("arguments") or "{}"
+        try:
+            arguments = (
+                json.loads(raw_arguments) if isinstance(raw_arguments, str) else raw_arguments
+            )
+        except json.JSONDecodeError:
+            return []
+        if not isinstance(arguments, dict):
+            return []
+        namespace = cls._clean_k8s_token(arguments.get("namespace"))
+        if not namespace or namespace.lower() in K8S_ALL_NAMESPACE_VALUES:
+            return []
+
+        refs = []
+        for key in K8S_RESOURCE_NAME_ARGUMENTS:
+            value = cls._clean_k8s_token(arguments.get(key))
+            if value:
+                refs.append(
+                    {
+                        "kind": cls._kind_from_tool_or_argument(tool_name, key),
+                        "namespace": namespace,
+                        "name": value,
+                    }
+                )
+        return refs
+
+    @classmethod
+    def _k8s_refs_from_payload(cls, tool_name: str, payload: dict) -> list[dict[str, str]]:
+        namespace = cls._clean_k8s_token(payload.get("namespace"))
+        if not namespace:
+            return []
+
+        refs = []
+        for key in ("name", "pod", "pod_name", "object", "resource_name"):
+            value = cls._clean_k8s_token(payload.get(key))
+            if value:
+                refs.append(
+                    {
+                        "kind": cls._kind_from_payload(tool_name, payload, key),
+                        "namespace": namespace,
+                        "name": value,
+                    }
+                )
+        return refs
+
+    @staticmethod
+    def _as_list(value: object) -> list:
+        if isinstance(value, list):
+            return value
+        if isinstance(value, dict):
+            return [value]
+        return []
+
+    @staticmethod
+    def _clean_k8s_token(value: object) -> str:
+        if not isinstance(value, str):
+            return ""
+        return value.strip(" .,，。:：()（）[]【】`")
+
+    @staticmethod
+    def _kind_from_tool_or_argument(tool_name: str, argument_name: str) -> str:
+        if argument_name == "pod_name" or "pod" in tool_name:
+            return "pod"
+        if argument_name == "deployment_name" or "deployment" in tool_name:
+            return "deployment"
+        if argument_name == "service_name" or "service" in tool_name:
+            return "service"
+        if argument_name == "ingress_name" or "ingress" in tool_name:
+            return "ingress"
+        if argument_name == "configmap_name" or "configmap" in tool_name:
+            return "configmap"
+        if argument_name == "secret_name" or "secret" in tool_name:
+            return "secret"
+        return "resource"
+
+    @staticmethod
+    def _kind_from_payload(tool_name: str, payload: dict, key: str) -> str:
+        object_kind = payload.get("object_kind")
+        if isinstance(object_kind, str) and object_kind:
+            return object_kind.lower()
+        if key in {"pod", "pod_name"} or "pod" in tool_name:
+            return "pod"
+        if "deployment" in tool_name:
+            return "deployment"
+        if "service" in tool_name:
+            return "service"
+        return "resource"
 
     async def _get_tools(self, skill_id: Optional[str] = None) -> list[dict]:
         if self.mcp is None:

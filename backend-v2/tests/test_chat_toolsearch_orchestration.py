@@ -243,6 +243,138 @@ async def test_build_messages_strips_historical_tool_calls(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_followup_tool_call_inherits_namespace_from_historical_pod_context(tmp_path):
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'chat-k8s-followup.db'}")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session:
+        chat_session = Session(title="k8s followup")
+        session.add(chat_session)
+        await session.flush()
+
+        orchestrator = ChatOrchestrator(
+            db=session,
+            chat_service=_WrongNamespaceFollowupChat(),
+            mcp_manager=_NamespaceRecordingMCP(),
+            current_user={"username": "operator", "role": "operator"},
+        )
+        await orchestrator.message_repo.add_message(
+            chat_session.id, MessageRole.USER, "巡检集群 pod", 1
+        )
+        await orchestrator.message_repo.add_message(
+            chat_session.id,
+            MessageRole.ASSISTANT,
+            "storage-provisioner（kube-system）重启次数偏高，建议进一步排查。",
+            2,
+            tool_calls=[
+                {
+                    "id": "call-old-pods",
+                    "type": "function",
+                    "function": {
+                        "name": "k8s-get-pods",
+                        "arguments": json.dumps({"namespace": "all"}, ensure_ascii=False),
+                    },
+                }
+            ],
+            tool_results=[
+                {
+                    "tool": "k8s-get-pods",
+                    "tool_name": "k8s-get-pods",
+                    "tool_call_id": "call-old-pods",
+                    "result": {
+                        "result": {
+                            "count": 1,
+                            "items": [
+                                {
+                                    "namespace": "kube-system",
+                                    "name": "storage-provisioner",
+                                    "status": "Running",
+                                    "restart_count": 18,
+                                }
+                            ],
+                        }
+                    },
+                }
+            ],
+        )
+        await session.commit()
+
+        events = [
+            event
+            async for event in orchestrator.handle_message(
+                chat_session.id, "详细查一下storage-provisioner的问题"
+            )
+        ]
+
+        tool_calls = [event["tool_call"] for event in events if event["type"] == "tool_call"]
+        arguments = json.loads(tool_calls[0]["function"]["arguments"])
+        assert arguments["namespace"] == "kube-system"
+        assert orchestrator.mcp.called_arguments == [{"namespace": "kube-system"}]
+        assert any(
+            "pod kube-system/storage-provisioner" in msg["content"]
+            for msg in orchestrator.chat.messages_by_call[0]
+        )
+        assert events[-1]["type"] == "done"
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_explicit_namespace_is_not_overridden_by_historical_context(tmp_path):
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'chat-k8s-explicit-ns.db'}")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session:
+        chat_session = Session(title="k8s explicit namespace")
+        session.add(chat_session)
+        await session.flush()
+
+        orchestrator = ChatOrchestrator(
+            db=session,
+            chat_service=_WrongNamespaceFollowupChat(),
+            mcp_manager=_NamespaceRecordingMCP(),
+            current_user={"username": "operator", "role": "operator"},
+        )
+        await orchestrator.message_repo.add_message(
+            chat_session.id,
+            MessageRole.ASSISTANT,
+            "历史中 storage-provisioner 位于 kube-system。",
+            1,
+            tool_results=[
+                {
+                    "tool": "k8s-get-pods",
+                    "result": {
+                        "result": {
+                            "items": [
+                                {"namespace": "kube-system", "name": "storage-provisioner"}
+                            ]
+                        }
+                    },
+                }
+            ],
+        )
+        await session.commit()
+
+        events = [
+            event
+            async for event in orchestrator.handle_message(
+                chat_session.id, "详细查一下 default namespace storage-provisioner 的问题"
+            )
+        ]
+
+        tool_calls = [event["tool_call"] for event in events if event["type"] == "tool_call"]
+        arguments = json.loads(tool_calls[0]["function"]["arguments"])
+        assert arguments["namespace"] == "default"
+        assert orchestrator.mcp.called_arguments == [{"namespace": "default"}]
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_cluster_status_intent_seeds_k8s_anchor_tools(tmp_path):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'chat-k8s-anchor.db'}")
     async with engine.begin() as conn:
@@ -797,6 +929,31 @@ class _NoToolChat:
         yield {"type": "done"}
 
 
+class _WrongNamespaceFollowupChat:
+    def __init__(self):
+        self.messages_by_call: list[list[dict]] = []
+        self.tool_names_by_call: list[list[str]] = []
+
+    async def stream_chat(self, messages, tools=None):
+        self.messages_by_call.append(messages)
+        self.tool_names_by_call.append(sorted(tool["name"] for tool in (tools or [])))
+        if len(self.messages_by_call) == 1:
+            yield {
+                "type": "tool_call",
+                "tool_call": {
+                    "id": "call-followup-pods",
+                    "type": "function",
+                    "function": {
+                        "name": "k8s-get-pods",
+                        "arguments": json.dumps({"namespace": "default"}),
+                    },
+                },
+            }
+        else:
+            yield {"type": "token", "content": "已按历史命名空间检查 storage-provisioner。"}
+        yield {"type": "done"}
+
+
 class _FinalAnswerChat:
     def __init__(self):
         self.tool_names_by_call: list[list[str]] = []
@@ -1055,6 +1212,44 @@ class _ConcreteToolMCP:
                 }
             }
         return {"error": f"unexpected tool {name}"}
+
+
+class _NamespaceRecordingMCP:
+    def __init__(self):
+        self.called_arguments: list[dict] = []
+
+    async def list_tools(self, skill_id=None):
+        return [
+            {
+                "name": "k8s-get-pods",
+                "description": "获取 Pod 列表",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"namespace": {"type": "string"}},
+                    "required": [],
+                },
+                "server": "builtin",
+                "available": True,
+            }
+        ]
+
+    def authorize_tool_call(self, name, user, arguments=None):
+        return _AllowDecision()
+
+    async def call_tool(self, name, arguments, user=None):
+        self.called_arguments.append(arguments)
+        return {
+            "result": {
+                "count": 1,
+                "items": [
+                    {
+                        "namespace": arguments.get("namespace"),
+                        "name": "storage-provisioner",
+                        "status": "Running",
+                    }
+                ],
+            }
+        }
 
 
 class _ClusterInspectionMCP:
