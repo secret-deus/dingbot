@@ -14,3 +14,7 @@ Default development login is created on first startup when no admin exists:
 ```text
 admin / admin
 ```
+
+For shared or production environments, set `APP_ENV=production`, replace
+`SECRET_KEY`, restrict `CORS_ALLOW_ORIGINS`, and provide a non-default
+`BOOTSTRAP_ADMIN_PASSWORD`. Production startup rejects the unsafe local defaults.

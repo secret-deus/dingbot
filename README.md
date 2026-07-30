@@ -23,6 +23,13 @@
 
 ## 本地启动
 
+推荐本地运行时：
+
+- Python：使用仓库 `.python-version` 指定的 3.13；Docker 后端镜像使用
+  Python 3.12，二者都满足 `backend-v2/pyproject.toml` 的版本范围。
+- Node.js：使用 `.nvmrc` 指定的 Node 22；前端和 ToolSearch Docker 构建也使用
+  Node 22。
+
 后端：
 
 ```bash
@@ -52,6 +59,20 @@ npm run dev
 ```text
 admin / admin
 ```
+
+该账号仅用于本地开发。部署到共享或生产环境前，请至少设置：
+
+```bash
+APP_ENV=production
+SECRET_KEY=<32位以上随机密钥>
+CORS_ALLOW_ORIGINS=https://your-frontend.example.com
+BOOTSTRAP_ADMIN_USERNAME=<初始化管理员用户名>
+BOOTSTRAP_ADMIN_PASSWORD=<强密码>
+```
+
+生产模式会拒绝占位 `SECRET_KEY`、通配 `CORS_ALLOW_ORIGINS=*` 和默认
+`BOOTSTRAP_ADMIN_PASSWORD=admin`。如果已经手工创建管理员，也可以设置
+`BOOTSTRAP_ADMIN_ENABLED=false` 禁止自动初始化管理员。
 
 ## 构建与验证
 

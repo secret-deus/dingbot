@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import asyncio
+
 from fastapi.testclient import TestClient
+
+from app.db.repositories.audit_repo import AuditRepository
 
 
 def test_public_health_endpoints(monkeypatch, tmp_path):
@@ -16,8 +20,12 @@ def test_public_health_endpoints(monkeypatch, tmp_path):
         assert health.status_code == 200
         assert health.json()["status"] == "healthy"
 
-        status = client.get("/api/v2/config/status")
+        status = client.get(
+            "/api/v2/config/status",
+            headers={"X-Request-ID": "public-status-smoke"},
+        )
         assert status.status_code == 200
+        assert status.headers["X-Request-ID"] == "public-status-smoke"
         assert status.json()["status"] == "ok"
 
         config_health = client.get("/api/v2/config/health")
@@ -26,3 +34,17 @@ def test_public_health_endpoints(monkeypatch, tmp_path):
         assert body["status"] == "healthy"
         assert body["llm_enabled"] is False
         assert body["mcp_servers"]["builtin"]["tools"] >= 9
+
+        audit_rows = asyncio.run(_audit_rows_for("/api/v2/config/status"))
+        assert any(
+            row.details and row.details.get("request_id") == "public-status-smoke"
+            for row in audit_rows
+        )
+
+
+async def _audit_rows_for(resource: str):
+    from app.db.session import get_session_factory
+
+    async with get_session_factory()() as session:
+        repo = AuditRepository(session)
+        return await repo.query(resource=resource, limit=20)

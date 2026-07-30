@@ -59,3 +59,8 @@ ALIYUN_SLS_MAPPINGS='[]'
 
 Do not commit files containing API keys, webhook tokens, cloud credentials,
 kubeconfig paths, or local cluster details.
+
+When `APP_ENV=production`, startup validates the non-JSON runtime environment as
+well: `SECRET_KEY` must be a non-placeholder value of at least 32 characters,
+`CORS_ALLOW_ORIGINS` must name concrete frontend origins instead of `*`, and an
+enabled bootstrap admin must use a non-default `BOOTSTRAP_ADMIN_PASSWORD`.

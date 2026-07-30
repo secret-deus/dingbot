@@ -5,7 +5,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import User, Role
+from app.db.models import Role, User
 from app.db.repositories.base import BaseRepository
 
 
@@ -28,6 +28,13 @@ class UserRepository(BaseRepository[User]):
         result = await self.get_many(stmt, limit, offset)
         return list(result)
 
-    async def create_user(self, username: str, hashed_password: str, role: Role = Role.VIEWER) -> User:
+    async def get_first_admin(self) -> User | None:
+        stmt = select(User).where(User.role == Role.ADMIN).order_by(User.created_at.asc())
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
+
+    async def create_user(
+        self, username: str, hashed_password: str, role: Role = Role.VIEWER
+    ) -> User:
         user = User(username=username, hashed_password=hashed_password, role=role)
         return await self.create(user)

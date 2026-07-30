@@ -21,11 +21,20 @@ class AppSettings(BaseSettings):
 
     # --- 应用 ---
     app_name: str = "ding-robot"
+    app_env: str = Field(default="development", alias="APP_ENV")
     debug: bool = False
     host: str = "0.0.0.0"
     port: int = 8000
     log_level: str = "INFO"
     secret_key: str = Field(default="change-me-in-production", alias="SECRET_KEY")
+    cors_allow_origins: str = Field(
+        default="http://127.0.0.1:3000,http://localhost:3000",
+        alias="CORS_ALLOW_ORIGINS",
+    )
+    cors_allow_credentials: bool = Field(default=True, alias="CORS_ALLOW_CREDENTIALS")
+    bootstrap_admin_enabled: bool = Field(default=True, alias="BOOTSTRAP_ADMIN_ENABLED")
+    bootstrap_admin_username: str = Field(default="admin", alias="BOOTSTRAP_ADMIN_USERNAME")
+    bootstrap_admin_password: str = Field(default="admin", alias="BOOTSTRAP_ADMIN_PASSWORD")
 
     # --- 数据库 ---
     database_url: str = Field(
@@ -102,6 +111,14 @@ class AppSettings(BaseSettings):
         alias="SKILLS_CONFIG_PATH",
     )
 
+    @property
+    def is_production(self) -> bool:
+        return self.app_env.strip().lower() in {"prod", "production"}
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return _split_csv_setting(self.cors_allow_origins)
+
 
 def get_settings() -> AppSettings:
     settings = AppSettings()
@@ -139,6 +156,35 @@ def resolve_repo_path(path: str) -> Path:
 
 def is_placeholder_secret(value: Optional[str]) -> bool:
     return _is_placeholder_secret(value)
+
+
+def validate_startup_security(settings: AppSettings) -> None:
+    problems = []
+    if settings.is_production:
+        if _is_placeholder_secret(settings.secret_key) or len(settings.secret_key.strip()) < 32:
+            problems.append("生产环境必须设置至少 32 位的非占位 SECRET_KEY")
+        if "*" in settings.cors_origins:
+            problems.append("生产环境不能使用 CORS_ALLOW_ORIGINS=*")
+        if settings.bootstrap_admin_enabled and is_unsafe_bootstrap_admin_password(
+            settings.bootstrap_admin_password
+        ):
+            problems.append("生产环境启用初始化管理员时必须设置非默认 BOOTSTRAP_ADMIN_PASSWORD")
+
+    if problems:
+        raise RuntimeError("不安全的启动配置: " + "; ".join(problems))
+
+
+def is_unsafe_bootstrap_admin_password(password: str) -> bool:
+    return (
+        not password
+        or password == "admin"
+        or _is_placeholder_secret(password)
+        or len(password) < 12
+    )
+
+
+def _split_csv_setting(value: str) -> list[str]:
+    return [item.strip() for item in value.split(",") if item.strip()]
 
 
 def _apply_llm_json_config(settings: AppSettings) -> None:
