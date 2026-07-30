@@ -6,7 +6,10 @@ Use this checklist before handing a delivery slice to test or committing a relea
 
 - [ ] `project_document/specs/**/tasks.md` reflects the completed slice.
 - [ ] README and config docs match the implemented behavior.
-- [ ] Runtime secrets, kubeconfig, cloud credentials, logs, and SQLite databases are not staged.
+- [x] Runtime secrets, kubeconfig, cloud credentials, logs, and SQLite databases are not staged.
+- [ ] Production runtime sets `APP_ENV=production`, a non-placeholder `SECRET_KEY`,
+      concrete `CORS_ALLOW_ORIGINS`, and a non-default bootstrap admin password
+      or disables bootstrap admin creation.
 - [ ] Browser screenshots or smoke notes are updated for UI changes.
 
 ## Verification
@@ -47,6 +50,6 @@ Expected checks:
 ## Handoff
 
 - [ ] Fill `self-test-report-template.md` for the slice.
-- [ ] Record skipped checks with concrete reasons.
-- [ ] Review `git status --short` and classify files as commit now, fix then commit, or ignore.
+- [x] Record skipped checks with concrete reasons.
+- [x] Review `git status --short` and classify files as commit now, fix then commit, or ignore.
 - [ ] Commit only source, specs, generated frontend assets, and report screenshots that are intentionally part of the deliverable.
