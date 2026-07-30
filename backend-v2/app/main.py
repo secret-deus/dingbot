@@ -169,7 +169,8 @@ async def _ensure_admin_user(settings: AppSettings | None = None) -> None:
 # ---------------------------------------------------------------------------
 
 app = FastAPI(
-    title="钉钉K8s运维机器人",
+    title="Ops Workbench（智能运维工作台）",
+    description="面向 Kubernetes、ECS 与阿里云场景的智能运维工作台。",
     version="3.0.0",
     lifespan=lifespan,
 )

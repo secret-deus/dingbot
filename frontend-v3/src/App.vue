@@ -8,10 +8,10 @@
 
             <div class="brand-row">
               <button class="brand-button" type="button" :aria-label="effectiveCollapsed ? '展开侧栏' : '折叠侧栏'" @click="collapsed = !collapsed">
-                <span class="brand-mark">D</span>
+                <span class="brand-mark">O</span>
                 <span class="brand-copy">
-                  <strong>Ding Robot</strong>
-                  <small>ChatOps Console</small>
+                  <strong>Ops Workbench</strong>
+                  <small>智能运维工作台</small>
                 </span>
               </button>
               <n-button class="collapse-button" quaternary circle :aria-label="effectiveCollapsed ? '展开侧栏' : '折叠侧栏'" @click="collapsed = !collapsed">
@@ -78,9 +78,9 @@
           <section class="app-main">
             <header class="app-topbar">
               <div class="crumbs">
-                <strong>Ding Robot Demo</strong>
+                <strong>Ops Workbench Demo</strong>
                 <span>/</span>
-                <strong>ding-robot</strong>
+                <strong>ops-workbench</strong>
                 <span>/</span>
                 <span>{{ routeSectionTitle }}</span>
               </div>

@@ -29,7 +29,7 @@ function jsonContent(payload: unknown) {
 server.registerTool(
   "toolsearch",
   {
-    description: "Search the Ding Robot operations tool catalog. Returns flat results plus categoryGroups and relevanceLayers. Discovery-only; does not execute operational tools.",
+    description: "Search the Ops Workbench operations tool catalog. Returns flat results plus categoryGroups and relevanceLayers. Discovery-only; does not execute operational tools.",
     inputSchema: {
       query: z.string().min(1).describe("Natural language search query"),
       category: z.string().optional().describe("Optional category filter, such as kubernetes or ecs"),

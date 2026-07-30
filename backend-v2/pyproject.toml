@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "ding-robot-v3"
 version = "3.0.0"
-description = "钉钉K8s运维机器人 - 重构版"
+description = "Ops Workbench（智能运维工作台）后端"
 authors = ["DevOps Team"]
 readme = "README.md"
 package-mode = false

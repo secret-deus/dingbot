@@ -1,6 +1,6 @@
-# 钉钉 K8s 运维机器人
+# Ops Workbench（智能运维工作台）
 
-面向 Kubernetes / ECS / 阿里云运维场景的智能助手。当前仓库已进入 v3 重构线：后端使用 FastAPI，前端使用 Vue 3，工具层通过 MCP 管理，旧实现集中归档在 `archived/`。
+面向 Kubernetes、ECS 与阿里云场景的智能运维工作台，统一覆盖 ChatOps 对话、MCP 工具治理、审计与调度，仓库 slug 为 `ops-workbench`。当前仓库已进入 v3 重构线：后端使用 FastAPI，前端使用 Vue 3，工具层通过 MCP 管理；DingTalk 仅作为通知集成，旧实现集中归档在 `archived/`。
 
 ## 当前状态
 
@@ -105,7 +105,7 @@ Docker Compose：
 
 ```bash
 cp backend-v2/.env.example backend-v2/.env
-docker compose up --build
+docker compose --project-name ding-robot up --build
 ```
 
 Compose 模式下：
@@ -117,8 +117,11 @@ Compose 模式下：
 backend `8000` 和 frontend `80`：
 
 ```bash
-BACKEND_PORT=8010 FRONTEND_PORT=3010 docker compose up --build
+BACKEND_PORT=8010 FRONTEND_PORT=3010 docker compose --project-name ding-robot up --build
 ```
+
+`ding-robot` 是为保留现有 Docker 网络、容器与镜像资源前缀而固定的兼容
+Compose project name，不代表当前产品名称或仓库 slug。
 
 后端镜像会在构建阶段编译并携带 `mcp-servers/toolsearch`，所以 Docker 运行时可以直接启动 stdio ToolSearch。启用 ToolSearch 时，将 `config/mcp_config.example.json` 复制为 `config/mcp_config.json`，并把 `toolsearch.enabled` 改为 `true`。
 

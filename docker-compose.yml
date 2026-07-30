@@ -1,3 +1,6 @@
+# Compatibility project name retained for existing Docker resource prefixes.
+name: ding-robot
+
 services:
   backend:
     build:

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Local MCP server for searching the Ding Robot operations tool catalog.",
+  "description": "Local MCP server for searching the Ops Workbench operations tool catalog.",
   "bin": {
     "toolsearch-mcp": "dist/src/index.js"
   },

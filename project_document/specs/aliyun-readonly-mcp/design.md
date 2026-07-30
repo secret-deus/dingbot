@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Aliyun read-only adapter adds a narrow Alibaba Cloud evidence layer to `ding-robot`. It follows the existing project pattern: tools are registered through `backend-v2` MCP infrastructure, discovered by ToolSearch, gated by `ToolCatalogPolicy`, audited through existing config/chat APIs, and rendered in `frontend-v3` chat cards.
+The Aliyun read-only adapter adds a narrow Alibaba Cloud evidence layer to Ops Workbench（智能运维工作台，repo slug: `ops-workbench`）. It follows the existing project pattern: tools are registered through `backend-v2` MCP infrastructure, discovered by ToolSearch, gated by `ToolCatalogPolicy`, audited through existing config/chat APIs, and rendered in `frontend-v3` chat cards.
 
 The adapter is intentionally not a generic Alibaba Cloud MCP proxy. Official Alibaba Cloud MCP servers may be used as reference implementations or hidden backends in a future phase, but phase 1 exposes only project-owned `aliyun-*` tools.
 

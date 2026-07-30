@@ -2,7 +2,7 @@
 
 ## Background
 
-`ding-robot` now has the core local ChatOps stack working: `backend-v2`, `frontend-v3`,
+Ops Workbench now has the core local ChatOps stack working: `backend-v2`, `frontend-v3`,
 ToolSearch stdio MCP, K8s tools, scheduler, DingTalk notification plumbing, and the
 Aliyun read-only adapter. The latest local acceptance showed ToolSearch connected with
 `68` catalog tools, `68` executable tools, and `13/13` Aliyun tools when the backend is

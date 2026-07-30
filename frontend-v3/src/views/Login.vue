@@ -3,10 +3,10 @@
     <section class="login-card" aria-labelledby="login-title">
       <div class="window-dots" aria-hidden="true" />
       <div class="login-brand">
-        <div class="brand-mark">D</div>
+        <div class="brand-mark">O</div>
         <div>
-          <span>Ding Robot</span>
-          <h1 id="login-title">ChatOps 运维控制台</h1>
+          <span>Ops Workbench</span>
+          <h1 id="login-title">智能运维工作台</h1>
           <p>连接 Kubernetes、MCP 工具链和知识图谱，用低噪声界面组织排障证据。</p>
         </div>
       </div>

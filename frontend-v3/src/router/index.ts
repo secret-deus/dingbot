@@ -66,7 +66,7 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to, _from, next) => {
-  document.title = `${to.meta.title || '运维机器人'} - 钉钉K8s`
+  document.title = `${to.meta.title || '智能运维工作台'} - Ops Workbench`
 
   const auth = useAuthStore()
   if (auth.isLoggedIn && !auth.username) {

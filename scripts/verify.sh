@@ -29,6 +29,10 @@ run_root() {
   (cd "${ROOT_DIR}" && "$@")
 }
 
+run_compose() {
+  run_root docker compose --project-name ding-robot "$@"
+}
+
 print_runtime_hint
 run_in "backend-v2" poetry run pytest
 run_in "frontend-v3" npm run build
@@ -41,9 +45,9 @@ if ! run_in "mcp-servers/toolsearch" npm audit --omit=dev; then
 fi
 
 if command -v docker >/dev/null 2>&1; then
-  run_root docker compose config
+  run_compose config
   if [[ "${VERIFY_DOCKER_BUILD:-0}" == "1" ]]; then
-    run_root docker compose build
+    run_compose build
   else
     echo
     echo "==> docker compose build skipped; set VERIFY_DOCKER_BUILD=1 to run it."

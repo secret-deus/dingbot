@@ -20,7 +20,7 @@ class AppSettings(BaseSettings):
     )
 
     # --- 应用 ---
-    app_name: str = "ding-robot"
+    app_name: str = "ops-workbench"
     app_env: str = Field(default="development", alias="APP_ENV")
     debug: bool = False
     host: str = "0.0.0.0"

@@ -41,10 +41,11 @@ The server should use `StdioServerTransport`. It must not write logs to stdout b
 
 ## 3. Catalog Loading
 
-The server reads `TOOL_CATALOG_PATH` from environment first:
+The server reads `TOOL_CATALOG_PATH` from environment first. Paths below are
+relative to the `ops-workbench` repository root:
 
 ```text
-TOOL_CATALOG_PATH=/Users/xhang/Documents/ding-robot/config/tool_catalog.json
+TOOL_CATALOG_PATH=config/tool_catalog.json
 ```
 
 If absent, it walks upward from the current working directory and falls back to `config/tool_catalog.json` at the repository root.
@@ -247,9 +248,9 @@ Add a ToolSearch stdio server entry:
   "type": "stdio",
   "enabled": true,
   "command": "node",
-  "args": ["/Users/xhang/Documents/ding-robot/mcp-servers/toolsearch/build/index.js"],
+  "args": ["mcp-servers/toolsearch/dist/src/index.js"],
   "env": {
-    "TOOLSEARCH_CATALOG": "/Users/xhang/Documents/ding-robot/config/tool_catalog.json"
+    "TOOL_CATALOG_PATH": "config/tool_catalog.json"
   }
 }
 ```

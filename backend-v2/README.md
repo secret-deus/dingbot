@@ -1,6 +1,7 @@
-# Ding Robot Backend v2
+# Ops Workbench Backend v2
 
-FastAPI backend for the DingTalk K8s operations assistant rewrite.
+FastAPI backend for Ops Workbench（智能运维工作台）, covering ChatOps,
+Kubernetes, ECS, Alibaba Cloud, audit, and scheduling workflows.
 
 ## Local Run
 

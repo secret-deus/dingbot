@@ -20,6 +20,14 @@ def test_public_health_endpoints(monkeypatch, tmp_path):
         assert health.status_code == 200
         assert health.json()["status"] == "healthy"
 
+        openapi = client.get("/openapi.json")
+        assert openapi.status_code == 200
+        assert openapi.json()["info"]["title"] == "Ops Workbench（智能运维工作台）"
+        assert (
+            openapi.json()["info"]["description"]
+            == "面向 Kubernetes、ECS 与阿里云场景的智能运维工作台。"
+        )
+
         status = client.get(
             "/api/v2/config/status",
             headers={"X-Request-ID": "public-status-smoke"},

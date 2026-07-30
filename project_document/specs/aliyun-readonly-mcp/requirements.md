@@ -2,7 +2,7 @@
 
 ## Background
 
-`ding-robot` already has `backend-v2` as the active backend, `frontend-v3` as the active SPA, and an MCP aggregation layer that merges built-in K8s/ECS tools, configured MCP servers, ToolSearch metadata, tool policy, and audit. The current Alibaba Cloud surface is a small built-in ECS read path. The next step is to make Alibaba Cloud a first-class ChatOps evidence source without exposing broad cloud mutation APIs to the LLM.
+Ops Workbench already has `backend-v2` as the active backend, `frontend-v3` as the active SPA, and an MCP aggregation layer that merges built-in K8s/ECS tools, configured MCP servers, ToolSearch metadata, tool policy, and audit. The current Alibaba Cloud surface is a small built-in ECS read path. The next step is to make Alibaba Cloud a first-class ChatOps evidence source without exposing broad cloud mutation APIs to the LLM.
 
 Alibaba Cloud provides official MCP options such as OpenAPI MCP Server, OSS MCP Server, CloudMonitor/Observability MCP, and the open-source CloudOps MCP Server. This project will not expose those full tool surfaces directly to the LLM in phase 1. Instead, it will add a local read-only Aliyun adapter that presents a reviewed, narrow, auditable tool whitelist.
 
