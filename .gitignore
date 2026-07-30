@@ -386,6 +386,8 @@ frontend/node_modules/
 
 # IDE / Agent 本地文件
 .claude/
+.codegraph/
+.playwright-cli/
 .qoder/
 .specstory/
 .kiro/
@@ -393,6 +395,9 @@ AGENTS.md
 agents.md
 agent.md
 GEMINI.md
+
+# 本地浏览器与验证生成证据
+/output/
 
 CLAUDE.md
 QWEN.md
