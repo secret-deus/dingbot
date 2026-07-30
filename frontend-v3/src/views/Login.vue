@@ -11,11 +11,17 @@
         </div>
       </div>
 
+      <n-alert v-if="loginError" class="login-error" type="error" :bordered="false">
+        {{ loginError }}
+      </n-alert>
+
       <n-form ref="formRef" class="login-form" :model="form" :rules="rules" @submit.prevent="onLogin">
         <n-form-item label="用户名" path="username" :label-props="{ for: 'login-username' }">
           <n-input
             v-model:value="form.username"
             placeholder="admin"
+            autofocus
+            :disabled="loading"
             :input-props="{ id: 'login-username', name: 'username', autocomplete: 'username' }"
           />
         </n-form-item>
@@ -25,40 +31,57 @@
             type="password"
             placeholder="admin"
             show-password-on="click"
+            :disabled="loading"
             :input-props="{ id: 'login-password', name: 'password', autocomplete: 'current-password' }"
           />
         </n-form-item>
-        <n-button class="login-submit" type="primary" block :loading="loading" attr-type="submit">登录</n-button>
+        <n-button class="login-submit" type="primary" block :disabled="!canSubmit" :loading="loading" attr-type="submit">登录</n-button>
       </n-form>
     </section>
   </div>
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { NButton, NForm, NFormItem, NInput, useMessage } from 'naive-ui'
+import { NAlert, NButton, NForm, NFormItem, NInput, useMessage } from 'naive-ui'
+import type { FormInst } from 'naive-ui'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
 const auth = useAuthStore()
 const message = useMessage()
 const loading = ref(false)
+const loginError = ref('')
+const formRef = ref<FormInst | null>(null)
 
 const form = reactive({ username: '', password: '' })
 const rules = {
-  username: { required: true, message: '请输入用户名', trigger: 'blur' },
-  password: { required: true, message: '请输入密码', trigger: 'blur' },
+  username: { required: true, message: '请输入用户名', trigger: ['input', 'blur'] },
+  password: { required: true, message: '请输入密码', trigger: ['input', 'blur'] },
 }
+const hasCredentials = computed(() => Boolean(form.username.trim() && form.password))
+const canSubmit = computed(() => Boolean(hasCredentials.value && !loading.value))
 
 async function onLogin() {
+  if (loading.value) return
+  loginError.value = ''
+
   loading.value = true
   try {
-    await auth.login(form.username, form.password)
+    await formRef.value?.validate()
+  } catch {
+    loading.value = false
+    return
+  }
+
+  try {
+    await auth.login(form.username.trim(), form.password)
     message.success('登录成功')
     router.push({ name: 'Dashboard' })
   } catch (e: any) {
-    message.error(e?.response?.data?.detail || '登录失败')
+    loginError.value = e?.response?.data?.detail || '登录失败'
+    message.error(loginError.value)
   } finally {
     loading.value = false
   }
@@ -114,6 +137,10 @@ async function onLogin() {
   margin: 10px 0 0;
   color: var(--dr-text-muted);
   line-height: 1.58;
+}
+
+.login-error {
+  margin-bottom: 14px;
 }
 
 .login-form :deep(.n-form-item-label__text) {

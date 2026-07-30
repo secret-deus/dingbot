@@ -1,0 +1,147 @@
+.app-content :where(.mcp-page, .kg-page, .scheduler-page, .access-page) {
+  width: min(100%, 1360px);
+  margin: 0 auto;
+}
+
+.app-content :where(.page-header, .dr-page-header) {
+  min-height: 58px;
+  align-items: flex-start;
+  padding-bottom: 2px;
+  border-bottom: 0;
+}
+
+.app-content :where(.page-title, .dr-page-title) {
+  color: #111827;
+  font-size: 24px;
+  font-weight: 650;
+  line-height: 1.12;
+}
+
+.app-content :where(.page-subtitle, .dr-page-subtitle) {
+  color: #6b7280;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.app-content :where(.stats-grid, .scheduler-summary, .access-summary-strip) {
+  gap: 0;
+  padding: 4px 0 2px;
+  border-top: 1px solid #e5e7eb;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.app-content :where(.stat-block, .summary-tile, .summary-item) {
+  min-height: 58px;
+  padding: 9px 14px;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.app-content :where(.stat-block, .summary-tile, .summary-item):not(:last-child) {
+  border-right: 1px solid #e5e7eb !important;
+}
+
+.app-content :where(.stat-block strong, .summary-tile strong, .summary-item strong) {
+  font-size: 18px;
+  font-weight: 620;
+}
+
+.app-content :where(.config-panel, .graph-panel, .detail-panel, .table-panel, .task-panel, .dr-panel) {
+  overflow: hidden;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.app-content :where(.config-panel-head, .panel-head, .dr-panel-head) {
+  min-height: 56px;
+  padding: 14px 0 !important;
+  border-bottom: 1px solid #e5e7eb !important;
+  background: transparent !important;
+}
+
+.app-content :where(.panel-title, .config-title, .dr-panel-title) {
+  color: #111827;
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.app-content :where(.panel-subtitle, .config-subtitle, .dr-panel-subtitle) {
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.app-content :where(.n-data-table) {
+  border: 0 !important;
+  border-radius: 0 !important;
+  --n-td-color-hover: #f8fafc;
+  --n-th-color: #ffffff;
+}
+
+.app-content :where(.n-data-table-wrapper) {
+  border: 0 !important;
+  border-radius: 0 !important;
+}
+
+.app-content :where(.field-row, .adapter-summary > div, .switch-row, .provider-item, .graph-canvas) {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.app-content :where(.config-actions, .detail-panel pre) {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: #f8fafc !important;
+  box-shadow: none !important;
+}
+
+.app-content :where(.field-row, .adapter-summary > div, .switch-row, .provider-item):not(:last-child) {
+  border-bottom: 1px solid #e5e7eb !important;
+}
+
+.app-content :where(.llm-panel) {
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.app-content :where(.provider-item.active) {
+  background: #eef2f7 !important;
+}
+
+.chat-workbench {
+  background: #ffffff;
+}
+
+.chat-workbench :where(.session-rail, .chat-topbar) {
+  border-color: #e5e7eb;
+  background: #ffffff;
+  backdrop-filter: none;
+}
+
+.chat-workbench :where(.session-row.active, .empty-mark) {
+  border-color: transparent;
+  background: #eef2f7;
+  box-shadow: none;
+}
+
+.chat-workbench .composer-shell :where(.composer) {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+@media (max-width: 720px) {
+  .app-content :where(.page-header, .dr-page-header) {
+    display: block;
+  }
+}

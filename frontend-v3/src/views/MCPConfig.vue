@@ -1,11 +1,11 @@
 <template>
-  <div class="mcp-page">
+  <div class="mcp-page" :inert="mcpStore.refreshBusy" :aria-busy="mcpStore.refreshBusy">
     <div class="page-header">
       <div>
         <div class="page-title">MCP 工具管理</div>
         <div class="page-subtitle">ToolSearch、K8s、ECS 与阿里云只读能力配置</div>
       </div>
-      <n-button size="small" :loading="mcpStore.loading || mcpStore.healthLoading" @click="mcpStore.refresh()">刷新</n-button>
+      <n-button size="small" :loading="mcpStore.refreshBusy" :disabled="mcpStore.refreshBusy" @click="mcpStore.refresh()">刷新</n-button>
     </div>
 
     <div class="stats-grid">
@@ -37,6 +37,32 @@
       </n-tag>
     </div>
 
+    <section class="mcp-readiness-strip" aria-label="MCP 能力态势">
+      <article :class="['readiness-card', readinessTone]">
+        <span class="readiness-kicker">Execution readiness</span>
+        <strong>{{ readinessTitle }}</strong>
+        <small>{{ readinessDetail }}</small>
+      </article>
+      <article class="readiness-card">
+        <span class="readiness-kicker">Blocked capabilities</span>
+        <strong>{{ blockedCapabilityTitle }}</strong>
+        <small>{{ blockedCapabilityDetail }}</small>
+      </article>
+      <article class="readiness-card">
+        <span class="readiness-kicker">Catalog coverage</span>
+        <strong>{{ catalogCoverageTitle }}</strong>
+        <small>{{ catalogCoverageDetail }}</small>
+      </article>
+    </section>
+
+    <section v-if="blockingItems.length" class="blocking-list" aria-label="当前阻塞项">
+      <article v-for="item in blockingItems" :key="item.title" class="blocking-item">
+        <span>{{ item.label }}</span>
+        <strong>{{ item.title }}</strong>
+        <small>{{ item.detail }}</small>
+      </article>
+    </section>
+
     <div class="config-grid">
       <section class="config-panel">
         <div class="config-panel-head">
@@ -51,11 +77,11 @@
         <div class="form-grid">
           <label class="field-row inline-field">
             <span>启用</span>
-            <n-switch v-model:value="form.k8s.enabled" size="small" :disabled="!auth.isAdmin" />
+            <n-switch v-model:value="form.k8s.enabled" size="small" :disabled="mcpStore.refreshBusy || !auth.isAdmin" />
           </label>
           <label class="field-row inline-field">
             <span>集群内运行</span>
-            <n-switch v-model:value="form.k8s.in_cluster" size="small" :disabled="!auth.isAdmin" />
+            <n-switch v-model:value="form.k8s.in_cluster" size="small" :disabled="mcpStore.refreshBusy || !auth.isAdmin" />
           </label>
           <label class="field-row wide-field">
             <span>Kubeconfig 路径</span>
@@ -63,12 +89,12 @@
               v-model:value="form.k8s.kubeconfig_path"
               clearable
               placeholder="默认使用 ~/.kube/config"
-              :disabled="form.k8s.in_cluster || !auth.isAdmin"
+              :disabled="mcpStore.refreshBusy || form.k8s.in_cluster || !auth.isAdmin"
             />
           </label>
           <label class="field-row">
             <span>默认命名空间</span>
-            <n-input v-model:value="form.k8s.namespace" placeholder="default" :disabled="!auth.isAdmin" />
+            <n-input v-model:value="form.k8s.namespace" placeholder="default" :disabled="mcpStore.refreshBusy || !auth.isAdmin" />
           </label>
         </div>
         <n-alert v-if="mcpStore.mcpConfig?.k8s.unavailable_reason" type="warning" :bordered="false" class="status-alert">
@@ -89,11 +115,11 @@
         <div class="form-grid">
           <label class="field-row inline-field">
             <span>启用</span>
-            <n-switch v-model:value="form.ecs.enabled" size="small" :disabled="!auth.isAdmin" />
+            <n-switch v-model:value="form.ecs.enabled" size="small" :disabled="mcpStore.refreshBusy || !auth.isAdmin" />
           </label>
           <label class="field-row">
             <span>地域</span>
-            <n-input v-model:value="form.ecs.region_id" placeholder="cn-hangzhou" :disabled="!auth.isAdmin" />
+            <n-input v-model:value="form.ecs.region_id" placeholder="cn-hangzhou" :disabled="mcpStore.refreshBusy || !auth.isAdmin" />
           </label>
           <label class="field-row">
             <span>AccessKey ID</span>
@@ -102,7 +128,7 @@
               clearable
               :placeholder="mcpStore.mcpConfig?.ecs.access_key_id_configured ? '已配置，留空保持不变' : 'AccessKey ID'"
               :input-props="{ autocomplete: 'off' }"
-              :disabled="!auth.isAdmin"
+              :disabled="mcpStore.refreshBusy || !auth.isAdmin"
             />
           </label>
           <label class="field-row">
@@ -114,7 +140,7 @@
               clearable
               :placeholder="mcpStore.mcpConfig?.ecs.access_key_secret_configured ? '已配置，留空保持不变' : 'AccessKey Secret'"
               :input-props="{ autocomplete: 'new-password' }"
-              :disabled="!auth.isAdmin"
+              :disabled="mcpStore.refreshBusy || !auth.isAdmin"
             />
           </label>
         </div>
@@ -154,11 +180,11 @@
         <div class="form-grid aliyun-form">
           <label class="field-row inline-field">
             <span>启用</span>
-            <n-switch v-model:value="form.aliyun.enabled" size="small" :disabled="!auth.isAdmin" />
+            <n-switch v-model:value="form.aliyun.enabled" size="small" :disabled="mcpStore.refreshBusy || !auth.isAdmin" />
           </label>
           <label class="field-row">
             <span>默认地域</span>
-            <n-input v-model:value="form.aliyun.default_region_id" placeholder="cn-hangzhou" :disabled="!auth.isAdmin" />
+            <n-input v-model:value="form.aliyun.default_region_id" placeholder="cn-hangzhou" :disabled="mcpStore.refreshBusy || !auth.isAdmin" />
           </label>
           <label class="field-row">
             <span>AccessKey ID</span>
@@ -167,7 +193,7 @@
               clearable
               :placeholder="mcpStore.mcpConfig?.aliyun.access_key_id_configured ? '已配置，留空保持不变' : 'AccessKey ID'"
               :input-props="{ autocomplete: 'off' }"
-              :disabled="!auth.isAdmin"
+              :disabled="mcpStore.refreshBusy || !auth.isAdmin"
             />
           </label>
           <label class="field-row">
@@ -179,7 +205,7 @@
               clearable
               :placeholder="mcpStore.mcpConfig?.aliyun.access_key_secret_configured ? '已配置，留空保持不变' : 'AccessKey Secret'"
               :input-props="{ autocomplete: 'new-password' }"
-              :disabled="!auth.isAdmin"
+              :disabled="mcpStore.refreshBusy || !auth.isAdmin"
             />
           </label>
           <label class="field-row wide-field">
@@ -187,7 +213,7 @@
             <n-input
               v-model:value="form.aliyun.allowed_regions"
               placeholder="cn-hangzhou, cn-shanghai"
-              :disabled="!auth.isAdmin"
+              :disabled="mcpStore.refreshBusy || !auth.isAdmin"
             />
           </label>
           <label class="field-row wide-field">
@@ -195,7 +221,7 @@
             <n-input
               v-model:value="form.aliyun.allowed_instance_ids"
               placeholder="可选，逗号分隔；为空表示仅按地域和标签限制"
-              :disabled="!auth.isAdmin"
+              :disabled="mcpStore.refreshBusy || !auth.isAdmin"
             />
           </label>
           <label class="field-row wide-field json-field">
@@ -205,7 +231,7 @@
               type="textarea"
               :autosize="{ minRows: 4, maxRows: 8 }"
               placeholder='{"env":["prod"],"owner":["ops"]}'
-              :disabled="!auth.isAdmin"
+              :disabled="mcpStore.refreshBusy || !auth.isAdmin"
             />
           </label>
           <label class="field-row wide-field json-field">
@@ -215,7 +241,7 @@
               type="textarea"
               :autosize="{ minRows: 4, maxRows: 8 }"
               placeholder='[{"service":"k8s","env":"prod","region_id":"cn-hangzhou","project":"example","logstore":"app"}]'
-              :disabled="!auth.isAdmin"
+              :disabled="mcpStore.refreshBusy || !auth.isAdmin"
               @update:value="slsMappingsDirty = true"
             />
           </label>
@@ -232,14 +258,24 @@
     </n-alert>
 
     <div class="config-actions">
-      <n-button
-        type="primary"
-        :loading="mcpStore.configSaving"
-        :disabled="mcpStore.configLoading || !auth.isAdmin"
-        @click="saveBuiltinConfig"
+      <n-popconfirm
+        positive-text="保存"
+        negative-text="取消"
+        :positive-button-props="{ type: 'primary', size: 'small', disabled: mcpStore.refreshBusy }"
+        :negative-button-props="{ size: 'small' }"
+        @positive-click="saveBuiltinConfig"
       >
-        保存 MCP 配置
-      </n-button>
+        <template #trigger>
+          <n-button
+            type="primary"
+            :loading="mcpStore.configSaving"
+            :disabled="mcpStore.refreshBusy || !auth.isAdmin"
+          >
+            保存 MCP 配置
+          </n-button>
+        </template>
+        保存 MCP 配置并刷新内置工具列表？保存后会立即影响工具可用性。
+      </n-popconfirm>
       <span v-if="mcpStore.mcpConfig" class="save-hint">
         {{ auth.isAdmin ? '保存后会立即刷新内置工具列表。' : '只有 admin 可以保存 MCP 配置。' }}
       </span>
@@ -257,7 +293,7 @@
 
 <script setup lang="ts">
 import { computed, h, onMounted, reactive, ref, watch } from 'vue'
-import { NAlert, NButton, NDataTable, NInput, NSwitch, NTag } from 'naive-ui'
+import { NAlert, NButton, NDataTable, NInput, NPopconfirm, NSwitch, NTag } from 'naive-ui'
 import { useAuthStore } from '@/stores/auth'
 import { useMcpStore } from '@/stores/mcp'
 
@@ -297,6 +333,55 @@ const toolsearchStatus = computed(() => {
 
 const aliyunTools = computed(() => mcpStore.tools.filter((tool) => tool.name.startsWith('aliyun-')))
 const availableAliyunTools = computed(() => aliyunTools.value.filter((tool) => tool.available !== false).length)
+const executableToolCount = computed(() => executionPolicyCount('executable'))
+const catalogOnlyToolCount = computed(() => executionPolicyCount('catalog_only'))
+const unavailableToolCount = computed(() => mcpStore.tools.filter((tool) => tool.available === false).length)
+const enabledConfigCount = computed(() =>
+  [mcpStore.mcpConfig?.k8s, mcpStore.mcpConfig?.ecs, mcpStore.mcpConfig?.aliyun].filter((config) => config?.enabled).length,
+)
+const availableConfigCount = computed(() =>
+  [mcpStore.mcpConfig?.k8s, mcpStore.mcpConfig?.ecs, mcpStore.mcpConfig?.aliyun].filter((config) => config?.available).length,
+)
+const readinessTone = computed(() => {
+  if (!mcpStore.toolsearchHealth?.connected) return 'blocked'
+  if (unavailableToolCount.value || enabledConfigCount.value !== availableConfigCount.value) return 'watch'
+  return 'ready'
+})
+const readinessTitle = computed(() => {
+  if (!mcpStore.toolsearchHealth?.connected) return 'ToolSearch disconnected'
+  return `${executableToolCount.value} executable tools`
+})
+const readinessDetail = computed(() => {
+  if (!mcpStore.toolsearchHealth?.connected) return 'Reconnect ToolSearch before relying on catalog search or tool selection.'
+  if (!enabledConfigCount.value) return 'No MCP config group is enabled in the current snapshot.'
+  return `${availableConfigCount.value}/${enabledConfigCount.value} enabled config groups are currently available.`
+})
+const blockedCapabilityTitle = computed(() => `${blockingItems.value.length} item${blockingItems.value.length === 1 ? '' : 's'} need attention`)
+const blockedCapabilityDetail = computed(() => {
+  if (!blockingItems.value.length) return 'No blocking configuration issue is visible in the current snapshot.'
+  return blockingItems.value.map((item) => item.title).join(' / ')
+})
+const catalogCoverageTitle = computed(() => `${mcpStore.toolsearchHealth?.catalog_total ?? 0} catalog tools`)
+const catalogCoverageDetail = computed(() => `${catalogOnlyToolCount.value} catalog-only, ${availableAliyunTools.value}/${aliyunTools.value.length} Aliyun tools available.`)
+const blockingItems = computed(() => {
+  const items: Array<{ label: string; title: string; detail: string }> = []
+  if (!mcpStore.toolsearchHealth?.connected) {
+    items.push({ label: 'ToolSearch', title: 'Catalog server disconnected', detail: 'Tool discovery and category summaries are unavailable.' })
+  }
+  const k8s = mcpStore.mcpConfig?.k8s
+  if (k8s?.enabled && !k8s.available) {
+    items.push({ label: 'K8s', title: 'Kubernetes tools unavailable', detail: k8s.unavailable_reason || 'Check kubeconfig path or in-cluster runtime.' })
+  }
+  const ecs = mcpStore.mcpConfig?.ecs
+  if (ecs?.enabled && !ecs.available) {
+    items.push({ label: 'ECS', title: 'ECS credentials missing', detail: ecs.unavailable_reason || 'Configure AccessKey ID and Secret.' })
+  }
+  const aliyun = mcpStore.mcpConfig?.aliyun
+  if (aliyun?.enabled && !aliyun.available) {
+    items.push({ label: 'Aliyun', title: 'Aliyun adapter blocked', detail: aliyun.unavailable_reason || 'Check AccessKey, allowed regions, and read-only policy.' })
+  }
+  return items
+})
 
 const columns = [
   { title: '工具名', key: 'name', width: 200 },
@@ -441,14 +526,15 @@ function parseSlsMappings(value: string) {
 .mcp-page {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
   color: var(--dr-text);
 }
 .page-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+  padding-bottom: 2px;
 }
 .page-title {
   color: var(--dr-text);
@@ -464,19 +550,19 @@ function parseSlsMappings(value: string) {
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px;
+  gap: 8px;
 }
 .stat-block {
-  min-height: 92px;
+  min-height: 72px;
   border: 1px solid var(--dr-border-soft);
   border-radius: var(--dr-radius);
   background: var(--dr-surface);
-  padding: 15px;
+  padding: 11px 12px;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 4px;
-  box-shadow: 0 1px 0 rgba(25, 24, 20, 0.03);
+  gap: 5px;
+  box-shadow: none;
 }
 .stat-label {
   color: var(--dr-text-muted);
@@ -485,7 +571,7 @@ function parseSlsMappings(value: string) {
 }
 .stat-block strong {
   color: var(--dr-text);
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 610;
   line-height: 1.2;
 }
@@ -493,6 +579,100 @@ function parseSlsMappings(value: string) {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+.mcp-readiness-strip {
+  display: grid;
+  grid-template-columns: 1.05fr 1fr 1.2fr;
+  gap: 10px;
+}
+.readiness-card {
+  min-width: 0;
+  min-height: 96px;
+  padding: 13px 14px;
+  border: 1px solid var(--dr-border-soft);
+  border-radius: 8px;
+  background: #ffffff;
+}
+.readiness-card.ready {
+  border-color: #b8e3d1;
+  background: #f0fdf4;
+}
+.readiness-card.watch {
+  border-color: #f3d89b;
+  background: #fffbeb;
+}
+.readiness-card.blocked {
+  border-color: #f2b8b5;
+  background: #fff5f5;
+}
+.readiness-kicker {
+  display: block;
+  color: var(--dr-text-muted);
+  font-size: 11px;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+.readiness-card strong {
+  display: block;
+  margin-top: 8px;
+  overflow: hidden;
+  color: var(--dr-text);
+  font-size: 17px;
+  font-weight: 650;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.readiness-card small {
+  display: -webkit-box;
+  margin-top: 6px;
+  overflow: hidden;
+  color: var(--dr-text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.blocking-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+.blocking-item {
+  min-width: 0;
+  min-height: 82px;
+  padding: 12px 14px;
+  border: 1px solid #f3d89b;
+  border-radius: 8px;
+  background: #fffbeb;
+}
+.blocking-item span {
+  display: inline-flex;
+  min-height: 22px;
+  align-items: center;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #92400e;
+  font-size: 11px;
+  font-weight: 750;
+}
+.blocking-item strong {
+  display: block;
+  margin-top: 8px;
+  color: var(--dr-text);
+  font-size: 14px;
+  font-weight: 650;
+}
+.blocking-item small {
+  display: -webkit-box;
+  margin-top: 5px;
+  overflow: hidden;
+  color: var(--dr-text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 .config-grid {
   display: grid;
@@ -503,14 +683,20 @@ function parseSlsMappings(value: string) {
   border: 1px solid var(--dr-border-soft);
   border-radius: var(--dr-radius);
   background: var(--dr-surface-lift);
-  padding: 16px;
-  box-shadow: var(--dr-shadow);
+  padding: 0;
+  box-shadow: none;
+  overflow: hidden;
 }
 .config-panel-head {
   display: flex;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
+  min-height: 56px;
+  margin: 0;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--dr-border-soft);
+  background: #fbfcfe;
 }
 .config-title {
   color: var(--dr-text);
@@ -527,6 +713,7 @@ function parseSlsMappings(value: string) {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+  padding: 14px 16px 16px;
 }
 .field-row {
   display: flex;
@@ -544,7 +731,7 @@ function parseSlsMappings(value: string) {
   border: 1px solid var(--dr-border-soft);
   border-radius: var(--dr-radius);
   padding: 0 10px;
-  background: #ffffff;
+  background: #fbfcfe;
 }
 .wide-field {
   grid-column: 1 / -1;
@@ -556,13 +743,14 @@ function parseSlsMappings(value: string) {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
-  margin-bottom: 12px;
+  margin: 0;
+  padding: 14px 16px 0;
 }
 .adapter-summary > div {
   min-height: 58px;
   border: 1px solid var(--dr-border-soft);
-  border-radius: var(--dr-radius-sm);
-  background: #ffffff;
+  border-radius: var(--dr-radius);
+  background: #fbfcfe;
   padding: 10px 12px;
   display: flex;
   flex-direction: column;
@@ -587,24 +775,41 @@ function parseSlsMappings(value: string) {
   font-size: var(--dr-text-sm);
 }
 .readonly-note {
-  margin: 10px 0 0;
+  margin: 0;
+  padding: 0 16px 16px;
 }
 .status-alert {
-  margin-top: 10px;
+  margin: 0 16px 14px;
 }
 .config-actions {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-height: 52px;
+  padding: 10px 12px;
+  border: 1px solid var(--dr-border-soft);
+  border-radius: var(--dr-radius);
+  background: #ffffff;
 }
 .save-hint {
   color: var(--dr-text-muted);
   font-size: var(--dr-text-sm);
 }
 
+.mcp-page :deep(.n-data-table) {
+  overflow: hidden;
+  border: 1px solid var(--dr-border-soft);
+  border-radius: var(--dr-radius);
+  background: #ffffff;
+  box-shadow: none;
+}
+
 @media (max-width: 900px) {
   .stats-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .mcp-readiness-strip {
+    grid-template-columns: 1fr;
   }
   .config-grid,
   .form-grid,

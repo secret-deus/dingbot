@@ -21,7 +21,7 @@
               </n-button>
             </div>
 
-            <button class="new-chat-button" type="button" @click="router.push({ name: 'Chat' })">
+            <button class="new-chat-button" type="button" :disabled="chatNavigationLocked" @click="openNewChat">
               <span class="new-chat-copy">新建排障对话</span>
               <n-icon aria-hidden="true"><AddOutline /></n-icon>
             </button>
@@ -34,6 +34,7 @@
                 type="button"
                 :aria-current="isActive(item.key) ? 'page' : undefined"
                 :title="item.label"
+                :disabled="chatNavigationLocked && !isActive(item.key)"
                 @click="onMenuSelect(item.key)"
               >
                 <n-icon :size="18"><component :is="item.icon" /></n-icon>
@@ -44,9 +45,19 @@
             <section class="recent-context" aria-label="最近上下文">
               <div class="nav-title">最近上下文</div>
               <div class="thread-list">
-                <button v-for="thread in recentThreads" :key="thread" type="button" class="thread-item" @click="router.push({ name: 'Chat' })">
-                  {{ thread }}
+                <button
+                  v-for="session in recentSessions"
+                  :key="session.id"
+                  type="button"
+                  class="thread-item"
+                  :title="session.title"
+                  :disabled="chatNavigationLocked"
+                  @click="openRecentSession(session.id)"
+                >
+                  <span class="thread-title">{{ session.title }}</span>
+                  <small>{{ formatCompactTime(session.updated_at) }}</small>
                 </button>
+                <div v-if="!recentSessions.length" class="thread-empty">暂无最近会话</div>
               </div>
             </section>
 
@@ -67,9 +78,25 @@
           <section class="app-main">
             <header class="app-topbar">
               <div class="crumbs">
-                <span>{{ route.meta.permission === 'admin' ? '管理' : '工作区' }}</span>
+                <strong>Ding Robot Demo</strong>
                 <span>/</span>
-                <strong>{{ route.meta.title }}</strong>
+                <strong>ding-robot</strong>
+                <span>/</span>
+                <span>{{ routeSectionTitle }}</span>
+              </div>
+              <div class="workspace-strip" aria-label="当前工作区态势">
+                <span :class="['workspace-chip', routeAccessTone]">
+                  <small>Access</small>
+                  <strong>{{ routeAccessLabel }}</strong>
+                </span>
+                <span class="workspace-chip">
+                  <small>Modules</small>
+                  <strong>{{ menuItems.length }}</strong>
+                </span>
+                <span class="workspace-chip">
+                  <small>Context</small>
+                  <strong>{{ recentSessionCount }}</strong>
+                </span>
               </div>
               <div class="top-actions">
                 <n-tag size="small" round :type="auth.isAdmin ? 'error' : auth.isOperator ? 'warning' : 'info'">
@@ -90,7 +117,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { NButton, NConfigProvider, NIcon, NMessageProvider, NNotificationProvider, NTag } from 'naive-ui'
@@ -101,6 +128,7 @@ import {
   ChevronForwardOutline,
   ChatbubblesOutline,
   ConstructOutline,
+  DocumentTextOutline,
   GitNetworkOutline,
   LogOutOutline,
   SettingsOutline,
@@ -109,32 +137,36 @@ import {
   TimeOutline,
 } from '@vicons/ionicons5'
 import { useAuthStore } from '@/stores/auth'
+import { useSessionStore } from '@/stores/session'
+import { useChatStore } from '@/stores/chat'
 
 const auth = useAuthStore()
+const sessionStore = useSessionStore()
+const chatStore = useChatStore()
 const route = useRoute()
 const router = useRouter()
 const collapsed = ref(false)
 const isNarrow = ref(false)
 const effectiveCollapsed = computed(() => isNarrow.value || collapsed.value)
 
-const appFontFamily = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif'
+const appFontFamily = 'Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif'
 const themeOverrides: GlobalThemeOverrides = {
   common: {
     fontFamily: appFontFamily,
-    primaryColor: '#2f6fed',
-    primaryColorHover: '#1f63e8',
-    primaryColorPressed: '#174fc3',
-    primaryColorSuppl: '#2f6fed',
-    bodyColor: '#f4f7fb',
+    primaryColor: '#5b5bd6',
+    primaryColorHover: '#4f46e5',
+    primaryColorPressed: '#4338ca',
+    primaryColorSuppl: '#5b5bd6',
+    bodyColor: '#f8fafc',
     cardColor: '#ffffff',
     modalColor: '#ffffff',
     popoverColor: '#ffffff',
     tableColor: '#ffffff',
-    borderColor: '#d7dee8',
-    textColorBase: '#171717',
-    textColor1: '#171717',
-    textColor2: '#3f4248',
-    textColor3: '#70727a',
+    borderColor: '#dbe1ea',
+    textColorBase: '#111827',
+    textColor1: '#111827',
+    textColor2: '#374151',
+    textColor3: '#6b7280',
     fontSize: '14px',
     borderRadius: '8px',
   },
@@ -148,18 +180,18 @@ const themeOverrides: GlobalThemeOverrides = {
   DataTable: {
     thColor: '#f8fafc',
     tdColor: '#ffffff',
-    tdColorHover: '#f6f8fb',
-    borderColor: '#e2e8f0',
-    thTextColor: '#70727a',
-    tdTextColor: '#3f4248',
+    tdColorHover: '#f3f4f6',
+    borderColor: '#e5e7eb',
+    thTextColor: '#6b7280',
+    tdTextColor: '#374151',
   },
   Input: {
     color: '#ffffff',
     colorFocus: '#ffffff',
-    border: '1px solid #d7dee8',
-    borderHover: '1px solid #bfc7d3',
-    borderFocus: '1px solid #2f6fed',
-    boxShadowFocus: '0 0 0 3px rgba(47, 111, 237, 0.18)',
+    border: '1px solid #dbe1ea',
+    borderHover: '1px solid #cbd5e1',
+    borderFocus: '1px solid #5b5bd6',
+    boxShadowFocus: '0 0 0 3px rgba(91, 91, 214, 0.16)',
     borderRadius: '8px',
   },
   Select: {
@@ -167,50 +199,87 @@ const themeOverrides: GlobalThemeOverrides = {
       InternalSelection: {
         color: '#ffffff',
         colorActive: '#ffffff',
-        border: '1px solid #d7dee8',
-        borderHover: '1px solid #bfc7d3',
-        borderActive: '1px solid #2f6fed',
-        boxShadowActive: '0 0 0 3px rgba(47, 111, 237, 0.18)',
+        border: '1px solid #dbe1ea',
+        borderHover: '1px solid #cbd5e1',
+        borderActive: '1px solid #5b5bd6',
+        boxShadowActive: '0 0 0 3px rgba(91, 91, 214, 0.16)',
         borderRadius: '8px',
       },
     },
   },
 }
 
-const recentThreads = [
-  'default namespace 服务端点巡检',
-  'ToolSearch 目录恢复验证',
-  'ECS CPU 监控数据读取',
-  'DingTalk 调度通知检查',
-  'K8s endpoints 异常排查',
-]
+const recentSessions = computed(() => sessionStore.sessions.slice(0, 5))
+const recentSessionCount = computed(() => recentSessions.value.length)
+const chatNavigationLocked = computed(() => route.name === 'Chat' && chatStore.streaming)
 
 const menuItems = computed<Array<{ label: string; key: string; icon: Component }>>(() => {
   const items = [
-    { label: '运维概览', key: 'Dashboard', icon: SpeedometerOutline },
-    { label: '智能对话', key: 'Chat', icon: ChatbubblesOutline },
-    { label: 'MCP 工具', key: 'MCPConfig', icon: ConstructOutline },
-    { label: '知识图谱', key: 'KnowledgeGraph', icon: GitNetworkOutline },
-    { label: 'LLM 配置', key: 'LLMConfig', icon: SettingsOutline },
+    { label: 'Tracing', key: 'Dashboard', icon: SpeedometerOutline },
+    { label: 'Chat', key: 'Chat', icon: ChatbubblesOutline },
+    { label: 'Tools', key: 'MCPConfig', icon: ConstructOutline },
+    { label: 'Graph', key: 'KnowledgeGraph', icon: GitNetworkOutline },
+    { label: 'Models', key: 'LLMConfig', icon: SettingsOutline },
   ]
   if (auth.isOperator) {
-    items.push({ label: '定时任务', key: 'Scheduler', icon: TimeOutline })
+    items.push({ label: 'Schedules', key: 'Scheduler', icon: TimeOutline })
   }
   if (auth.isAdmin) {
-    items.push({ label: '权限管理', key: 'AccessControl', icon: ShieldOutline })
+    items.push({ label: 'Access', key: 'AccessControl', icon: ShieldOutline })
+    items.push({ label: 'Audit logs', key: 'AuditLogs', icon: DocumentTextOutline })
   }
   return items
 })
 
 const userInitial = computed(() => (auth.username || 'U').slice(0, 1).toUpperCase())
+const routeSectionTitle = computed(() => {
+  const titles: Record<string, string> = {
+    Dashboard: 'Traces',
+    Chat: 'Chat',
+    MCPConfig: 'Tools',
+    KnowledgeGraph: 'Graph',
+    LLMConfig: 'Models',
+    Scheduler: 'Schedules',
+    AccessControl: 'Access',
+    AuditLogs: 'Audit logs',
+  }
+  return titles[String(route.name || '')] || String(route.meta.title || 'Workspace')
+})
+const routeAccessLabel = computed(() => {
+  const permission = String(route.meta.permission || '')
+  if (permission === 'admin') return 'Admin'
+  if (permission === 'operator') return 'Operator'
+  return 'Open'
+})
+const routeAccessTone = computed(() => {
+  const permission = String(route.meta.permission || '')
+  if (permission === 'admin') return 'danger'
+  if (permission === 'operator') return 'warning'
+  return 'success'
+})
 
 function isActive(key: string) {
-  if (key === 'AccessControl') return route.name === 'AccessControl' || route.name === 'AuditLogs'
   return route.name === key
 }
 
 function onMenuSelect(key: string) {
+  if (chatNavigationLocked.value && !isActive(key)) return
   router.push({ name: key })
+}
+
+function openNewChat() {
+  if (chatNavigationLocked.value) return
+  router.push({ name: 'Chat', query: { new: '1' } })
+}
+
+function openRecentSession(sessionId: string) {
+  if (chatNavigationLocked.value) return
+  router.push({ name: 'Chat', query: { session: sessionId } })
+}
+
+function formatCompactTime(value?: string) {
+  if (!value) return '未更新'
+  return new Date(value).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
 function logout() {
@@ -229,6 +298,14 @@ onMounted(() => {
   syncResponsiveChrome()
   window.addEventListener('resize', syncResponsiveChrome)
 })
+
+watch(
+  () => auth.isLoggedIn,
+  (loggedIn) => {
+    if (loggedIn) sessionStore.fetchSessions()
+  },
+  { immediate: true },
+)
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', syncResponsiveChrome)
@@ -263,25 +340,14 @@ onBeforeUnmount(() => {
   gap: 14px;
   padding: 16px 12px;
   overflow: hidden;
-  border-right: 1px solid rgba(155, 215, 255, 0.18);
-  background:
-    linear-gradient(180deg, #0a0d14 0%, #111621 52%, #0a0d14 100%),
-    var(--dr-sidebar);
-  box-shadow: inset -1px 0 0 rgba(125, 227, 193, 0.08);
+  border-right: 1px solid var(--dr-sidebar-border);
+  background: var(--dr-sidebar);
+  box-shadow: none;
   transition: padding 180ms ease;
 }
 
 .app-sidebar::before {
-  position: absolute;
-  inset: 0;
-  z-index: -2;
-  background:
-    linear-gradient(115deg, rgba(155, 215, 255, 0.07) 0 1px, transparent 1px 58px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
-    linear-gradient(0deg, rgba(255, 255, 255, 0.026) 1px, transparent 1px);
-  background-size: 100% 100%, 28px 28px, 28px 28px;
-  content: "";
-  opacity: 0.34;
+  display: none;
 }
 
 .app-sidebar::after {
@@ -295,21 +361,11 @@ onBeforeUnmount(() => {
 }
 
 .window-dots {
-  width: 44px;
-  height: 12px;
-  margin: 0 0 2px 4px;
-  display: flex;
-  gap: 6px;
-  opacity: 0.8;
+  display: none;
 }
 
 .window-dots::before {
-  width: 36px;
-  height: 8px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, var(--dr-neon-blue) 0 8px, var(--dr-neon-cyan) 8px 18px, var(--dr-neon-mint) 18px 28px);
-  box-shadow: 0 0 16px rgba(155, 215, 255, 0.16);
-  content: "";
+  display: none;
 }
 
 .brand-row {
@@ -338,15 +394,13 @@ onBeforeUnmount(() => {
   height: 28px;
   flex: 0 0 auto;
   place-items: center;
-  border: 1px solid rgba(155, 215, 255, 0.28);
+  border: 1px solid var(--dr-border-soft);
   border-radius: var(--dr-radius);
-  background:
-    linear-gradient(135deg, rgba(155, 215, 255, 0.16), rgba(125, 227, 193, 0.08)),
-    #0f1420;
-  color: #f7fbff;
+  background: #f1f5f9;
+  color: var(--dr-text);
   font-size: var(--dr-text-sm);
   font-weight: 680;
-  box-shadow: 0 0 0 1px rgba(155, 215, 255, 0.06), 0 0 18px rgba(111, 140, 255, 0.12);
+  box-shadow: none;
 }
 
 .brand-copy {
@@ -358,9 +412,9 @@ onBeforeUnmount(() => {
 .brand-copy strong {
   color: var(--dr-sidebar-text);
   font-size: var(--dr-text-lg);
-  font-weight: 620;
+  font-weight: 610;
   line-height: 1.15;
-  text-shadow: 0 0 18px rgba(155, 215, 255, 0.14);
+  text-shadow: none;
 }
 
 .brand-copy small,
@@ -387,41 +441,41 @@ onBeforeUnmount(() => {
   gap: 8px;
   min-height: 44px;
   padding: 0 12px;
-  border: 1px solid rgba(155, 215, 255, 0.2);
-  border-radius: var(--dr-radius);
-  background:
-    linear-gradient(135deg, rgba(155, 215, 255, 0.08), rgba(125, 227, 193, 0.04)),
-    rgba(255, 255, 255, 0.06);
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
   color: var(--dr-sidebar-text);
   box-shadow: none;
   cursor: pointer;
-  font-weight: 570;
+  font-weight: 560;
   overflow: hidden;
 }
 
 .new-chat-button::before {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, transparent, rgba(155, 215, 255, 0.1), transparent);
-  content: "";
-  opacity: 0;
-  transition: opacity 160ms ease;
+  display: none;
 }
 
 .new-chat-button:hover,
 .nav-item:hover,
 .thread-item:hover {
-  background: rgba(155, 215, 255, 0.07);
+  background: #f3f4f6;
   color: var(--dr-sidebar-text);
 }
 
 .new-chat-button:hover {
-  border-color: rgba(155, 215, 255, 0.34);
-  box-shadow: 0 0 0 1px rgba(155, 215, 255, 0.06), 0 0 24px rgba(111, 140, 255, 0.12);
+  border-color: transparent;
+  box-shadow: none;
 }
 
 .new-chat-button:hover::before {
   opacity: 1;
+}
+
+.new-chat-button:disabled,
+.nav-item:disabled,
+.thread-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
 }
 
 .nav-group,
@@ -450,24 +504,19 @@ onBeforeUnmount(() => {
   min-height: 38px;
   padding: 0 9px;
   font-size: var(--dr-text-md);
+  font-weight: 480;
   transition: background-color 160ms ease, box-shadow 160ms ease, color 160ms ease;
 }
 
 .nav-item.active {
-  background: rgba(155, 215, 255, 0.1);
+  background: #f1f5f9;
   color: var(--dr-sidebar-text);
-  font-weight: 610;
-  box-shadow: inset 0 0 0 1px rgba(155, 215, 255, 0.16);
+  font-weight: 620;
+  box-shadow: none;
 }
 
 .nav-item.active::before {
-  position: absolute;
-  inset: 9px auto 9px 0;
-  width: 3px;
-  border-radius: 999px;
-  background: var(--dr-neon-cyan);
-  content: "";
-  opacity: 0.86;
+  display: none;
 }
 
 .nav-item.active::after {
@@ -475,8 +524,8 @@ onBeforeUnmount(() => {
 }
 
 .nav-item.active .n-icon {
-  color: var(--dr-neon-cyan);
-  filter: drop-shadow(0 0 8px rgba(155, 215, 255, 0.26));
+  color: var(--dr-text);
+  filter: none;
 }
 
 .recent-context {
@@ -487,19 +536,38 @@ onBeforeUnmount(() => {
 
 .nav-title {
   margin: 14px 8px 6px;
-  color: color-mix(in srgb, var(--dr-neon-cyan) 60%, var(--dr-sidebar-muted) 40%);
+  color: var(--dr-text-muted);
   font-size: var(--dr-text-xs);
   font-weight: 590;
   text-transform: uppercase;
 }
 
 .thread-item {
-  min-height: 34px;
+  display: grid;
+  gap: 2px;
+  min-height: 44px;
   padding: 7px 9px;
+  overflow: hidden;
+  font-size: var(--dr-text-sm);
+}
+
+.thread-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--dr-text-sm);
+}
+
+.thread-item small,
+.thread-empty {
+  overflow: hidden;
+  color: var(--dr-sidebar-muted);
+  font-size: var(--dr-text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thread-empty {
+  padding: 8px 9px;
 }
 
 .account-card {
@@ -509,7 +577,7 @@ onBeforeUnmount(() => {
   gap: 10px;
   min-height: 48px;
   padding: 8px 0 0;
-  border-top: 1px solid rgba(155, 215, 255, 0.14);
+  border-top: 1px solid var(--dr-border-soft);
 }
 
 .avatar {
@@ -518,9 +586,7 @@ onBeforeUnmount(() => {
   height: 28px;
   place-items: center;
   border-radius: 50%;
-  background:
-    linear-gradient(135deg, rgba(155, 215, 255, 0.14), rgba(125, 227, 193, 0.08)),
-    rgba(255, 255, 255, 0.1);
+  background: #f1f5f9;
   color: var(--dr-sidebar-text);
   font-size: var(--dr-text-xs);
   font-weight: 650;
@@ -554,12 +620,10 @@ onBeforeUnmount(() => {
 }
 
 .app-main::before {
-  content: "";
   display: none;
 }
 
 .app-main::after {
-  content: "";
   display: none;
 }
 
@@ -574,8 +638,8 @@ onBeforeUnmount(() => {
   min-height: 58px;
   padding: 0 24px;
   border-bottom: 1px solid var(--dr-border-soft);
-  background: rgba(255, 255, 255, 0.82);
-  backdrop-filter: blur(18px);
+  background: #ffffff;
+  backdrop-filter: none;
 }
 
 .crumbs {
@@ -593,11 +657,69 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
+.workspace-strip {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 1 1 auto;
+}
+
+.workspace-chip {
+  min-width: 0;
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid var(--dr-border-soft);
+  border-radius: 8px;
+  background: #f8fafc;
+  color: var(--dr-text-soft);
+  white-space: nowrap;
+}
+
+.workspace-chip small {
+  color: var(--dr-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.workspace-chip strong {
+  overflow: hidden;
+  color: var(--dr-text);
+  font-size: 12px;
+  font-weight: 680;
+  text-overflow: ellipsis;
+}
+
+.workspace-chip.success {
+  border-color: #b8e3d1;
+  background: #f0fdf4;
+}
+
+.workspace-chip.warning {
+  border-color: #f3d89b;
+  background: #fffbeb;
+}
+
+.workspace-chip.danger {
+  border-color: #f2b8b5;
+  background: #fff5f5;
+}
+
 .top-actions {
   display: flex;
   align-items: center;
   flex: 0 0 auto;
   gap: 8px;
+}
+
+.top-actions .n-tag {
+  border-color: #dbe1ea !important;
+  background: #f1f5f9 !important;
+  color: #374151 !important;
 }
 
 .app-content {
@@ -654,6 +776,22 @@ onBeforeUnmount(() => {
 @media (max-width: 980px) {
   .app-topbar {
     padding: 0 12px;
+  }
+
+  .workspace-strip {
+    justify-content: flex-end;
+  }
+
+  .workspace-chip small {
+    display: none;
+  }
+
+  .workspace-chip:nth-child(n + 3) {
+    display: none;
+  }
+
+  .workspace-strip {
+    display: none;
   }
 
   .top-actions .n-tag {

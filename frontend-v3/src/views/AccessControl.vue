@@ -1,14 +1,16 @@
 <template>
-  <div class="access-page dr-page">
+  <div :class="['access-page', 'dr-page', { 'audit-route': isAuditRoute }]">
     <header class="dr-page-header">
       <div class="access-heading">
-        <span class="access-kicker">Access Control</span>
-        <h1>权限管理</h1>
-        <p>配置用户角色、工具访问范围和审计追踪，保障运维动作边界清晰。</p>
+        <span class="access-kicker">{{ accessPageKicker }}</span>
+        <h1>{{ accessPageTitle }}</h1>
+        <p>{{ accessPageDescription }}</p>
       </div>
       <div class="dr-toolbar">
-        <n-button secondary :loading="auditLoading" @click="fetchAudit">刷新审计</n-button>
-        <n-button type="primary" @click="showCreateUser = true">新增用户</n-button>
+        <n-button secondary :loading="auditLoading" :disabled="auditLoading" @click="fetchAudit">刷新审计</n-button>
+        <n-button v-if="!isAuditRoute" secondary @click="router.push({ name: 'AuditLogs' })">查看审计日志</n-button>
+        <n-button v-else secondary @click="router.push({ name: 'AccessControl' })">返回权限管理</n-button>
+        <n-button v-if="!isAuditRoute" type="primary" :disabled="userPanelBusy" @click="showCreateUser = true">新增用户</n-button>
       </div>
     </header>
 
@@ -40,6 +42,42 @@
       </article>
     </section>
 
+    <section class="access-risk-strip" aria-label="权限风险态势">
+      <article :class="['risk-card', riskTone]">
+        <span class="risk-kicker">Access posture</span>
+        <strong>{{ riskTitle }}</strong>
+        <small>{{ riskDetail }}</small>
+      </article>
+      <article class="risk-card">
+        <span class="risk-kicker">Audit coverage</span>
+        <strong>{{ auditCoverageTitle }}</strong>
+        <small>{{ auditCoverageDetail }}</small>
+      </article>
+      <article class="risk-card">
+        <span class="risk-kicker">Policy boundary</span>
+        <strong>{{ selectedPolicy.role }} role</strong>
+        <small>{{ selectedPolicy.permissions.join(' / ') }}</small>
+      </article>
+    </section>
+
+    <section v-if="isAuditRoute" class="audit-focus-strip" aria-label="审计筛查状态">
+      <article class="audit-focus-card">
+        <span>Filtered window</span>
+        <strong>{{ auditWindowTitle }}</strong>
+        <small>{{ auditWindowDetail }}</small>
+      </article>
+      <article :class="['audit-focus-card', failedAuditCount > 0 ? 'danger' : 'ready']">
+        <span>Failure focus</span>
+        <strong>{{ auditFailureTitle }}</strong>
+        <small>{{ auditFailureDetail }}</small>
+      </article>
+      <article class="audit-focus-card">
+        <span>Privileged actions</span>
+        <strong>{{ highRiskAuditCount }}</strong>
+        <small>{{ auditHighRiskDetail }}</small>
+      </article>
+    </section>
+
     <div class="dr-two-column access-workspace">
       <section class="dr-panel">
         <div class="dr-panel-head">
@@ -47,7 +85,7 @@
             <h2 class="dr-panel-title">用户和角色</h2>
             <span class="dr-panel-subtitle">调整账号启停和角色归属，保存后立即生效。</span>
           </div>
-          <n-button secondary :loading="usersLoading" @click="fetchUsers">刷新用户</n-button>
+          <n-button secondary :loading="usersLoading" :disabled="userPanelBusy" @click="fetchUsers">刷新用户</n-button>
         </div>
         <div class="search-row">
           <n-input v-model:value="userSearch" clearable placeholder="搜索用户名或角色" />
@@ -56,19 +94,30 @@
           <n-form :show-label="false">
             <div class="create-grid">
               <n-form-item>
-                <n-input v-model:value="newUser.username" placeholder="用户名" />
+                <n-input v-model:value="newUser.username" :disabled="userPanelBusy" placeholder="用户名" />
               </n-form-item>
               <n-form-item>
-                <n-input v-model:value="newUser.display_name" placeholder="显示名" />
+                <n-input v-model:value="newUser.display_name" :disabled="userPanelBusy" placeholder="显示名" />
               </n-form-item>
               <n-form-item>
-                <n-input v-model:value="newUser.password" type="password" show-password-on="click" placeholder="初始密码" />
+                <n-input v-model:value="newUser.password" type="password" show-password-on="click" :disabled="userPanelBusy" placeholder="初始密码" />
               </n-form-item>
               <n-form-item>
-                <n-select v-model:value="newUser.role" :options="roleOptions" />
+                <n-select v-model:value="newUser.role" :options="roleOptions" :disabled="userPanelBusy" />
               </n-form-item>
               <div class="create-actions">
-                <n-button type="primary" :loading="createLoading" @click="createUser">创建</n-button>
+                <n-popconfirm
+                  positive-text="创建"
+                  negative-text="取消"
+                  :positive-button-props="{ type: 'primary', size: 'small', disabled: userPanelBusy }"
+                  :negative-button-props="{ size: 'small' }"
+                  @positive-click="createUser"
+                >
+                  <template #trigger>
+                    <n-button type="primary" :loading="createLoading" :disabled="userPanelBusy">创建</n-button>
+                  </template>
+                  创建用户「{{ newUser.username.trim() || '未命名用户' }}」并授予 {{ newUser.role }} 角色？
+                </n-popconfirm>
                 <n-button secondary :disabled="createLoading" @click="resetCreateForm">取消</n-button>
               </div>
             </div>
@@ -90,13 +139,24 @@
                 <small>{{ user.display_name || '未设置显示名' }}</small>
               </span>
             </div>
-            <n-select v-model:value="user.role" :options="roleOptions" size="small" />
-            <n-switch v-model:value="user.is_active" size="small">
+            <n-select v-model:value="user.role" :options="roleOptions" size="small" :disabled="userPanelBusy" />
+            <n-switch v-model:value="user.is_active" size="small" :disabled="userPanelBusy">
               <template #checked>启用</template>
               <template #unchecked>停用</template>
             </n-switch>
             <span class="dr-muted">{{ formatTime(user.updated_at) }}</span>
-            <n-button size="small" :loading="savingUser === user.username" @click="saveUser(user)">保存</n-button>
+            <n-popconfirm
+              positive-text="保存"
+              negative-text="取消"
+              :positive-button-props="{ type: 'warning', size: 'small', disabled: userPanelBusy }"
+              :negative-button-props="{ size: 'small' }"
+              @positive-click="saveUser(user)"
+            >
+              <template #trigger>
+                <n-button size="small" :loading="savingUser === user.username" :disabled="userPanelBusy">保存</n-button>
+              </template>
+              保存用户「{{ user.username }}」的角色和状态？保存后立即生效。
+            </n-popconfirm>
           </article>
           <div v-if="!filteredUsers.length" class="dr-empty compact-empty">没有匹配的用户</div>
         </div>
@@ -162,6 +222,7 @@
           <n-input
             v-model:value="auditFilters.actor"
             clearable
+            :disabled="auditLoading"
             placeholder="admin / scheduler"
             @keyup.enter="applyAuditFilters"
           />
@@ -171,6 +232,7 @@
           <n-input
             v-model:value="auditFilters.action"
             clearable
+            :disabled="auditLoading"
             placeholder="api.get / tool"
             @keyup.enter="applyAuditFilters"
           />
@@ -180,6 +242,7 @@
           <n-input
             v-model:value="auditFilters.resource"
             clearable
+            :disabled="auditLoading"
             placeholder="/chat / aliyun"
             @keyup.enter="applyAuditFilters"
           />
@@ -189,6 +252,7 @@
           <n-input
             v-model:value="auditFilters.resource_id"
             clearable
+            :disabled="auditLoading"
             placeholder="实例 / 会话 / 任务"
             @keyup.enter="applyAuditFilters"
           />
@@ -198,12 +262,13 @@
           <n-select
             v-model:value="auditFilters.result"
             clearable
+            :disabled="auditLoading"
             placeholder="全部"
             :options="resultOptions"
           />
         </label>
         <div class="filter-actions">
-          <n-button type="primary" :loading="auditLoading" @click="applyAuditFilters">应用</n-button>
+          <n-button type="primary" :loading="auditLoading" :disabled="auditLoading" @click="applyAuditFilters">应用</n-button>
           <n-button secondary :disabled="auditLoading" @click="clearAuditFilters">清空</n-button>
         </div>
       </div>
@@ -214,12 +279,15 @@
 
 <script setup lang="ts">
 import { computed, h, onMounted, ref } from 'vue'
-import { NButton, NDataTable, NForm, NFormItem, NInput, NSelect, NSwitch, NTag, useMessage } from 'naive-ui'
+import { useRoute, useRouter } from 'vue-router'
+import { NButton, NDataTable, NForm, NFormItem, NInput, NPopconfirm, NSelect, NSwitch, NTag, useMessage } from 'naive-ui'
 import { systemApi, userApi } from '@/api/client'
 import type { AuditLog, User } from '@/types'
 
 const auditLimit = 50
 const message = useMessage()
+const route = useRoute()
+const router = useRouter()
 const auditLogs = ref<AuditLog[]>([])
 const auditLoading = ref(false)
 const roleUsers = ref<User[]>([])
@@ -254,9 +322,60 @@ const resultOptions = [
   { label: 'success', value: 'success' },
   { label: 'failure', value: 'failure' },
 ]
+const isAuditRoute = computed(() => route.name === 'AuditLogs')
+const accessPageKicker = computed(() => isAuditRoute.value ? 'Audit Trail' : 'Access Control')
+const accessPageTitle = computed(() => isAuditRoute.value ? '审计日志' : '权限管理')
+const accessPageDescription = computed(() =>
+  isAuditRoute.value
+    ? '筛选访问、配置和工具调用记录，快速定位失败、高危和需要复核的动作。'
+    : '配置用户角色、工具访问范围和审计追踪，保障运维动作边界清晰。',
+)
 const selectedPolicy = computed(() => rolePolicies.find((item) => item.role === selectedRole.value) || rolePolicies[1])
 const activeUserCount = computed(() => roleUsers.value.filter((user) => user.is_active).length)
 const failedAuditCount = computed(() => auditLogs.value.filter((log) => log.result !== 'success').length)
+const inactiveUserCount = computed(() => roleUsers.value.length - activeUserCount.value)
+const adminUserCount = computed(() => roleUsers.value.filter((user) => user.role === 'admin' && user.is_active).length)
+const highRiskAuditCount = computed(() => auditLogs.value.filter((log) => /tool|confirm|delete|patch|post/i.test(log.action)).length)
+const userPanelBusy = computed(() => usersLoading.value || createLoading.value || Boolean(savingUser.value))
+const riskTone = computed(() => {
+  if (failedAuditCount.value > 0) return 'danger'
+  if (adminUserCount.value > 1 || inactiveUserCount.value > 0) return 'watch'
+  return 'ready'
+})
+const riskTitle = computed(() => {
+  if (failedAuditCount.value > 0) return `${failedAuditCount.value} audit exception${failedAuditCount.value > 1 ? 's' : ''}`
+  if (adminUserCount.value > 1) return `${adminUserCount.value} active admins`
+  return 'Boundary is clear'
+})
+const riskDetail = computed(() => {
+  if (failedAuditCount.value > 0) return 'Review failed or denied audit results before allowing more privileged operations.'
+  if (inactiveUserCount.value > 0) return `${inactiveUserCount.value} inactive account${inactiveUserCount.value > 1 ? 's' : ''} retained for review.`
+  return `${activeUserCount.value} active user${activeUserCount.value > 1 ? 's' : ''}; dangerous tools stay behind confirmation gates.`
+})
+const auditCoverageTitle = computed(() => `${auditLogs.value.length}/${auditLimit} events loaded`)
+const auditCoverageDetail = computed(() => {
+  if (!auditLogs.value.length) return 'No audit events loaded yet; refresh audit before changing roles.'
+  return `${highRiskAuditCount.value} privileged or tool-related events in the current audit window.`
+})
+const activeAuditFilterCount = computed(() => {
+  const fields = auditFilters.value
+  return [fields.actor, fields.action, fields.resource, fields.resource_id, fields.result].filter(Boolean).length
+})
+const auditWindowTitle = computed(() => `${auditLogs.value.length}/${auditLimit} events`)
+const auditWindowDetail = computed(() => {
+  if (activeAuditFilterCount.value > 0) return `${activeAuditFilterCount.value} active filter${activeAuditFilterCount.value > 1 ? 's' : ''} applied to the audit query.`
+  return 'Unfiltered audit window; apply actor, action, resource, or result filters to narrow evidence.'
+})
+const auditFailureTitle = computed(() => failedAuditCount.value > 0 ? `${failedAuditCount.value} exception${failedAuditCount.value > 1 ? 's' : ''}` : 'No failures')
+const auditFailureDetail = computed(() => {
+  if (!auditLogs.value.length) return 'Load audit events to confirm failure posture.'
+  if (failedAuditCount.value > 0) return 'Review failed or denied events before granting additional access.'
+  return 'Current audit window contains only successful events.'
+})
+const auditHighRiskDetail = computed(() => {
+  if (!highRiskAuditCount.value) return 'No delete, patch, post, confirm, or tool actions in the current window.'
+  return 'Tool, confirm, delete, patch, and post actions are highlighted for privileged review.'
+})
 const filteredUsers = computed(() => {
   const query = userSearch.value.trim().toLowerCase()
   if (!query) return roleUsers.value
@@ -282,6 +401,7 @@ const auditColumns = [
 ]
 
 async function fetchAudit() {
+  if (auditLoading.value) return
   auditLoading.value = true
   try {
     auditLogs.value = await systemApi.auditLogs(auditQueryParams())
@@ -293,6 +413,7 @@ async function fetchAudit() {
 }
 
 async function fetchUsers() {
+  if (usersLoading.value) return
   usersLoading.value = true
   try {
     roleUsers.value = await userApi.list()
@@ -304,6 +425,7 @@ async function fetchUsers() {
 }
 
 async function createUser() {
+  if (userPanelBusy.value) return
   if (!newUser.value.username.trim() || !newUser.value.password.trim()) {
     message.warning('请填写用户名和初始密码')
     return
@@ -327,6 +449,7 @@ async function createUser() {
 }
 
 async function saveUser(user: User) {
+  if (userPanelBusy.value) return
   savingUser.value = user.username
   try {
     const updated = await userApi.update(user.username, {
@@ -431,17 +554,17 @@ onMounted(() => {
 .access-summary-strip {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10px;
+  gap: 8px;
 }
 
 .summary-item {
   min-width: 0;
-  min-height: 76px;
-  padding: 12px 14px;
+  min-height: 72px;
+  padding: 11px 12px;
   border: 1px solid var(--dr-border-soft);
   border-radius: var(--dr-radius);
   background: #ffffff;
-  box-shadow: 0 1px 0 rgba(25, 24, 20, 0.02);
+  box-shadow: none;
 }
 
 .summary-item span {
@@ -453,10 +576,10 @@ onMounted(() => {
 
 .summary-item strong {
   display: block;
-  margin-top: 7px;
+  margin-top: 6px;
   color: var(--dr-text);
-  font-size: var(--dr-text-xl);
-  font-weight: 650;
+  font-size: 18px;
+  font-weight: 620;
   line-height: 1.05;
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
@@ -464,24 +587,153 @@ onMounted(() => {
 
 .summary-item small {
   display: block;
-  margin-top: 6px;
+  margin-top: 7px;
   color: var(--dr-text-muted);
   font-size: var(--dr-text-sm);
   line-height: 1.35;
 }
 
 .summary-rule {
-  border-color: #cbd8f3;
-  background: linear-gradient(180deg, #ffffff, #f7faff);
+  border-color: var(--dr-border);
+  background: #fbfcfe;
 }
 
 .summary-rule strong {
-  color: var(--dr-accent-deep);
+  color: var(--dr-text);
+}
+
+.access-risk-strip {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr 1.3fr;
+  gap: 10px;
+}
+
+.audit-focus-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.audit-focus-card {
+  min-width: 0;
+  min-height: 92px;
+  padding: 13px 14px;
+  border: 1px solid var(--dr-border-soft);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.audit-focus-card.ready {
+  border-color: #b8e3d1;
+  background: #f0fdf4;
+}
+
+.audit-focus-card.danger {
+  border-color: #f2b8b5;
+  background: #fff5f5;
+}
+
+.audit-focus-card span {
+  display: block;
+  color: var(--dr-text-muted);
+  font-size: 11px;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.audit-focus-card strong {
+  display: block;
+  margin-top: 8px;
+  overflow: hidden;
+  color: var(--dr-text);
+  font-size: 17px;
+  font-weight: 650;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-focus-card small {
+  display: -webkit-box;
+  margin-top: 6px;
+  overflow: hidden;
+  color: var(--dr-text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.risk-card {
+  min-width: 0;
+  min-height: 96px;
+  padding: 13px 14px;
+  border: 1px solid var(--dr-border-soft);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.risk-card.ready {
+  border-color: #b8e3d1;
+  background: #f0fdf4;
+}
+
+.risk-card.watch {
+  border-color: #f3d89b;
+  background: #fffbeb;
+}
+
+.risk-card.danger {
+  border-color: #f2b8b5;
+  background: #fff5f5;
+}
+
+.risk-kicker {
+  display: block;
+  color: var(--dr-text-muted);
+  font-size: 11px;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.risk-card strong {
+  display: block;
+  margin-top: 8px;
+  overflow: hidden;
+  color: var(--dr-text);
+  font-size: 17px;
+  font-weight: 650;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.risk-card small {
+  display: -webkit-box;
+  margin-top: 6px;
+  overflow: hidden;
+  color: var(--dr-text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .access-workspace {
   grid-template-columns: minmax(0, 1.55fr) minmax(300px, 0.72fr);
   gap: 14px;
+}
+
+.audit-route .audit-focus-strip {
+  order: 3;
+}
+
+.audit-route .dr-table-panel {
+  order: 4;
+}
+
+.audit-route .access-workspace {
+  order: 5;
 }
 
 .search-row {
@@ -709,6 +961,14 @@ onMounted(() => {
 @media (max-width: 980px) {
   .access-summary-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .access-risk-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .audit-focus-strip {
+    grid-template-columns: 1fr;
   }
 
   .role-row {

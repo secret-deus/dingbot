@@ -1,5 +1,5 @@
 <template>
-  <div :class="['chat-workbench', { 'sessions-collapsed': sessionsCollapsed }]">
+  <div :class="['chat-workbench', { 'sessions-collapsed': sessionsCollapsed }]" :inert="sessionMutationBusy" :aria-busy="sessionMutationBusy">
     <aside class="session-rail" :aria-expanded="!sessionsCollapsed">
       <div class="rail-head">
         <div class="rail-copy">
@@ -14,6 +14,8 @@
             :round="!sessionsCollapsed"
             :circle="sessionsCollapsed"
             :aria-label="sessionsCollapsed ? '新建对话' : undefined"
+            :loading="creatingSession"
+            :disabled="chatStore.streaming || sessionMutationBusy"
             @click="newSession"
           >
             <template #icon>
@@ -42,7 +44,7 @@
           :key="s.id"
           :class="['session-row', { active: s.id === chatStore.activeSessionId }]"
         >
-          <button class="session-item" type="button" :title="s.title" @click="selectSession(s.id)">
+          <button class="session-item" type="button" :title="s.title" :disabled="chatStore.streaming || sessionMutationBusy" @click="selectSession(s.id)">
             <span class="session-initial" aria-hidden="true">{{ sessionInitial(s.title) }}</span>
             <span class="session-meta">
               <span class="session-title">{{ s.title }}</span>
@@ -50,7 +52,7 @@
             </span>
           </button>
           <n-popconfirm
-            :positive-button-props="{ type: 'error', size: 'tiny' }"
+            :positive-button-props="{ type: 'error', size: 'tiny', disabled: sessionMutationBusy }"
             negative-text="取消"
             positive-text="删除"
             @positive-click="deleteSession(s.id)"
@@ -62,7 +64,7 @@
                 circle
                 size="tiny"
                 :aria-label="`删除 ${s.title}`"
-                :disabled="chatStore.streaming && s.id === chatStore.activeSessionId"
+                :disabled="chatStore.streaming || sessionMutationBusy"
                 title="删除对话"
                 @click.stop
               >
@@ -90,21 +92,43 @@
             size="small"
             class="model-select"
             placeholder="选择模型"
-            :disabled="!llmOptions.length"
+            :disabled="chatStore.streaming || sessionMutationBusy || !llmOptions.length"
           />
           <div class="tool-context-control">
             <span>工具上下文</span>
-            <n-switch v-model:value="chatStore.toolContextEnabled" size="small" />
+            <n-switch v-model:value="chatStore.toolContextEnabled" size="small" :disabled="chatStore.streaming || sessionMutationBusy" />
           </div>
         </div>
       </header>
 
       <main ref="messageListRef" class="message-scroll">
-        <div v-if="!chatStore.activeSessionId" class="empty-state">
+        <div v-if="showEmptyState" class="empty-state">
           <div class="empty-mark">DR</div>
           <h2>今天要排查什么？</h2>
-          <p>新建一个会话，描述集群、服务、日志或 ECS 问题。</p>
-          <n-button type="primary" round @click="newSession">开始新对话</n-button>
+          <p>选择一个常见入口填入输入框，或直接描述集群、服务、日志、ECS 问题。</p>
+          <div class="prompt-grid" aria-label="常用排障提示">
+            <button
+              v-for="prompt in quickPrompts"
+              :key="prompt.title"
+              class="prompt-card"
+              type="button"
+              :disabled="sessionMutationBusy"
+              @click="usePrompt(prompt.text)"
+            >
+              <span>{{ prompt.kicker }}</span>
+              <strong>{{ prompt.title }}</strong>
+              <small>{{ prompt.text }}</small>
+            </button>
+          </div>
+          <button
+            v-if="!chatStore.activeSessionId"
+            class="empty-action"
+            type="button"
+            :disabled="chatStore.streaming || sessionMutationBusy"
+            @click="newSession"
+          >
+            {{ creatingSession ? '正在创建...' : '开始空白对话' }}
+          </button>
         </div>
         <template v-else>
           <div class="message-column">
@@ -124,7 +148,9 @@
 
       <footer class="composer-shell">
         <ChatInput
-          :disabled="chatStore.streaming"
+          ref="chatInputRef"
+          v-model="promptDraft"
+          :disabled="chatStore.streaming || sessionMutationBusy"
           :streaming="chatStore.streaming"
           @send="onSend"
           @stop="stopStream"
@@ -136,6 +162,7 @@
 
 <script setup lang="ts">
 import { ref, shallowRef, computed, nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { NButton, NIcon, NPopconfirm, NSelect, NSpin, NSwitch } from 'naive-ui'
 import { useSessionStore } from '@/stores/session'
 import { useChatStore } from '@/stores/chat'
@@ -148,15 +175,46 @@ import { AddOutline, ChevronBackOutline, ChevronForwardOutline, TrashOutline } f
 
 const sessionStore = useSessionStore()
 const chatStore = useChatStore()
+const route = useRoute()
+const router = useRouter()
 const messageListRef = ref<HTMLElement>()
+const chatInputRef = ref<InstanceType<typeof ChatInput> | null>(null)
 const llmConfig = ref<LLMConfig | null>(null)
 const activeSse = shallowRef<{ close: () => void } | null>(null)
 const sessionsCollapsed = ref(false)
+const promptDraft = ref('')
+const creatingSession = ref(false)
+let pendingSessionPromise: Promise<string> | null = null
+const sessionTransitionLoading = ref(false)
+const sessionMutationBusy = computed(() => creatingSession.value || sessionStore.mutationLoading || sessionTransitionLoading.value)
+const quickPrompts = [
+  {
+    kicker: 'K8s',
+    title: 'Namespace 状态',
+    text: '查看 default namespace 当前状态，列出异常 Pod、事件和下一步建议',
+  },
+  {
+    kicker: 'Logs',
+    title: '服务日志排查',
+    text: '检查 default namespace 中 web 服务最近 30 分钟的错误日志',
+  },
+  {
+    kicker: 'Tools',
+    title: '工具可用性',
+    text: '验证 ToolSearch 目录恢复情况，并列出当前可用的 Kubernetes 工具',
+  },
+  {
+    kicker: 'ECS',
+    title: '主机监控',
+    text: '读取 ECS CPU 和内存监控数据，找出需要关注的实例',
+  },
+]
 
 const currentTitle = computed(() => {
   const s = sessionStore.sessions.find((s) => s.id === chatStore.activeSessionId)
   return s?.title || '智能对话'
 })
+const showEmptyState = computed(() => !chatStore.activeSessionId || (!chatStore.messages.length && !chatStore.streaming))
 
 const llmOptions = computed(() =>
   (llmConfig.value?.providers || []).map((provider) => ({
@@ -167,10 +225,13 @@ const llmOptions = computed(() =>
 )
 
 onMounted(async () => {
+  window.addEventListener('beforeunload', preventStreamingUnload)
   await Promise.all([sessionStore.fetchSessions(), loadLlmConfig()])
+  await openSessionFromRoute()
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('beforeunload', preventStreamingUnload)
   if (activeSse.value) {
     activeSse.value.close()
     activeSse.value = null
@@ -196,37 +257,103 @@ async function loadLlmConfig() {
 }
 
 async function newSession() {
-  const id = await sessionStore.createSession()
-  chatStore.setSession(id)
-  return id
+  if (chatStore.streaming || sessionTransitionLoading.value || sessionStore.mutationLoading) return chatStore.activeSessionId
+  if (pendingSessionPromise) return pendingSessionPromise
+
+  creatingSession.value = true
+  pendingSessionPromise = (async () => {
+    try {
+      const id = await sessionStore.createSession()
+      if (!id) return chatStore.activeSessionId
+      chatStore.setSession(id)
+      await syncSessionQuery(id)
+      return id
+    } finally {
+      creatingSession.value = false
+      pendingSessionPromise = null
+    }
+  })()
+
+  return pendingSessionPromise
 }
 
 async function selectSession(id: string) {
-  await chatStore.loadMessages(id)
+  if (chatStore.streaming || sessionMutationBusy.value) return
+
+  await loadSession(id)
+}
+
+async function loadSession(id: string) {
+  const loaded = await chatStore.loadMessages(id)
+  if (!loaded) return false
+
+  await syncSessionQuery(id)
+  await nextTick()
+  scrollToBottom()
+  return true
+}
+
+async function openSessionFromRoute() {
+  if (chatStore.streaming) {
+    if (chatStore.activeSessionId) await syncSessionQuery(chatStore.activeSessionId)
+    return
+  }
+
+  if (route.query.new === '1') {
+    await newSession()
+    return
+  }
+
+  const sessionId = typeof route.query.session === 'string' ? route.query.session : ''
+  if (!sessionId || sessionId === chatStore.activeSessionId) return
+  if (!await chatStore.loadMessages(sessionId)) return
   await nextTick()
   scrollToBottom()
 }
 
+function preventStreamingUnload(event: BeforeUnloadEvent) {
+  if (!chatStore.streaming) return
+  event.preventDefault()
+  event.returnValue = ''
+}
+
 async function reloadActiveMessages() {
   if (!chatStore.activeSessionId) return
-  await chatStore.loadMessages(chatStore.activeSessionId)
+  if (!await chatStore.loadMessages(chatStore.activeSessionId)) return
   await nextTick()
   scrollToBottom()
 }
 
 async function deleteSession(id: string) {
-  if (chatStore.streaming && id === chatStore.activeSessionId) return
+  if (chatStore.streaming || sessionMutationBusy.value) return
 
-  const deletingActive = id === chatStore.activeSessionId
-  await sessionStore.deleteSession(id)
-  if (!deletingActive) return
+  sessionTransitionLoading.value = true
+  try {
+    const deletingActive = id === chatStore.activeSessionId
+    const deleted = await sessionStore.deleteSession(id)
+    if (!deleted || !deletingActive) return
 
-  const next = sessionStore.sessions[0]
-  if (next) {
-    await selectSession(next.id)
-  } else {
-    chatStore.reset()
+    const next = sessionStore.sessions[0]
+    if (next) {
+      await loadSession(next.id)
+    } else {
+      chatStore.reset()
+      await syncSessionQuery('')
+    }
+  } finally {
+    sessionTransitionLoading.value = false
   }
+}
+
+async function syncSessionQuery(sessionId: string) {
+  const current = typeof route.query.session === 'string' ? route.query.session : ''
+  if (current === sessionId) return
+
+  const query = { ...route.query }
+  delete query.new
+  if (sessionId) query.session = sessionId
+  else delete query.session
+  await router.replace({ name: 'Chat', query })
 }
 
 function scrollToBottom() {
@@ -239,11 +366,19 @@ function sessionInitial(title?: string) {
   return (title?.trim().slice(0, 1) || '新').toUpperCase()
 }
 
+async function usePrompt(text: string) {
+  if (creatingSession.value) return
+  promptDraft.value = text
+  await nextTick()
+  chatInputRef.value?.focus()
+}
+
 watch(() => chatStore.messages.length, () => nextTick(scrollToBottom))
 watch(() => chatStore.streamingContent, () => nextTick(scrollToBottom))
+watch([() => route.query.session, () => route.query.new], () => openSessionFromRoute())
 
 async function onSend(content: string) {
-  if (chatStore.streaming) return
+  if (chatStore.streaming || sessionMutationBusy.value) return
   if (!chatStore.activeSessionId) {
     await newSession()
   }
@@ -299,7 +434,7 @@ async function onSend(content: string) {
     const sessionId = chatStore.activeSessionId
     chatStore.finalizeStream()
     if (sessionId) {
-      await chatStore.loadMessages(sessionId)
+      if (!await chatStore.loadMessages(sessionId)) return
     }
     await sessionStore.fetchSessions()
     nextTick(scrollToBottom)
@@ -330,9 +465,7 @@ function stopStream() {
   min-height: 0;
   display: grid;
   grid-template-columns: 276px minmax(0, 1fr);
-  background:
-    radial-gradient(circle at 20% 0%, rgba(47, 111, 237, 0.11), transparent 28%),
-    linear-gradient(135deg, #f4f7fb 0%, #ffffff 52%, #eef4f8 100%);
+  background: #ffffff;
   color: var(--dr-text);
   overflow: hidden;
   transition: grid-template-columns 180ms ease;
@@ -343,10 +476,10 @@ function stopStream() {
 .session-rail {
   min-width: 0;
   min-height: 0;
-  border-right: 1px solid rgba(23, 23, 23, 0.08);
-  background: rgba(255, 255, 255, 0.76);
-  backdrop-filter: blur(16px);
-  padding: 14px;
+  border-right: 1px solid var(--dr-border-soft);
+  background: #ffffff;
+  backdrop-filter: none;
+  padding: 14px 12px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -372,6 +505,12 @@ function stopStream() {
 .rail-new-button,
 .rail-toggle-button {
   min-width: 36px;
+  --n-border: 0 !important;
+  --n-border-hover: 0 !important;
+  --n-border-pressed: 0 !important;
+  --n-border-focus: 0 !important;
+  --n-color: transparent !important;
+  --n-color-hover: #f8fafc !important;
 }
 .rail-title {
   font-size: 15px;
@@ -389,13 +528,13 @@ function stopStream() {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
 }
 .session-row {
   width: 100%;
   min-height: 58px;
-  border: 1px solid transparent;
-  border-radius: var(--dr-radius);
+  border: 0;
+  border-radius: 7px;
   background: transparent;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 32px;
@@ -403,12 +542,11 @@ function stopStream() {
   overflow: hidden;
 }
 .session-row:hover {
-  background: rgba(47, 111, 237, 0.06);
+  background: #f8fafc;
 }
 .session-row.active {
-  background: #ffffff;
-  border-color: rgba(47, 111, 237, 0.28);
-  box-shadow: 0 1px 1px rgba(23, 23, 23, 0.03), 0 10px 24px rgba(42, 47, 55, 0.07);
+  background: #eef2f7;
+  box-shadow: none;
 }
 .session-item {
   min-width: 0;
@@ -419,6 +557,10 @@ function stopStream() {
   color: var(--dr-text-soft);
   text-align: left;
   cursor: pointer;
+}
+.session-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
 }
 .session-initial {
   display: none;
@@ -482,10 +624,10 @@ function stopStream() {
   height: 30px;
   display: grid;
   place-items: center;
-  border: 1px solid rgba(47, 111, 237, 0.24);
+  border: 0;
   border-radius: var(--dr-radius);
-  background: var(--dr-accent-wash);
-  color: var(--dr-accent-deep);
+  background: #f8fafc;
+  color: var(--dr-text);
   font-size: 12px;
   font-weight: 650;
 }
@@ -497,7 +639,7 @@ function stopStream() {
   max-height: 100%;
   display: grid;
   grid-template-rows: 64px minmax(0, 1fr);
-  background: transparent;
+  background: #ffffff;
   overflow: hidden;
 }
 .chat-topbar {
@@ -505,15 +647,30 @@ function stopStream() {
   z-index: 2;
   min-height: 64px;
   padding: 0 24px;
-  border-bottom: 1px solid rgba(23, 23, 23, 0.08);
-  background: rgba(255, 255, 255, 0.82);
-  backdrop-filter: blur(18px);
+  border-bottom: 1px solid var(--dr-border-soft);
+  background: #ffffff;
+  backdrop-filter: none;
 }
+
+.chat-topbar > div:first-child {
+  min-width: 0;
+}
+
 .chat-title {
+  overflow: hidden;
   font-size: 15px;
   font-weight: 650;
   color: var(--dr-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+
+.chat-subtitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .chat-controls,
 .tool-context-control {
   display: flex;
@@ -541,8 +698,9 @@ function stopStream() {
   scrollbar-color: #b7c2d3 transparent;
   scrollbar-width: thin;
   scrollbar-gutter: stable;
-  padding: 30px 24px 156px;
-  box-shadow: inset -1px 0 0 rgba(23, 23, 23, 0.05);
+  padding: 30px 24px 130px;
+  background: #ffffff;
+  box-shadow: none;
 }
 .message-scroll::-webkit-scrollbar,
 .session-list::-webkit-scrollbar {
@@ -572,18 +730,23 @@ function stopStream() {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 22px;
+  bottom: 0;
   z-index: 3;
-  padding: 0 24px;
-  border: 0;
-  background: transparent;
+  padding: 14px 24px 16px;
+  border-top: 1px solid var(--dr-border-soft);
+  background: rgba(255, 255, 255, 0.96);
   box-shadow: none;
   pointer-events: none;
 }
 .composer-shell :deep(.composer) {
   pointer-events: auto;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
 }
 .empty-state {
+  width: min(100%, 760px);
+  margin: 0 auto;
   min-height: 100%;
   display: flex;
   flex-direction: column;
@@ -598,11 +761,17 @@ function stopStream() {
   height: 48px;
   display: grid;
   place-items: center;
-  border: 1px solid rgba(47, 111, 237, 0.28);
-  border-radius: var(--dr-radius);
-  background: var(--dr-accent-wash);
-  color: var(--dr-accent-deep);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--dr-text);
   font-weight: 700;
+}
+.empty-state :deep(.n-button--primary-type) {
+  --n-border: 0 !important;
+  --n-border-hover: 0 !important;
+  --n-border-pressed: 0 !important;
+  --n-border-focus: 0 !important;
 }
 .empty-state h2 {
   margin: 0;
@@ -613,25 +782,114 @@ function stopStream() {
   margin: 0 0 8px;
   color: var(--dr-text-muted);
 }
+.prompt-grid {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 8px;
+}
+.prompt-card {
+  min-width: 0;
+  min-height: 102px;
+  padding: 13px 14px;
+  border: 1px solid var(--dr-border-soft);
+  border-radius: 8px;
+  background: #f8fafc;
+  color: var(--dr-text);
+  text-align: left;
+  cursor: pointer;
+}
+.prompt-card:hover {
+  border-color: #cbd5e1;
+  background: #f1f5f9;
+}
+.prompt-card:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
+}
+.prompt-card span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #4f46e5;
+  font-size: 11px;
+  font-weight: 750;
+}
+.prompt-card strong {
+  display: block;
+  margin-top: 9px;
+  font-size: 14px;
+  line-height: 1.25;
+}
+.prompt-card small {
+  display: -webkit-box;
+  margin-top: 6px;
+  overflow: hidden;
+  color: var(--dr-text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.empty-action {
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #111827;
+  cursor: pointer;
+  font-weight: 650;
+}
+.empty-action:hover {
+  color: var(--dr-accent);
+}
 @media (max-width: 820px) {
   .chat-workbench {
     grid-template-columns: 1fr;
   }
+  .chat-main {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
   .session-rail {
     display: none;
   }
+  .chat-topbar {
+    min-height: 0;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 12px 14px;
+  }
   .chat-controls {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column;
+    justify-content: space-between;
     gap: 8px;
   }
   .model-select {
-    width: 168px;
+    width: 100%;
+    min-width: 0;
+    flex: 0 0 auto;
+  }
+  .tool-context-control {
+    width: 100%;
+    justify-content: space-between;
+    white-space: nowrap;
   }
   .message-scroll {
     padding: 22px 14px 144px;
   }
+  .prompt-grid {
+    grid-template-columns: 1fr;
+  }
   .composer-shell {
-    bottom: 18px;
-    padding: 0 14px;
+    bottom: 0;
+    padding: 12px 14px;
   }
 }
 

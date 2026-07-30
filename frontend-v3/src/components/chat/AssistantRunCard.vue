@@ -37,7 +37,7 @@
                 size="tiny"
                 type="warning"
                 :loading="confirmingToolCallId === row.id"
-                :disabled="props.streaming"
+                :disabled="props.streaming || Boolean(confirmingToolCallId)"
                 @click="confirmTool(row.id)"
               >
                 确认执行

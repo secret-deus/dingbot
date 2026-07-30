@@ -12,6 +12,7 @@ export const useChatStore = defineStore('chat', () => {
   const streamingToolResults = ref<ToolResult[]>([])
   const toolContextEnabled = ref(localStorage.getItem('toolContextEnabled') !== 'false')
   const llmProviderId = ref(localStorage.getItem('llmProviderId') || '')
+  let messagesRequestVersion = 0
 
   watch(toolContextEnabled, (enabled) => {
     localStorage.setItem('toolContextEnabled', String(enabled))
@@ -23,6 +24,7 @@ export const useChatStore = defineStore('chat', () => {
   })
 
   function setSession(id: string) {
+    messagesRequestVersion += 1
     activeSessionId.value = id
     messages.value = []
     streamingContent.value = ''
@@ -31,9 +33,13 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   async function loadMessages(sessionId: string) {
+    const version = ++messagesRequestVersion
     const msgs = await sessionApi.messages(sessionId)
+    if (version !== messagesRequestVersion) return false
+
     messages.value = msgs
     activeSessionId.value = sessionId
+    return true
   }
 
   function addMessage(msg: Message) {
@@ -82,6 +88,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function reset() {
+    messagesRequestVersion += 1
     activeSessionId.value = ''
     messages.value = []
     streaming.value = false

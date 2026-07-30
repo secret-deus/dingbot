@@ -11,8 +11,10 @@ export const useMcpStore = defineStore('mcp', () => {
   const healthLoading = ref(false)
   const configLoading = ref(false)
   const configSaving = ref(false)
+  const refreshing = ref(false)
 
   const toolsearchHealth = computed<MCPServerHealth | null>(() => health.value?.mcp_servers?.toolsearch || null)
+  const refreshBusy = computed(() => refreshing.value || loading.value || healthLoading.value || configLoading.value || configSaving.value)
 
   async function fetchTools() {
     loading.value = true
@@ -51,6 +53,8 @@ export const useMcpStore = defineStore('mcp', () => {
       sls?: { mappings?: Array<Record<string, unknown>> }
     }
   }) {
+    if (refreshBusy.value) return
+
     configSaving.value = true
     try {
       mcpConfig.value = await systemApi.updateMcpConfig(data)
@@ -61,7 +65,14 @@ export const useMcpStore = defineStore('mcp', () => {
   }
 
   async function refresh() {
-    await Promise.all([fetchTools(), fetchHealth(), fetchConfig()])
+    if (refreshBusy.value) return
+
+    refreshing.value = true
+    try {
+      await Promise.all([fetchTools(), fetchHealth(), fetchConfig()])
+    } finally {
+      refreshing.value = false
+    }
   }
 
   return {
@@ -69,6 +80,7 @@ export const useMcpStore = defineStore('mcp', () => {
     health,
     mcpConfig,
     toolsearchHealth,
+    refreshBusy,
     loading,
     healthLoading,
     configLoading,
